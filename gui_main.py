@@ -61,6 +61,7 @@ class App(ctk.CTk):
         ctk.set_default_color_theme("blue")
 
         self.analysis_results_df = None
+        self.analysis_stats = None # To store the stats dictionary
         self.config_path = resource_path('config.json')
         self.config = self.load_config()
         self.log_file_path = resource_path('app_history.log')
@@ -124,30 +125,91 @@ class App(ctk.CTk):
         self.tab_view = ctk.CTkTabview(self)
         self.tab_view.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
         self.tab_view.add("Execution Log")
-        self.tab_view.add("Activity Log") # <-- NEW: Activity Log tab
+        self.tab_view.add("Activity Log")
+        self.tab_view.add("Statistics") # <-- NEW: Statistics tab
         self.tab_view.add("Analysis Data")
 
-        # --- Execution Log Tab ---
+        # --- Setup Tabs ---
         self.log_area = ctk.CTkTextbox(self.tab_view.tab("Execution Log"), wrap=tk.WORD)
         self.log_area.pack(fill="both", expand=True)
         self.log_area.configure(state='disabled')
         sys.stdout = TextRedirector(self.log_area, self.log_file_path)
         
-        # --- Activity Log Tab ---
         self.activity_log_frame = ctk.CTkFrame(self.tab_view.tab("Activity Log"))
         self.activity_log_frame.pack(fill="both", expand=True)
         self.create_activity_log()
 
-        # --- Analysis Data Tab ---
+        self.stats_frame = ctk.CTkFrame(self.tab_view.tab("Statistics"))
+        self.stats_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        self.create_statistics_tab()
+
         self.data_viewer_frame = ctk.CTkFrame(self.tab_view.tab("Analysis Data"))
         self.data_viewer_frame.pack(fill="both", expand=True)
         self.create_data_viewer()
+
+    def create_statistics_tab(self):
+        """ Creates the UI elements for the Statistics tab. """
+        self.stats_frame.grid_columnconfigure(1, weight=1)
+
+        # --- Labels for displaying stats ---
+        self.stats_labels = {}
+        stat_keys = {
+            "total_orders_completed": "Total Orders Completed:",
+            "total_orders_not_completed": "Total Orders Not Completed:",
+            "total_items_to_write_off": "Total Items to Write Off:",
+            "total_items_not_to_write_off": "Total Items Not to Write Off:",
+        }
+        
+        row_counter = 0
+        for key, text in stat_keys.items():
+            label = ctk.CTkLabel(self.stats_frame, text=text, font=("Arial", 14, "bold"))
+            label.grid(row=row_counter, column=0, sticky="w", padx=10, pady=5)
+            value_label = ctk.CTkLabel(self.stats_frame, text="-", font=("Arial", 14))
+            value_label.grid(row=row_counter, column=1, sticky="w", padx=10, pady=5)
+            self.stats_labels[key] = value_label
+            row_counter += 1
+            
+        # --- Courier Stats Section ---
+        courier_header = ctk.CTkLabel(self.stats_frame, text="Couriers Stats:", font=("Arial", 14, "bold"))
+        courier_header.grid(row=row_counter, column=0, columnspan=2, sticky="w", padx=10, pady=(15, 5))
+        row_counter += 1
+        
+        self.courier_stats_frame = ctk.CTkFrame(self.stats_frame)
+        self.courier_stats_frame.grid(row=row_counter, column=0, columnspan=2, sticky="ew", padx=10)
+        self.courier_stats_frame.grid_columnconfigure(0, weight=1)
+
+    def update_statistics_tab(self):
+        """ Populates the Statistics tab with data from self.analysis_stats. """
+        if not self.analysis_stats:
+            return
+
+        # Update main stats
+        for key, label in self.stats_labels.items():
+            value = self.analysis_stats.get(key, "N/A")
+            label.configure(text=str(value))
+
+        # Clear and update courier stats
+        for widget in self.courier_stats_frame.winfo_children():
+            widget.destroy()
+
+        courier_stats = self.analysis_stats.get('couriers_stats')
+        if courier_stats:
+            # Create headers
+            ctk.CTkLabel(self.courier_stats_frame, text="Courier ID", font=("Arial", 12, "bold")).grid(row=0, column=0, padx=5, pady=2)
+            ctk.CTkLabel(self.courier_stats_frame, text="Orders Assigned", font=("Arial", 12, "bold")).grid(row=0, column=1, padx=5, pady=2)
+            ctk.CTkLabel(self.courier_stats_frame, text="Repeated Orders", font=("Arial", 12, "bold")).grid(row=0, column=2, padx=5, pady=2)
+
+            for i, stats in enumerate(courier_stats, start=1):
+                ctk.CTkLabel(self.courier_stats_frame, text=stats.get('courier_id', 'N/A')).grid(row=i, column=0, padx=5, pady=2)
+                ctk.CTkLabel(self.courier_stats_frame, text=stats.get('orders_assigned', 'N/A')).grid(row=i, column=1, padx=5, pady=2)
+                ctk.CTkLabel(self.courier_stats_frame, text=stats.get('repeated_orders_found', 'N/A')).grid(row=i, column=2, padx=5, pady=2)
+        else:
+            ctk.CTkLabel(self.courier_stats_frame, text="No courier stats available.").pack(pady=10)
 
     def create_activity_log(self):
         """ Creates the Treeview widget for displaying user-facing activity logs. """
         style = ttk.Style()
         style.theme_use("default")
-        # Configure the Treeview style for the activity log
         style.configure("Activity.Treeview", background="#2B2B2B", foreground="white", fieldbackground="#2B2B2B", borderwidth=0)
         style.map('Activity.Treeview', background=[('selected', '#22559b')])
         style.configure("Activity.Treeview.Heading", background="#565b5e", foreground="white", relief="flat")
@@ -171,8 +233,8 @@ class App(ctk.CTk):
     def log_activity(self, operation_type, description):
         """ Adds a new entry to the Activity Log tab. """
         current_time = datetime.now().strftime("%H:%M:%S")
-        self.activity_log_tree.insert("", 0, values=(current_time, operation_type, description)) # Insert at the top
-        self.tab_view.set("Activity Log") # Switch to the log tab to make it visible
+        self.activity_log_tree.insert("", 0, values=(current_time, operation_type, description))
+        self.tab_view.set("Activity Log")
 
     def create_data_viewer(self):
         """ Creates the Treeview widget for displaying analysis data. """
@@ -254,24 +316,28 @@ class App(ctk.CTk):
         stock_path = self.stock_file_path.get()
         orders_path = self.orders_file_path.get()
         output_dir = self.config['paths']['output']['analysis_file']
+        stock_delimiter = self.config['settings']['stock_csv_delimiter']
         
-        success, result = core.run_full_analysis(stock_path, orders_path, os.path.dirname(output_dir))
+        success, result, df, stats = core.run_full_analysis(stock_path, orders_path, os.path.dirname(output_dir), stock_delimiter)
         
-        self.after(0, self.on_analysis_complete, success, result)
+        self.after(0, self.on_analysis_complete, success, result, df, stats)
 
-    def on_analysis_complete(self, success, result):
+    def on_analysis_complete(self, success, result, df, stats):
         """
         Handles the completion of the analysis, updating the GUI accordingly.
         """
         if success:
-            # Log success instead of showing a messagebox
             self.log_activity("Analysis", f"Analysis complete. Report saved to: {result}")
-            self.analysis_results_df = pd.read_excel(result, sheet_name='fulfillment_analysis')
+            self.analysis_results_df = df
+            self.analysis_stats = stats
+            
             self.update_data_viewer(self.analysis_results_df)
+            self.update_statistics_tab() # <-- Update the new stats tab
+            
             self.packing_list_button.configure(state="normal")
             self.stock_export_button.configure(state="normal")
             self.report_builder_button.configure(state="normal")
-            self.tab_view.set("Analysis Data")
+            self.tab_view.set("Statistics") # Switch to stats tab
         else:
             messagebox.showerror("Analysis Error", f"An error occurred during analysis:\n{result}")
         
@@ -301,7 +367,6 @@ class App(ctk.CTk):
         reports = self.config.get(report_type, [])
         if not reports:
             ctk.CTkLabel(window, text="No reports configured in config.json.").pack(pady=20, padx=10)
-            # Still need to wait for the window to be closed
             self.wait_window(window)
             return
 
@@ -343,7 +408,6 @@ class App(ctk.CTk):
             message = "Unknown report type."
 
         if success:
-            # Log success instead of showing a messagebox
             self.after(0, self.log_activity, "Report Generation", message)
         else:
             self.after(0, messagebox.showerror, "Error", message)
@@ -441,7 +505,6 @@ class ReportBuilderWindow(ctk.CTkToplevel):
         if not save_path: return
 
         try:
-            # Use the new logging system for success message
             self.parent.log_activity("Custom Report", f"Custom report saved successfully to: {save_path}")
             self.destroy()
         except Exception as e:
