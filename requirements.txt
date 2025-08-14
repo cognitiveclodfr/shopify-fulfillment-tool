@@ -1,0 +1,10 @@
+pandas
+numpy
+xlsxwriter
+xlrd
+xlutils
+pytest
+pytest-mock
+openpyxl
+pyinstaller
+customtkinter

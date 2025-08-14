@@ -1,0 +1,76 @@
+{
+  "paths": {
+    "input": {
+      "stock_file": "data/input/EXCEL.csv",
+      "orders_file": "data/input/orders_export.csv"
+    },
+    "output": {
+      "analysis_file": "data/output/fulfillment_analysis.xlsx"
+    },
+    "templates": "data/templates/",
+    "output_dir_stock": "data/output/"
+  },
+  "settings": {
+    "stock_csv_delimiter": ";"
+  },
+  "packing_lists": [
+    {
+      "name": "All Fulfillable Orders",
+      "output_filename": "data/output/packing_list_ALL.xlsx",
+      "filters": {}
+    },
+    {
+      "name": "Single-Item Orders Only",
+      "output_filename": "data/output/packing_list_SINGLE.xlsx",
+      "filters": {
+        "Order_Type": "Single"
+      }
+    },
+    {
+      "name": "Multi-Item Orders (DHL)",
+      "output_filename": "data/output/packing_list_MULTI_DHL.xlsx",
+      "filters": {
+        "Order_Type": "Multi",
+        "Shipping_Provider": "DHL"
+      }
+    },
+    {
+      "name": "Multi-Item Orders (PostOne & DPD)",
+      "output_filename": "data/output/packing_list_MULTI_POST_DPD.xlsx",
+      "filters": {
+        "Order_Type": "Multi",
+        "Shipping_Provider": ["PostOne", "DPD"]
+      }
+    }
+  ],
+  "stock_exports": [
+    {
+      "name": "Stock Export (ALL)",
+      "template": "dropALL.xls",
+      "filters": {}
+    },
+    {
+      "name": "Stock Export (Single-Item Only)",
+      "template": "dropSingle.xls",
+      "filters": {
+        "Order_Type": "Single"
+      }
+    },
+    {
+      "name": "Stock Export (Multi, DHL)",
+      "template": "dropDHLMulti.xls",
+      "filters": {
+        "Order_Type": "Multi",
+        "Shipping_Provider": "DHL"
+      }
+    },
+    {
+      "name": "Stock Export (Multi, PostOne & DPD)",
+      "template": "dropPostOneMulti.xls",
+      "filters": {
+        "Order_Type": "Multi",
+        "Shipping_Provider": ["PostOne", "DPD"]
+      }
+    }
+  ]
+}
