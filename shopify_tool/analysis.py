@@ -5,7 +5,7 @@ from datetime import datetime
 
 def _generalize_shipping_method(method):
     """
-    Standardizes shipping method names.
+    Standardizes shipping method names to a consistent format.
     """
     if pd.isna(method):
         return 'Unknown'
@@ -20,18 +20,21 @@ def _generalize_shipping_method(method):
 
 def run_analysis(stock_file_path, orders_file_path, output_file_path, stock_delimiter=';'):
     """
-    Performs a full analysis, creating a report with 4 sheets and history tracking.
+    Performs a full fulfillment analysis, creating a report with multiple sheets.
     """
     try:
         print("Step 1: Loading and preparing data...")
-        if not os.path.exists(stock_file_path) or not os.path.exists(orders_file_path):
-            print("ERROR: One or both input files were not found.")
+        if not os.path.exists(stock_file_path):
+            print(f"ERROR: Stock file not found at: {stock_file_path}")
             return
+        if not os.path.exists(orders_file_path):
+            print(f"ERROR: Orders file not found at: {orders_file_path}")
+            return
+
         stock_df = pd.read_csv(stock_file_path, delimiter=stock_delimiter)
         orders_df = pd.read_csv(orders_file_path)
         print("Data loaded successfully.")
         
-        # ⭐ NEW: Load fulfillment history
         history_path = 'fulfillment_history.csv'
         try:
             history_df = pd.read_csv(history_path)
@@ -55,13 +58,15 @@ def run_analysis(stock_file_path, orders_file_path, output_file_path, stock_deli
         stock_clean_df.dropna(subset=['SKU'], inplace=True)
         stock_clean_df.drop_duplicates(subset=['SKU'], keep='first', inplace=True)
         
-        # --- Simulation ---
+        # --- Fulfillment Simulation ---
         print("Step 2: Simulating order fulfillment...")
         order_item_counts = orders_clean_df.groupby('Order_Number').size().rename('item_count')
         orders_with_counts = pd.merge(orders_clean_df, order_item_counts, on='Order_Number')
         prioritized_orders = orders_with_counts[['Order_Number', 'item_count']].drop_duplicates().sort_values(by=['item_count', 'Order_Number'], ascending=[False, True])
+        
         live_stock = pd.Series(stock_clean_df.Stock.values, index=stock_clean_df.SKU).to_dict()
         fulfillment_results = {}
+
         for order_number in prioritized_orders['Order_Number']:
             order_items = orders_with_counts[orders_with_counts['Order_Number'] == order_number]
             can_fulfill_order = True
@@ -70,6 +75,7 @@ def run_analysis(stock_file_path, orders_file_path, output_file_path, stock_deli
                 if required_qty > live_stock.get(sku, 0):
                     can_fulfill_order = False
                     break
+            
             if can_fulfill_order:
                 fulfillment_results[order_number] = 'Fulfillable'
                 for _, item in order_items.iterrows():
@@ -77,8 +83,8 @@ def run_analysis(stock_file_path, orders_file_path, output_file_path, stock_deli
             else:
                 fulfillment_results[order_number] = 'Not Fulfillable'
 
-        # --- Main Report Generation ---
-        print("Step 3: Generating the main report...")
+        # --- Final Report Generation ---
+        print("Step 3: Generating the final report...")
         final_df = pd.merge(orders_clean_df, stock_clean_df, on='SKU', how='left')
         final_df = pd.merge(final_df, order_item_counts, on='Order_Number')
         final_df['Order_Type'] = np.where(final_df['item_count'] > 1, 'Multi', 'Single')
@@ -87,13 +93,12 @@ def run_analysis(stock_file_path, orders_file_path, output_file_path, stock_deli
         final_df['Order_Fulfillment_Status'] = final_df['Order_Number'].map(fulfillment_results)
         final_df['Destination_Country'] = np.where(final_df['Shipping_Provider'] == 'DHL', final_df['Shipping Country'], '')
         
-        # ⭐ NEW: Add Status_Note for repeat orders
         final_df['Status_Note'] = np.where(final_df['Order_Number'].isin(history_df['Order_Number']), 'Repeat', '')
         
         output_columns = ['Order_Number', 'Order_Type', 'SKU', 'Product_Name', 'Quantity', 'Stock', 'Order_Fulfillment_Status', 'Shipping_Provider', 'Destination_Country', 'Shipping Method', 'Tags', 'Notes', 'Status_Note']
         final_df = final_df[output_columns]
 
-        # --- Generating Summary Reports ---
+        # --- Summary Reports Generation ---
         print("Step 4: Generating summary reports...")
         present_df = final_df[final_df['Order_Fulfillment_Status'] == 'Fulfillable'].copy()
         summary_present_df = present_df.groupby(['SKU', 'Product_Name'], as_index=False)['Quantity'].sum()
@@ -106,7 +111,7 @@ def run_analysis(stock_file_path, orders_file_path, output_file_path, stock_deli
         summary_missing_df.rename(columns={'Product_Name': 'Name', 'Quantity': 'Total Quantity'}, inplace=True)
         summary_missing_df = summary_missing_df[['Name', 'SKU', 'Total Quantity']]
 
-        # --- Writing all sheets to one file ---
+        # --- Writing all sheets to one Excel file ---
         print("Step 5: Saving the report to Excel...")
         with pd.ExcelWriter(output_file_path, engine='xlsxwriter') as writer:
             final_df.to_excel(writer, sheet_name='fulfillment_analysis', index=False)
@@ -129,15 +134,15 @@ def run_analysis(stock_file_path, orders_file_path, output_file_path, stock_deli
                 if status == 'Not Fulfillable':
                     worksheet.set_row(row_num + 1, None, highlight_format)
         
-        print(f"Step 6: Done! Analysis file saved to '{output_file_path}'")
-        
-        # ⭐ NEW: Update fulfillment history
+        # --- Update Fulfillment History ---
         newly_fulfilled = final_df[final_df['Order_Fulfillment_Status'] == 'Fulfillable'][['Order_Number']].drop_duplicates()
         if not newly_fulfilled.empty:
             newly_fulfilled['Execution_Date'] = datetime.now().strftime("%Y-%m-%d")
             updated_history = pd.concat([history_df, newly_fulfilled]).drop_duplicates(subset=['Order_Number'], keep='last')
             updated_history.to_csv(history_path, index=False)
             print(f"Updated fulfillment history with {len(newly_fulfilled)} new records.")
+            
+        print(f"Step 6: Done! Analysis file saved to '{output_file_path}'")
 
     except Exception as e:
         print(f"An unexpected error occurred during analysis: {e}")
