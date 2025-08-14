@@ -126,7 +126,7 @@ class App(ctk.CTk):
         self.tab_view.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
         self.tab_view.add("Execution Log")
         self.tab_view.add("Activity Log")
-        self.tab_view.add("Statistics") # <-- NEW: Statistics tab
+        self.tab_view.add("Statistics")
         self.tab_view.add("Analysis Data")
 
         # --- Setup Tabs ---
@@ -149,9 +149,10 @@ class App(ctk.CTk):
 
     def create_statistics_tab(self):
         """ Creates the UI elements for the Statistics tab. """
-        self.stats_frame.grid_columnconfigure(1, weight=1)
+        # Configure column weights for stability
+        self.stats_frame.grid_columnconfigure(0, weight=0) # Column for labels
+        self.stats_frame.grid_columnconfigure(1, weight=1) # Column for values (expands)
 
-        # --- Labels for displaying stats ---
         self.stats_labels = {}
         stat_keys = {
             "total_orders_completed": "Total Orders Completed:",
@@ -162,47 +163,48 @@ class App(ctk.CTk):
         
         row_counter = 0
         for key, text in stat_keys.items():
-            label = ctk.CTkLabel(self.stats_frame, text=text, font=("Arial", 14, "bold"))
-            label.grid(row=row_counter, column=0, sticky="w", padx=10, pady=5)
-            value_label = ctk.CTkLabel(self.stats_frame, text="-", font=("Arial", 14))
-            value_label.grid(row=row_counter, column=1, sticky="w", padx=10, pady=5)
+            label = ctk.CTkLabel(self.stats_frame, text=text, font=("Arial", 14, "bold"), anchor="w")
+            label.grid(row=row_counter, column=0, sticky="ew", padx=10, pady=5)
+            value_label = ctk.CTkLabel(self.stats_frame, text="-", font=("Arial", 14), anchor="w")
+            value_label.grid(row=row_counter, column=1, sticky="ew", padx=10, pady=5)
             self.stats_labels[key] = value_label
             row_counter += 1
             
-        # --- Courier Stats Section ---
-        courier_header = ctk.CTkLabel(self.stats_frame, text="Couriers Stats:", font=("Arial", 14, "bold"))
-        courier_header.grid(row=row_counter, column=0, columnspan=2, sticky="w", padx=10, pady=(15, 5))
+        courier_header = ctk.CTkLabel(self.stats_frame, text="Couriers Stats:", font=("Arial", 14, "bold"), anchor="w")
+        courier_header.grid(row=row_counter, column=0, columnspan=2, sticky="ew", padx=10, pady=(15, 5))
         row_counter += 1
         
         self.courier_stats_frame = ctk.CTkFrame(self.stats_frame)
         self.courier_stats_frame.grid(row=row_counter, column=0, columnspan=2, sticky="ew", padx=10)
+        # Configure courier frame columns for stability
         self.courier_stats_frame.grid_columnconfigure(0, weight=1)
+        self.courier_stats_frame.grid_columnconfigure(1, weight=1)
+        self.courier_stats_frame.grid_columnconfigure(2, weight=1)
+
 
     def update_statistics_tab(self):
         """ Populates the Statistics tab with data from self.analysis_stats. """
         if not self.analysis_stats:
             return
 
-        # Update main stats
         for key, label in self.stats_labels.items():
             value = self.analysis_stats.get(key, "N/A")
             label.configure(text=str(value))
 
-        # Clear and update courier stats
         for widget in self.courier_stats_frame.winfo_children():
             widget.destroy()
 
         courier_stats = self.analysis_stats.get('couriers_stats')
         if courier_stats:
-            # Create headers
-            ctk.CTkLabel(self.courier_stats_frame, text="Courier ID", font=("Arial", 12, "bold")).grid(row=0, column=0, padx=5, pady=2)
-            ctk.CTkLabel(self.courier_stats_frame, text="Orders Assigned", font=("Arial", 12, "bold")).grid(row=0, column=1, padx=5, pady=2)
-            ctk.CTkLabel(self.courier_stats_frame, text="Repeated Orders", font=("Arial", 12, "bold")).grid(row=0, column=2, padx=5, pady=2)
+            # Create headers with anchor
+            ctk.CTkLabel(self.courier_stats_frame, text="Courier ID", font=("Arial", 12, "bold"), anchor="w").grid(row=0, column=0, padx=5, pady=2, sticky="ew")
+            ctk.CTkLabel(self.courier_stats_frame, text="Orders Assigned", font=("Arial", 12, "bold"), anchor="w").grid(row=0, column=1, padx=5, pady=2, sticky="ew")
+            ctk.CTkLabel(self.courier_stats_frame, text="Repeated Orders", font=("Arial", 12, "bold"), anchor="w").grid(row=0, column=2, padx=5, pady=2, sticky="ew")
 
             for i, stats in enumerate(courier_stats, start=1):
-                ctk.CTkLabel(self.courier_stats_frame, text=stats.get('courier_id', 'N/A')).grid(row=i, column=0, padx=5, pady=2)
-                ctk.CTkLabel(self.courier_stats_frame, text=stats.get('orders_assigned', 'N/A')).grid(row=i, column=1, padx=5, pady=2)
-                ctk.CTkLabel(self.courier_stats_frame, text=stats.get('repeated_orders_found', 'N/A')).grid(row=i, column=2, padx=5, pady=2)
+                ctk.CTkLabel(self.courier_stats_frame, text=stats.get('courier_id', 'N/A'), anchor="w").grid(row=i, column=0, padx=5, pady=2, sticky="ew")
+                ctk.CTkLabel(self.courier_stats_frame, text=stats.get('orders_assigned', 'N/A'), anchor="w").grid(row=i, column=1, padx=5, pady=2, sticky="ew")
+                ctk.CTkLabel(self.courier_stats_frame, text=stats.get('repeated_orders_found', 'N/A'), anchor="w").grid(row=i, column=2, padx=5, pady=2, sticky="ew")
         else:
             ctk.CTkLabel(self.courier_stats_frame, text="No courier stats available.").pack(pady=10)
 
@@ -222,9 +224,9 @@ class App(ctk.CTk):
         self.activity_log_tree.heading("Operation", text="Operation")
         self.activity_log_tree.heading("Description", text="Description")
 
-        self.activity_log_tree.column("Time", width=100, anchor='w')
-        self.activity_log_tree.column("Operation", width=150, anchor='w')
-        self.activity_log_tree.column("Description", width=600, anchor='w')
+        self.activity_log_tree.column("Time", width=150, anchor='w', stretch=tk.NO)
+        self.activity_log_tree.column("Operation", width=200, anchor='w', stretch=tk.NO)
+        self.activity_log_tree.column("Description", width=500, anchor='w')
 
         vsb = ttk.Scrollbar(self.activity_log_frame, orient="vertical", command=self.activity_log_tree.yview)
         vsb.pack(side='right', fill='y')
@@ -232,7 +234,7 @@ class App(ctk.CTk):
 
     def log_activity(self, operation_type, description):
         """ Adds a new entry to the Activity Log tab. """
-        current_time = datetime.now().strftime("%H:%M:%S")
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.activity_log_tree.insert("", 0, values=(current_time, operation_type, description))
         self.tab_view.set("Activity Log")
 
@@ -332,12 +334,12 @@ class App(ctk.CTk):
             self.analysis_stats = stats
             
             self.update_data_viewer(self.analysis_results_df)
-            self.update_statistics_tab() # <-- Update the new stats tab
+            self.update_statistics_tab()
             
             self.packing_list_button.configure(state="normal")
             self.stock_export_button.configure(state="normal")
             self.report_builder_button.configure(state="normal")
-            self.tab_view.set("Statistics") # Switch to stats tab
+            self.tab_view.set("Statistics")
         else:
             messagebox.showerror("Analysis Error", f"An error occurred during analysis:\n{result}")
         
