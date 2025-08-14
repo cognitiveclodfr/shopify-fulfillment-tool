@@ -6,7 +6,7 @@ import sys
 import os
 import pandas as pd
 import json
-from datetime importdatetime
+from datetime import datetime
 
 # --- Helper classes and functions ---
 
@@ -124,16 +124,55 @@ class App(ctk.CTk):
         self.tab_view = ctk.CTkTabview(self)
         self.tab_view.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
         self.tab_view.add("Execution Log")
+        self.tab_view.add("Activity Log") # <-- NEW: Activity Log tab
         self.tab_view.add("Analysis Data")
 
+        # --- Execution Log Tab ---
         self.log_area = ctk.CTkTextbox(self.tab_view.tab("Execution Log"), wrap=tk.WORD)
         self.log_area.pack(fill="both", expand=True)
         self.log_area.configure(state='disabled')
         sys.stdout = TextRedirector(self.log_area, self.log_file_path)
         
+        # --- Activity Log Tab ---
+        self.activity_log_frame = ctk.CTkFrame(self.tab_view.tab("Activity Log"))
+        self.activity_log_frame.pack(fill="both", expand=True)
+        self.create_activity_log()
+
+        # --- Analysis Data Tab ---
         self.data_viewer_frame = ctk.CTkFrame(self.tab_view.tab("Analysis Data"))
         self.data_viewer_frame.pack(fill="both", expand=True)
         self.create_data_viewer()
+
+    def create_activity_log(self):
+        """ Creates the Treeview widget for displaying user-facing activity logs. """
+        style = ttk.Style()
+        style.theme_use("default")
+        # Configure the Treeview style for the activity log
+        style.configure("Activity.Treeview", background="#2B2B2B", foreground="white", fieldbackground="#2B2B2B", borderwidth=0)
+        style.map('Activity.Treeview', background=[('selected', '#22559b')])
+        style.configure("Activity.Treeview.Heading", background="#565b5e", foreground="white", relief="flat")
+        style.map("Activity.Treeview.Heading", background=[('active', '#3484F0')])
+
+        self.activity_log_tree = ttk.Treeview(self.activity_log_frame, style="Activity.Treeview", columns=("Time", "Operation", "Description"), show="headings")
+        self.activity_log_tree.pack(side="left", fill="both", expand=True)
+
+        self.activity_log_tree.heading("Time", text="Time")
+        self.activity_log_tree.heading("Operation", text="Operation")
+        self.activity_log_tree.heading("Description", text="Description")
+
+        self.activity_log_tree.column("Time", width=100, anchor='w')
+        self.activity_log_tree.column("Operation", width=150, anchor='w')
+        self.activity_log_tree.column("Description", width=600, anchor='w')
+
+        vsb = ttk.Scrollbar(self.activity_log_frame, orient="vertical", command=self.activity_log_tree.yview)
+        vsb.pack(side='right', fill='y')
+        self.activity_log_tree.configure(yscrollcommand=vsb.set)
+
+    def log_activity(self, operation_type, description):
+        """ Adds a new entry to the Activity Log tab. """
+        current_time = datetime.now().strftime("%H:%M:%S")
+        self.activity_log_tree.insert("", 0, values=(current_time, operation_type, description)) # Insert at the top
+        self.tab_view.set("Activity Log") # Switch to the log tab to make it visible
 
     def create_data_viewer(self):
         """ Creates the Treeview widget for displaying analysis data. """
@@ -225,7 +264,8 @@ class App(ctk.CTk):
         Handles the completion of the analysis, updating the GUI accordingly.
         """
         if success:
-            messagebox.showinfo("Success", f"Analysis complete. Report saved to:\n{result}")
+            # Log success instead of showing a messagebox
+            self.log_activity("Analysis", f"Analysis complete. Report saved to: {result}")
             self.analysis_results_df = pd.read_excel(result, sheet_name='fulfillment_analysis')
             self.update_data_viewer(self.analysis_results_df)
             self.packing_list_button.configure(state="normal")
@@ -247,24 +287,22 @@ class App(ctk.CTk):
         if self.analysis_results_df is None:
             messagebox.showwarning("Warning", "Please run the analysis first.")
             return
-        # Pass self (the main app window) as the parent
         ReportBuilderWindow(self)
 
     def create_report_window(self, report_type, title):
         """ Creates a new modal window for report selection. """
-        # Pass self as the parent to the Toplevel window
         window = ctk.CTkToplevel(self)
         window.title(title)
         window.geometry("400x300")
         
-        # --- Make window modal ---
-        window.transient(self) # Keep window on top of the parent
-        window.grab_set()      # Block interaction with the parent window
-        self.wait_window(window) # Wait until this window is closed
-
+        window.transient(self)
+        window.grab_set()
+        
         reports = self.config.get(report_type, [])
         if not reports:
             ctk.CTkLabel(window, text="No reports configured in config.json.").pack(pady=20, padx=10)
+            # Still need to wait for the window to be closed
+            self.wait_window(window)
             return
 
         for report_config in reports:
@@ -274,6 +312,8 @@ class App(ctk.CTk):
                 command=lambda rc=report_config, rt=report_type, win=window: self.start_report_thread(rc, rt, win)
             )
             btn.pack(pady=5, padx=10, fill="x")
+
+        self.wait_window(window)
 
     def start_report_thread(self, report_config, report_type, window):
         """ Starts a report generation process in a separate thread. """
@@ -303,7 +343,8 @@ class App(ctk.CTk):
             message = "Unknown report type."
 
         if success:
-            self.after(0, messagebox.showinfo, "Success", message)
+            # Log success instead of showing a messagebox
+            self.after(0, self.log_activity, "Report Generation", message)
         else:
             self.after(0, messagebox.showerror, "Error", message)
 
@@ -321,13 +362,10 @@ class ReportBuilderWindow(ctk.CTkToplevel):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
 
-        # --- Make window modal ---
         self.transient(parent)
         self.grab_set()
 
         self.create_widgets()
-
-        # Wait for this window to be closed before returning
         self.parent.wait_window(self)
 
 
@@ -403,8 +441,8 @@ class ReportBuilderWindow(ctk.CTkToplevel):
         if not save_path: return
 
         try:
-            report_df.to_excel(save_path, index=False)
-            messagebox.showinfo("Success", f"Custom report saved successfully to:\n{save_path}", parent=self)
+            # Use the new logging system for success message
+            self.parent.log_activity("Custom Report", f"Custom report saved successfully to: {save_path}")
             self.destroy()
         except Exception as e:
             messagebox.showerror("Save Error", f"Could not save the report:\n{e}", parent=self)
