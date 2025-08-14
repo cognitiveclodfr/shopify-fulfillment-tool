@@ -6,6 +6,7 @@ import sys
 import os
 import pandas as pd
 import json
+from datetime importdatetime
 
 # --- Helper classes and functions ---
 
@@ -42,21 +43,19 @@ class ToolTip:
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
     try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
         base_path = sys._MEIPASS
     except Exception:
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
-# Add the project root to the Python path to allow for correct module imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
-from shopify_tool import core # <-- UPDATED: Import the new core module
+from shopify_tool import core
 
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("Shopify Fulfillment Tool v5.0") # <-- UPDATED: Version
+        self.title("Shopify Fulfillment Tool v5.1")
         self.geometry("900x750")
         ctk.set_appearance_mode("System")
         ctk.set_default_color_theme("blue")
@@ -75,7 +74,7 @@ class App(ctk.CTk):
                 return json.load(f)
         except (FileNotFoundError, json.JSONDecodeError) as e:
             messagebox.showerror("Configuration Error", f"Failed to load config.json: {e}")
-            self.after(100, self.destroy) # Close app if config is missing/invalid
+            self.after(100, self.destroy)
         return None
 
     def create_widgets(self):
@@ -83,7 +82,6 @@ class App(ctk.CTk):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(2, weight=1)
 
-        # --- File Selection Frame ---
         files_frame = ctk.CTkFrame(self)
         files_frame.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
         files_frame.grid_columnconfigure(1, weight=1)
@@ -103,7 +101,6 @@ class App(ctk.CTk):
 
         ctk.CTkLabel(files_frame, textvariable=self.stock_file_path).grid(row=1, column=1, padx=10, pady=5, sticky="w")
 
-        # --- Main Actions Frame ---
         actions_frame = ctk.CTkFrame(self)
         actions_frame.grid(row=1, column=0, padx=10, pady=0, sticky="ew")
         actions_frame.grid_columnconfigure((0, 1, 2), weight=1)
@@ -124,7 +121,6 @@ class App(ctk.CTk):
         self.report_builder_button.grid(row=1, column=2, padx=5, pady=5, sticky="ew")
         ToolTip(self.report_builder_button, "Create a custom report with your own filters and columns.")
 
-        # --- Tab View for Logs and Data ---
         self.tab_view = ctk.CTkTabview(self)
         self.tab_view.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
         self.tab_view.add("Execution Log")
@@ -143,14 +139,11 @@ class App(ctk.CTk):
         """ Creates the Treeview widget for displaying analysis data. """
         style = ttk.Style()
         style.theme_use("default")
-        # Base style
         style.configure("Treeview", background="#2B2B2B", foreground="white", fieldbackground="#2B2B2B", borderwidth=0)
         style.map('Treeview', background=[('selected', '#22559b')])
-        # Heading style
         style.configure("Treeview.Heading", background="#565b5e", foreground="white", relief="flat")
         style.map("Treeview.Heading", background=[('active', '#3484F0')])
         
-        # Tag styles for row coloring
         style.configure("Fulfillable.Treeview", background="#0A380A", foreground="white")
         style.configure("NotFulfillable.Treeview", background="#4A1A1A", foreground="white")
 
@@ -174,7 +167,6 @@ class App(ctk.CTk):
             self.tree.heading(col, text=col)
             self.tree.column(col, width=100, anchor='w')
         
-        # Apply tags based on status
         self.tree.tag_configure("Fulfillable", background="#2E4B2E", foreground="lightgreen")
         self.tree.tag_configure("NotFulfillable", background="#5A2E2E", foreground="#FFB0B0")
 
@@ -214,44 +206,35 @@ class App(ctk.CTk):
         self.stock_export_button.configure(state="disabled")
         self.report_builder_button.configure(state="disabled")
         
-        # Call the core logic in a thread
         threading.Thread(target=self.run_analysis_logic, daemon=True).start()
 
     def run_analysis_logic(self):
         """
         Wrapper function that calls the core analysis function and handles the result.
-        This function is executed in a separate thread.
         """
         stock_path = self.stock_file_path.get()
         orders_path = self.orders_file_path.get()
         output_dir = self.config['paths']['output']['analysis_file']
         
-        # The core function now handles the logic and returns success status and a message/path
         success, result = core.run_full_analysis(stock_path, orders_path, os.path.dirname(output_dir))
         
-        # Schedule the UI update on the main thread
         self.after(0, self.on_analysis_complete, success, result)
 
     def on_analysis_complete(self, success, result):
         """
         Handles the completion of the analysis, updating the GUI accordingly.
-        This function is called on the main GUI thread.
         """
         if success:
             messagebox.showinfo("Success", f"Analysis complete. Report saved to:\n{result}")
-            # Load the results into the data viewer
             self.analysis_results_df = pd.read_excel(result, sheet_name='fulfillment_analysis')
             self.update_data_viewer(self.analysis_results_df)
-            # Enable action buttons
             self.packing_list_button.configure(state="normal")
             self.stock_export_button.configure(state="normal")
             self.report_builder_button.configure(state="normal")
             self.tab_view.set("Analysis Data")
         else:
-            # The 'result' is an error message in case of failure
             messagebox.showerror("Analysis Error", f"An error occurred during analysis:\n{result}")
         
-        # Always re-enable the analysis button
         self.run_analysis_button.configure(state="normal")
 
     def open_packing_list_window(self):
@@ -264,14 +247,21 @@ class App(ctk.CTk):
         if self.analysis_results_df is None:
             messagebox.showwarning("Warning", "Please run the analysis first.")
             return
+        # Pass self (the main app window) as the parent
         ReportBuilderWindow(self)
 
     def create_report_window(self, report_type, title):
-        """ Creates a new window with buttons for each configured report of a given type. """
+        """ Creates a new modal window for report selection. """
+        # Pass self as the parent to the Toplevel window
         window = ctk.CTkToplevel(self)
         window.title(title)
         window.geometry("400x300")
         
+        # --- Make window modal ---
+        window.transient(self) # Keep window on top of the parent
+        window.grab_set()      # Block interaction with the parent window
+        self.wait_window(window) # Wait until this window is closed
+
         reports = self.config.get(report_type, [])
         if not reports:
             ctk.CTkLabel(window, text="No reports configured in config.json.").pack(pady=20, padx=10)
@@ -281,20 +271,18 @@ class App(ctk.CTk):
             btn = ctk.CTkButton(
                 window,
                 text=report_config.get('name', 'Unknown Report'),
-                # Pass the necessary parameters to the thread starter
                 command=lambda rc=report_config, rt=report_type, win=window: self.start_report_thread(rc, rt, win)
             )
             btn.pack(pady=5, padx=10, fill="x")
 
     def start_report_thread(self, report_config, report_type, window):
         """ Starts a report generation process in a separate thread. """
-        window.destroy() # Close the selection window
+        window.destroy()
         threading.Thread(target=self.run_report_logic, args=(report_config, report_type), daemon=True).start()
 
     def run_report_logic(self, report_config, report_type):
         """
         Wrapper function that calls the appropriate core report function.
-        This function is executed in a separate thread.
         """
         if report_type == "packing_lists":
             success, message = core.create_packing_list_report(
@@ -314,7 +302,6 @@ class App(ctk.CTk):
             success = False
             message = "Unknown report type."
 
-        # Schedule the UI update on the main thread
         if success:
             self.after(0, messagebox.showinfo, "Success", message)
         else:
@@ -323,8 +310,7 @@ class App(ctk.CTk):
 
 class ReportBuilderWindow(ctk.CTkToplevel):
     """
-    A Toplevel window for creating custom reports with user-defined
-    columns and filters from the analysis data.
+    A Toplevel window for creating custom reports.
     """
     def __init__(self, parent):
         super().__init__(parent)
@@ -335,7 +321,15 @@ class ReportBuilderWindow(ctk.CTkToplevel):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
 
+        # --- Make window modal ---
+        self.transient(parent)
+        self.grab_set()
+
         self.create_widgets()
+
+        # Wait for this window to be closed before returning
+        self.parent.wait_window(self)
+
 
     def create_widgets(self):
         """ Creates all widgets for the report builder window. """
@@ -343,7 +337,6 @@ class ReportBuilderWindow(ctk.CTkToplevel):
         controls_frame.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
         controls_frame.grid_columnconfigure(0, weight=1)
 
-        # --- Columns Selection ---
         columns_frame = ctk.CTkFrame(controls_frame)
         columns_frame.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
         ctk.CTkLabel(columns_frame, text="Step 1: Select Columns to Include", font=("Arial", 14, "bold")).pack(anchor="w", pady=(0,5))
@@ -357,7 +350,6 @@ class ReportBuilderWindow(ctk.CTkToplevel):
             self.column_vars[col] = tk.BooleanVar(value=True)
             ctk.CTkCheckBox(scrollable_frame, text=col, variable=self.column_vars[col]).pack(anchor="w", padx=10)
 
-        # --- Filter Section ---
         filter_frame = ctk.CTkFrame(controls_frame)
         filter_frame.grid(row=1, column=0, padx=5, pady=10, sticky="ew")
         ctk.CTkLabel(filter_frame, text="Step 2: Add a Filter (Optional)", font=("Arial", 14, "bold")).pack(anchor="w", pady=(0,5))
@@ -370,7 +362,6 @@ class ReportBuilderWindow(ctk.CTkToplevel):
         ctk.CTkComboBox(filter_frame, values=["==", "!=", ">", "<", "contains"], variable=self.filter_operator_var).pack(side="left", padx=5)
         ctk.CTkEntry(filter_frame, placeholder_text="Value", textvariable=self.filter_value_var).pack(side="left", padx=5, fill="x", expand=True)
 
-        # --- Generate Button ---
         generate_btn = ctk.CTkButton(self, text="Step 3: Generate and Save Custom Report", command=self.generate_custom_report, height=40)
         generate_btn.grid(row=2, column=0, padx=10, pady=10, sticky="ew")
 
@@ -388,7 +379,6 @@ class ReportBuilderWindow(ctk.CTkToplevel):
 
         if value:
             try:
-                # Attempt to convert filter value to numeric if possible for correct comparison
                 numeric_value = pd.to_numeric(value, errors='coerce')
                 if not pd.isna(numeric_value):
                     value = numeric_value
