@@ -6,7 +6,6 @@ import sys
 import os
 import pandas as pd
 import json
-from datetime import datetime
 
 # --- Helper classes and functions ---
 
@@ -41,20 +40,23 @@ class ToolTip:
         self.tooltip_window = None
 
 def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
     try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
         base_path = sys._MEIPASS
     except Exception:
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
+# Add the project root to the Python path to allow for correct module imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
-from shopify_tool import analysis, packing_lists, stock_export
+from shopify_tool import core # <-- UPDATED: Import the new core module
 
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("Shopify Fulfillment Tool v4.1")
+        self.title("Shopify Fulfillment Tool v5.0") # <-- UPDATED: Version
         self.geometry("900x750")
         ctk.set_appearance_mode("System")
         ctk.set_default_color_theme("blue")
@@ -67,18 +69,21 @@ class App(ctk.CTk):
         self.create_widgets()
 
     def load_config(self):
+        """ Loads the main configuration file. """
         try:
             with open(self.config_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except (FileNotFoundError, json.JSONDecodeError) as e:
             messagebox.showerror("Configuration Error", f"Failed to load config.json: {e}")
-            self.after(100, self.destroy)
+            self.after(100, self.destroy) # Close app if config is missing/invalid
         return None
 
     def create_widgets(self):
+        """ Creates all the widgets for the main application window. """
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(2, weight=1)
 
+        # --- File Selection Frame ---
         files_frame = ctk.CTkFrame(self)
         files_frame.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
         files_frame.grid_columnconfigure(1, weight=1)
@@ -98,6 +103,7 @@ class App(ctk.CTk):
 
         ctk.CTkLabel(files_frame, textvariable=self.stock_file_path).grid(row=1, column=1, padx=10, pady=5, sticky="w")
 
+        # --- Main Actions Frame ---
         actions_frame = ctk.CTkFrame(self)
         actions_frame.grid(row=1, column=0, padx=10, pady=0, sticky="ew")
         actions_frame.grid_columnconfigure((0, 1, 2), weight=1)
@@ -118,6 +124,7 @@ class App(ctk.CTk):
         self.report_builder_button.grid(row=1, column=2, padx=5, pady=5, sticky="ew")
         ToolTip(self.report_builder_button, "Create a custom report with your own filters and columns.")
 
+        # --- Tab View for Logs and Data ---
         self.tab_view = ctk.CTkTabview(self)
         self.tab_view.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
         self.tab_view.add("Execution Log")
@@ -133,6 +140,7 @@ class App(ctk.CTk):
         self.create_data_viewer()
 
     def create_data_viewer(self):
+        """ Creates the Treeview widget for displaying analysis data. """
         style = ttk.Style()
         style.theme_use("default")
         # Base style
@@ -142,7 +150,7 @@ class App(ctk.CTk):
         style.configure("Treeview.Heading", background="#565b5e", foreground="white", relief="flat")
         style.map("Treeview.Heading", background=[('active', '#3484F0')])
         
-        # ⭐ NEW: Tag styles for row coloring
+        # Tag styles for row coloring
         style.configure("Fulfillable.Treeview", background="#0A380A", foreground="white")
         style.configure("NotFulfillable.Treeview", background="#4A1A1A", foreground="white")
 
@@ -158,6 +166,7 @@ class App(ctk.CTk):
         self.tree.configure(xscrollcommand=hsb.set)
 
     def update_data_viewer(self, df):
+        """ Clears and repopulates the Treeview with new DataFrame data. """
         self.tree.delete(*self.tree.get_children())
         self.tree["columns"] = list(df.columns)
         self.tree["show"] = "headings"
@@ -165,7 +174,7 @@ class App(ctk.CTk):
             self.tree.heading(col, text=col)
             self.tree.column(col, width=100, anchor='w')
         
-        # ⭐ NEW: Apply tags based on status
+        # Apply tags based on status
         self.tree.tag_configure("Fulfillable", background="#2E4B2E", foreground="lightgreen")
         self.tree.tag_configure("NotFulfillable", background="#5A2E2E", foreground="#FFB0B0")
 
@@ -193,44 +202,56 @@ class App(ctk.CTk):
             self.check_files_selected()
 
     def check_files_selected(self):
+        """ Enables the 'Run Analysis' button if both files are selected. """
         if "not selected" not in self.orders_file_path.get() and "not selected" not in self.stock_file_path.get():
             self.run_analysis_button.configure(state="normal")
             print("Both files loaded. Ready for analysis.")
 
     def start_analysis_thread(self):
+        """ Starts the analysis process in a separate thread to avoid freezing the GUI. """
         self.run_analysis_button.configure(state="disabled")
         self.packing_list_button.configure(state="disabled")
         self.stock_export_button.configure(state="disabled")
         self.report_builder_button.configure(state="disabled")
-        print("\n--- Starting Analysis ---")
+        
+        # Call the core logic in a thread
         threading.Thread(target=self.run_analysis_logic, daemon=True).start()
 
     def run_analysis_logic(self):
-        try:
-            stock_path = self.stock_file_path.get()
-            orders_path = self.orders_file_path.get()
-            output_dir = self.config['paths']['output_dir_stock']
-            if not os.path.exists(output_dir):
-                os.makedirs(output_dir)
-            output_path = os.path.join(output_dir, "fulfillment_analysis.xlsx")
-            analysis.run_analysis(stock_path, orders_path, output_path)
-            self.after(0, self.on_analysis_complete, True, output_path)
-        except Exception as e:
-            self.after(0, self.on_analysis_complete, False, str(e))
+        """
+        Wrapper function that calls the core analysis function and handles the result.
+        This function is executed in a separate thread.
+        """
+        stock_path = self.stock_file_path.get()
+        orders_path = self.orders_file_path.get()
+        output_dir = self.config['paths']['output']['analysis_file']
+        
+        # The core function now handles the logic and returns success status and a message/path
+        success, result = core.run_full_analysis(stock_path, orders_path, os.path.dirname(output_dir))
+        
+        # Schedule the UI update on the main thread
+        self.after(0, self.on_analysis_complete, success, result)
 
     def on_analysis_complete(self, success, result):
+        """
+        Handles the completion of the analysis, updating the GUI accordingly.
+        This function is called on the main GUI thread.
+        """
         if success:
-            print(f"--- Analysis Completed Successfully! ---")
             messagebox.showinfo("Success", f"Analysis complete. Report saved to:\n{result}")
+            # Load the results into the data viewer
             self.analysis_results_df = pd.read_excel(result, sheet_name='fulfillment_analysis')
             self.update_data_viewer(self.analysis_results_df)
+            # Enable action buttons
             self.packing_list_button.configure(state="normal")
             self.stock_export_button.configure(state="normal")
             self.report_builder_button.configure(state="normal")
             self.tab_view.set("Analysis Data")
         else:
-            print(f"ERROR: {result}")
+            # The 'result' is an error message in case of failure
             messagebox.showerror("Analysis Error", f"An error occurred during analysis:\n{result}")
+        
+        # Always re-enable the analysis button
         self.run_analysis_button.configure(state="normal")
 
     def open_packing_list_window(self):
@@ -245,8 +266,8 @@ class App(ctk.CTk):
             return
         ReportBuilderWindow(self)
 
-    # ⭐ RESTORED: Full report selection window functionality
     def create_report_window(self, report_type, title):
+        """ Creates a new window with buttons for each configured report of a given type. """
         window = ctk.CTkToplevel(self)
         window.title(title)
         window.geometry("400x300")
@@ -260,52 +281,51 @@ class App(ctk.CTk):
             btn = ctk.CTkButton(
                 window,
                 text=report_config.get('name', 'Unknown Report'),
+                # Pass the necessary parameters to the thread starter
                 command=lambda rc=report_config, rt=report_type, win=window: self.start_report_thread(rc, rt, win)
             )
             btn.pack(pady=5, padx=10, fill="x")
 
     def start_report_thread(self, report_config, report_type, window):
-        window.destroy()
+        """ Starts a report generation process in a separate thread. """
+        window.destroy() # Close the selection window
         threading.Thread(target=self.run_report_logic, args=(report_config, report_type), daemon=True).start()
 
     def run_report_logic(self, report_config, report_type):
-        try:
-            # ⭐ RESTORED: Full report generation logic
-            if report_type == "packing_lists":
-                output_file = report_config['output_filename']
-                os.makedirs(os.path.dirname(output_file), exist_ok=True)
-                packing_lists.create_packing_list(
-                    analysis_df=self.analysis_results_df,
-                    output_file=output_file,
-                    report_name=report_config['name'],
-                    filters=report_config.get('filters')
-                )
-            elif report_type == "stock_exports":
-                templates_path = resource_path(self.config['paths']['templates'])
-                output_path = self.config['paths']['output_dir_stock']
-                template_name = report_config['template']
-                template_full_path = os.path.join(templates_path, template_name)
-                
-                datestamp = datetime.now().strftime("%Y-%m-%d")
-                name, ext = os.path.splitext(template_name)
-                output_filename = f"{name}_{datestamp}{ext}"
-                
-                os.makedirs(output_path, exist_ok=True)
-                output_full_path = os.path.join(output_path, output_filename)
+        """
+        Wrapper function that calls the appropriate core report function.
+        This function is executed in a separate thread.
+        """
+        if report_type == "packing_lists":
+            success, message = core.create_packing_list_report(
+                analysis_df=self.analysis_results_df,
+                report_config=report_config
+            )
+        elif report_type == "stock_exports":
+            templates_path = resource_path(self.config['paths']['templates'])
+            output_path = self.config['paths']['output_dir_stock']
+            success, message = core.create_stock_export_report(
+                analysis_df=self.analysis_results_df,
+                report_config=report_config,
+                templates_path=templates_path,
+                output_path=output_path
+            )
+        else:
+            success = False
+            message = "Unknown report type."
 
-                stock_export.create_stock_export(
-                    analysis_df=self.analysis_results_df,
-                    template_file=template_full_path,
-                    output_file=output_full_path,
-                    report_name=report_config['name'],
-                    filters=report_config.get('filters')
-                )
-            self.after(0, messagebox.showinfo, "Success", f"Report '{report_config['name']}' created successfully.")
-        except Exception as e:
-            self.after(0, messagebox.showerror, "Error", f"Failed to create report '{report_config['name']}':\n{e}")
+        # Schedule the UI update on the main thread
+        if success:
+            self.after(0, messagebox.showinfo, "Success", message)
+        else:
+            self.after(0, messagebox.showerror, "Error", message)
 
 
 class ReportBuilderWindow(ctk.CTkToplevel):
+    """
+    A Toplevel window for creating custom reports with user-defined
+    columns and filters from the analysis data.
+    """
     def __init__(self, parent):
         super().__init__(parent)
         self.parent = parent
@@ -318,6 +338,7 @@ class ReportBuilderWindow(ctk.CTkToplevel):
         self.create_widgets()
 
     def create_widgets(self):
+        """ Creates all widgets for the report builder window. """
         controls_frame = ctk.CTkFrame(self)
         controls_frame.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
         controls_frame.grid_columnconfigure(0, weight=1)
@@ -354,6 +375,7 @@ class ReportBuilderWindow(ctk.CTkToplevel):
         generate_btn.grid(row=2, column=0, padx=10, pady=10, sticky="ew")
 
     def generate_custom_report(self):
+        """ Filters and saves the custom report based on user selections. """
         selected_columns = [col for col, var in self.column_vars.items() if var.get()]
         if not selected_columns:
             messagebox.showerror("Error", "Please select at least one column.", parent=self)
@@ -366,6 +388,7 @@ class ReportBuilderWindow(ctk.CTkToplevel):
 
         if value:
             try:
+                # Attempt to convert filter value to numeric if possible for correct comparison
                 numeric_value = pd.to_numeric(value, errors='coerce')
                 if not pd.isna(numeric_value):
                     value = numeric_value
@@ -398,6 +421,7 @@ class ReportBuilderWindow(ctk.CTkToplevel):
 
 
 class TextRedirector:
+    """ A class to redirect stdout to a Tkinter Text widget and a log file. """
     def __init__(self, widget, file_path):
         self.widget = widget
         self.file = open(file_path, "a", encoding="utf-8")
@@ -413,4 +437,3 @@ class TextRedirector:
 if __name__ == "__main__":
     app = App()
     app.mainloop()
-
