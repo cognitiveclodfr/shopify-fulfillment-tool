@@ -3,6 +3,7 @@ import logging
 import pandas as pd
 from datetime import datetime
 from . import analysis, packing_lists, stock_export
+import numpy as np
 
 logger = logging.getLogger('ShopifyToolLogger')
 
@@ -25,7 +26,7 @@ def _validate_dataframes(orders_df, stock_df):
 
     return errors
 
-def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_delimiter):
+def run_full_analysis(self, stock_file_path, orders_file_path, output_dir_path, stock_delimiter):
     """
     Loads data, runs analysis, saves all report files, and updates history.
     """
@@ -62,6 +63,16 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
             stock_df, orders_df, history_df
         )
         print("Analysis computation complete.")
+
+        # 2.5. Add stock alerts based on config
+        low_stock_threshold = self.config.get('settings', {}).get('low_stock_threshold')
+        if low_stock_threshold is not None and 'Final_Stock' in final_df.columns:
+            print(f"Applying low stock threshold: < {low_stock_threshold}")
+            final_df['Stock_Alert'] = np.where(
+                final_df['Final_Stock'] < low_stock_threshold,
+                'Low Stock',
+                ''
+            )
 
         # 3. Save Excel report
         print("Step 3: Saving analysis report to Excel...")

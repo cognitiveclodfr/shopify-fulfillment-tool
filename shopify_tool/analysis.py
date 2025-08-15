@@ -17,6 +17,8 @@ def _generalize_shipping_method(method):
     return method.title()
 
 def run_analysis(stock_df, orders_df, history_df):
+    # Calculate final stock levels after fulfillment
+    final_stock_levels = pd.Series(live_stock, name="Final_Stock").reset_index().rename(columns={'index': 'SKU'})
     """
     Performs a full fulfillment analysis and returns the results and statistics.
     This function does not perform any file I/O.
@@ -67,14 +69,18 @@ def run_analysis(stock_df, orders_df, history_df):
     # --- Final Report Generation ---
     final_df = pd.merge(orders_clean_df, stock_clean_df, on='SKU', how='left')
     final_df = pd.merge(final_df, order_item_counts, on='Order_Number')
+    # Merge final stock levels to the main dataframe
+    final_df = pd.merge(final_df, final_stock_levels, on='SKU', how='left')
+    final_df['Final_Stock'].fillna(final_df['Stock'], inplace=True) # If an item was not fulfilled, its final stock is its initial stock
     final_df['Order_Type'] = np.where(final_df['item_count'] > 1, 'Multi', 'Single')
     final_df['Stock'].fillna(0, inplace=True)
     final_df['Shipping_Provider'] = final_df['Shipping Method'].apply(_generalize_shipping_method)
     final_df['Order_Fulfillment_Status'] = final_df['Order_Number'].map(fulfillment_results)
     final_df['Destination_Country'] = np.where(final_df['Shipping_Provider'] == 'DHL', final_df['Shipping Country'], '')
     final_df['Status_Note'] = np.where(final_df['Order_Number'].isin(history_df['Order_Number']), 'Repeat', '')
-    output_columns = ['Order_Number', 'Order_Type', 'SKU', 'Product_Name', 'Quantity', 'Stock', 'Order_Fulfillment_Status', 'Shipping_Provider', 'Destination_Country', 'Shipping Method', 'Tags', 'Notes', 'Status_Note']
-    final_df = final_df[output_columns]
+    final_df['Stock_Alert'] = '' # Initialize the column
+    output_columns = ['Order_Number', 'Order_Type', 'SKU', 'Product_Name', 'Quantity', 'Stock', 'Final_Stock', 'Stock_Alert', 'Order_Fulfillment_Status', 'Shipping_Provider', 'Destination_Country', 'Shipping Method', 'Tags', 'Notes', 'Status_Note']
+    final_df = final_df[output_columns].copy() # Use .copy() to avoid SettingWithCopyWarning
 
     # --- Summary Reports Generation ---
     present_df = final_df[final_df['Order_Fulfillment_Status'] == 'Fulfillable'].copy()
