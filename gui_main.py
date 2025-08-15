@@ -322,7 +322,7 @@ class App(ctk.CTk):
         stock_path = self.stock_file_path.get()
         orders_path = self.orders_file_path.get()
         output_dir = self.config['paths']['output']['analysis_file']
-        stock_delimiter = self.config['settings']['stock_csv_delimiter']
+    stock_delimiter = self.config['settings']['stock_csv_delimiter']
         
     success, result, df, stats = core.run_full_analysis(stock_path, orders_path, os.path.dirname(output_dir), stock_delimiter, self.config)
     self.after(0, self.on_analysis_complete, success, result, df, stats)

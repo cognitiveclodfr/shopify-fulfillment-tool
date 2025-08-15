@@ -33,6 +33,10 @@ def make_test_data():
             'stock_csv_delimiter': ';'
         }
     }
+    # Attach DataFrames to config for test mode
+    config['test_stock_df'] = stock_df
+    config['test_orders_df'] = orders_df
+    config['test_history_df'] = history_df
     return stock_df, orders_df, history_df, config
 
 def test_run_analysis_basic():

@@ -17,8 +17,6 @@ def _generalize_shipping_method(method):
     return method.title()
 
 def run_analysis(stock_df, orders_df, history_df):
-    # Calculate final stock levels after fulfillment
-    final_stock_levels = pd.Series(live_stock, name="Final_Stock").reset_index().rename(columns={'index': 'SKU'})
     """
     Performs a full fulfillment analysis and returns the results and statistics.
     This function does not perform any file I/O.
