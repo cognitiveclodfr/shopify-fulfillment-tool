@@ -1,9 +1,29 @@
 import os
+import logging
 import pandas as pd
 from datetime import datetime
 from . import analysis, packing_lists, stock_export
-import logging
+
 logger = logging.getLogger('ShopifyToolLogger')
+
+def _validate_dataframes(orders_df, stock_df):
+    """
+    Validates that the required columns are present in the dataframes.
+    Returns a list of error messages. If the list is empty, validation passed.
+    """
+    errors = []
+    required_orders_cols = ['Name', 'Lineitem sku', 'Lineitem quantity']
+    required_stock_cols = ['Артикул', 'Наличност']
+
+    for col in required_orders_cols:
+        if col not in orders_df.columns:
+            errors.append(f"Missing required column in Orders file: '{col}'")
+
+    for col in required_stock_cols:
+        if col not in stock_df.columns:
+            errors.append(f"Missing required column in Stock file: '{col}'")
+
+    return errors
 
 def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_delimiter):
     """
@@ -19,6 +39,14 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
         stock_df = pd.read_csv(stock_file_path, delimiter=stock_delimiter)
         orders_df = pd.read_csv(orders_file_path)
         print("Data loaded successfully.")
+
+        # Validate dataframes
+        validation_errors = _validate_dataframes(orders_df, stock_df)
+        if validation_errors:
+            # Join all error messages into a single string
+            error_message = "\n".join(validation_errors)
+            print(f"ERROR: {error_message}")
+            return False, error_message, None, None
 
         history_path = 'fulfillment_history.csv'
         try:
@@ -76,9 +104,8 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
 
     except Exception as e:
         error_message = f"An unexpected error occurred during analysis. See logs/app_errors.log for details."
-        logger.error("Error in run_full_analysis", exc_info=True)
-        print(f"ERROR: {error_message}")  # keep print for GUI logging
-        return False, error_message, None, None
+        logger.error("Unhandled exception in run_full_analysis", exc_info=True)
+        return False, str(e), None, None
 
 def create_packing_list_report(analysis_df, report_config):
     """
