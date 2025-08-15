@@ -88,6 +88,8 @@ def run_analysis(stock_df, orders_df, history_df):
 
     # 2. Identify items that are "truly missing" by comparing required quantity vs initial stock.
     truly_missing_df = not_fulfilled_df[not_fulfilled_df['Quantity'] > not_fulfilled_df['Stock']]
+    # Ensure missing product names are handled before grouping
+    truly_missing_df['Product_Name'].fillna('N/A', inplace=True)
 
     # 3. Create the summary report from this filtered data.
     if not truly_missing_df.empty:
