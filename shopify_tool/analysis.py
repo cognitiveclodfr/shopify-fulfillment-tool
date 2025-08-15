@@ -47,18 +47,22 @@ def run_analysis(stock_df, orders_df, history_df):
     for order_number in prioritized_orders['Order_Number']:
         order_items = orders_with_counts[orders_with_counts['Order_Number'] == order_number]
         can_fulfill_order = True
+        # Перевіряємо, чи можна виконати замовлення
         for _, item in order_items.iterrows():
             sku, required_qty = item['SKU'], item['Quantity']
             if required_qty > live_stock.get(sku, 0):
                 can_fulfill_order = False
                 break
-        
+        # Якщо так, списуємо товари
         if can_fulfill_order:
             fulfillment_results[order_number] = 'Fulfillable'
             for _, item in order_items.iterrows():
                 live_stock[item['SKU']] -= item['Quantity']
         else:
             fulfillment_results[order_number] = 'Not Fulfillable'
+
+    # Calculate final stock levels after fulfillment
+    final_stock_levels = pd.Series(live_stock, name="Final_Stock").reset_index().rename(columns={'index': 'SKU'})
 
     # --- Final Report Generation ---
     final_df = pd.merge(orders_clean_df, stock_clean_df, on='SKU', how='left')
@@ -68,9 +72,7 @@ def run_analysis(stock_df, orders_df, history_df):
     final_df['Shipping_Provider'] = final_df['Shipping Method'].apply(_generalize_shipping_method)
     final_df['Order_Fulfillment_Status'] = final_df['Order_Number'].map(fulfillment_results)
     final_df['Destination_Country'] = np.where(final_df['Shipping_Provider'] == 'DHL', final_df['Shipping Country'], '')
-    
     final_df['Status_Note'] = np.where(final_df['Order_Number'].isin(history_df['Order_Number']), 'Repeat', '')
-    
     output_columns = ['Order_Number', 'Order_Type', 'SKU', 'Product_Name', 'Quantity', 'Stock', 'Order_Fulfillment_Status', 'Shipping_Provider', 'Destination_Country', 'Shipping Method', 'Tags', 'Notes', 'Status_Note']
     final_df = final_df[output_columns]
 
@@ -80,11 +82,20 @@ def run_analysis(stock_df, orders_df, history_df):
     summary_present_df.rename(columns={'Product_Name': 'Name', 'Quantity': 'Total Quantity'}, inplace=True)
     summary_present_df = summary_present_df[['Name', 'SKU', 'Total Quantity']]
 
-    missing_df = final_df[final_df['Order_Fulfillment_Status'] == 'Not Fulfillable'].copy()
-    missing_df['Product_Name'].fillna('N/A', inplace=True)
-    summary_missing_df = missing_df.groupby(['SKU', 'Product_Name'], as_index=False)['Quantity'].sum()
-    summary_missing_df.rename(columns={'Product_Name': 'Name', 'Quantity': 'Total Quantity'}, inplace=True)
-    summary_missing_df = summary_missing_df[['Name', 'SKU', 'Total Quantity']]
+    # --- New logic for Summary_Missing ---
+    # 1. Get all items from orders that could not be fulfilled.
+    not_fulfilled_df = final_df[final_df['Order_Fulfillment_Status'] == 'Not Fulfillable'].copy()
+
+    # 2. Identify items that are "truly missing" by comparing required quantity vs initial stock.
+    truly_missing_df = not_fulfilled_df[not_fulfilled_df['Quantity'] > not_fulfilled_df['Stock']]
+
+    # 3. Create the summary report from this filtered data.
+    if not truly_missing_df.empty:
+        summary_missing_df = truly_missing_df.groupby(['SKU', 'Product_Name'], as_index=False)['Quantity'].sum()
+        summary_missing_df.rename(columns={'Product_Name': 'Name', 'Quantity': 'Total Quantity'}, inplace=True)
+        summary_missing_df = summary_missing_df[['Name', 'SKU', 'Total Quantity']]
+    else:
+        summary_missing_df = pd.DataFrame(columns=['Name', 'SKU', 'Total Quantity'])
 
     # --- Statistics Calculation ---
     stats = {}
