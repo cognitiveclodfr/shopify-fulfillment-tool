@@ -74,17 +74,16 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
 
         return True, output_file_path, final_df, stats
 
-except Exception as e:
-    error_message = f"An unexpected error occurred during analysis. See app_errors.log for details."
-    logger.error("Error in run_full_analysis", exc_info=True)
-    print(f"ERROR: {error_message}") # Keep print for the GUI log
-    return False, error_message, None, None
+    except Exception as e:
+        error_message = f"An unexpected error occurred during analysis. See logs/app_errors.log for details."
+        logger.error("Error in run_full_analysis", exc_info=True)
+        print(f"ERROR: {error_message}")  # keep print for GUI logging
+        return False, error_message, None, None
 
 def create_packing_list_report(analysis_df, report_config):
     """
     Generates a single packing list report.
     """
-    # This function remains largely the same
     report_name = report_config.get('name', 'Unknown Report')
     try:
         output_file = report_config['output_filename']
@@ -99,15 +98,14 @@ def create_packing_list_report(analysis_df, report_config):
         success_message = f"Report '{report_name}' created successfully at '{output_file}'."
         return True, success_message
     except Exception as e:
-    error_message = f"Failed to create report '{report_name}'. See app_errors.log for details."
-    logger.error(f"Error creating packing list '{report_name}'", exc_info=True)
-    return False, error_message
+        error_message = f"Failed to create report '{report_name}'. See logs/app_errors.log for details."
+        logger.error(f"Error creating packing list '{report_name}': {e}", exc_info=True)
+        return False, error_message
 
 def create_stock_export_report(analysis_df, report_config, templates_path, output_path):
     """
     Generates a single stock export report.
     """
-    # This function remains largely the same
     report_name = report_config.get('name', 'Unknown Report')
     try:
         template_name = report_config['template']
@@ -129,7 +127,7 @@ def create_stock_export_report(analysis_df, report_config, templates_path, outpu
         )
         success_message = f"Stock export '{report_name}' created successfully at '{output_full_path}'."
         return True, success_message
-except Exception as e:
-    error_message = f"Failed to create stock export '{report_name}'. See app_errors.log for details."
-    logger.error(f"Error creating stock export '{report_name}'", exc_info=True)
-    return False, error_message
+    except Exception as e:
+        error_message = f"Failed to create stock export '{report_name}'. See logs/app_errors.log for details."
+        logger.error(f"Error creating stock export '{report_name}': {e}", exc_info=True)
+        return False, error_message

@@ -10,6 +10,9 @@ import logging
 from shopify_tool.logger_config import setup_logging
 from datetime import datetime
 
+# configure logging early so other modules get the handlers
+setup_logging()
+logger = logging.getLogger('ShopifyToolLogger')
 # --- Helper classes and functions ---
 
 class ToolTip:
@@ -69,9 +72,6 @@ class App(ctk.CTk):
         self.log_file_path = resource_path('app_history.log')
 
         self.create_widgets()
-setup_logging()
-self.logger = logging.getLogger('ShopifyToolLogger')
-
     def load_config(self):
         """ Loads the main configuration file. """
         try:
@@ -511,6 +511,7 @@ class ReportBuilderWindow(ctk.CTkToplevel):
         if not save_path: return
 
         try:
+            report_df.to_excel(save_path, index=False)
             self.parent.log_activity("Custom Report", f"Custom report saved successfully to: {save_path}")
             self.destroy()
         except Exception as e:
