@@ -6,6 +6,8 @@ import sys
 import os
 import pandas as pd
 import json
+import logging
+from shopify_tool.logger_config import setup_logging
 from datetime import datetime
 
 # --- Helper classes and functions ---
@@ -67,6 +69,8 @@ class App(ctk.CTk):
         self.log_file_path = resource_path('app_history.log')
 
         self.create_widgets()
+setup_logging()
+self.logger = logging.getLogger('ShopifyToolLogger')
 
     def load_config(self):
         """ Loads the main configuration file. """
