@@ -1,58 +1,43 @@
-# Назва робочого процесу
 name: Build Python EXE for Release
 
-# Умова запуску: процес активується при створенні нового релізу на GitHub
 on:
   release:
     types: [created]
 
-# Завдання, які будуть виконуватися
 jobs:
   build:
-    # Запуск на віртуальній машині з останньою версією Windows
     runs-on: windows-latest
 
     steps:
-      # 1. Крок: Завантаження коду з вашого репозиторію
       - name: Check out the repo
         uses: actions/checkout@v4
 
-      # 2. Крок: Налаштування Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11' # Ви можете змінити на іншу версію, якщо потрібно
+          python-version: '3.11'
 
-      # 3. Крок: Встановлення залежностей проєкту та PyInstaller
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt # Встановлюємо залежності з вашого файлу
+          pip install -r requirements.txt
+          pip install pyinstaller
 
-      # 4. Крок: Збірка EXE-файлу за допомогою PyInstaller
       - name: Build EXE with PyInstaller
         run: >
           pyinstaller 
           --onefile 
           --windowed 
-          --add-data "config.json:." 
+          --add-data "config.json;." 
           --name "ShopifyFulfillmentTool" 
           gui_main.py
-        # --onefile: створює один .exe файл
-        # --windowed: прибирає вікно консолі (обов'язково для GUI)
-        # --add-data "config.json:.": додає файл конфігурації до збірки
-        # --name "ShopifyFulfillmentTool": ім'я вашого .exe файлу
-        # gui_main.py: ваш головний скрипт
 
-      # 5. Крок: Завантаження зібраного .exe файлу як артефакту релізу
+      - name: List dist folder
+        run: dir dist
+
       - name: Upload EXE to release
-        uses: actions/upload-release-asset@v1
+        uses: softprops/action-gh-release@v1
         with:
-          # Токен для доступу до API GitHub (створюється автоматично)
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          # Шлях до файлу, який потрібно завантажити
-          asset_path: dist/ShopifyFulfillmentTool.exe
-          # Ім'я файлу, яке буде відображатися в релізі
-          asset_name: ShopifyFulfillmentTool-v${{ github.ref_name }}.exe
-          # Тип контенту
-          asset_content_type: application/vnd.microsoft.portable-executable
+          files: dist/ShopifyFulfillmentTool.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
