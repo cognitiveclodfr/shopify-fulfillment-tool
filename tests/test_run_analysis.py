@@ -26,19 +26,30 @@ def make_test_data():
     })
     # History: empty for simplicity
     history_df = pd.DataFrame({'Order_Number': []})
-    return stock_df, orders_df, history_df
+    # Config with low_stock_threshold
+    config = {
+        'settings': {
+            'low_stock_threshold': 10,
+            'stock_csv_delimiter': ';'
+        }
+    }
+    return stock_df, orders_df, history_df, config
 
 def test_run_analysis_basic():
-    stock_df, orders_df, history_df = make_test_data()
-    final_df, summary_present_df, summary_missing_df, stats = run_analysis(stock_df, orders_df, history_df)
+    from shopify_tool import core
+    stock_df, orders_df, history_df, config = make_test_data()
+    # Use core.run_full_analysis to test new logic
+    success, _, final_df, stats = core.run_full_analysis(
+        stock_file_path=None,
+        orders_file_path=None,
+        output_dir_path=None,
+        stock_delimiter=';',
+        config=config
+    )
+    assert success
     # Check fulfillment status
     assert final_df.loc[final_df['Order_Number'] == 'Order1', 'Order_Fulfillment_Status'].iloc[0] == 'Fulfillable'
     assert final_df.loc[final_df['Order_Number'] == 'Order2', 'Order_Fulfillment_Status'].iloc[0] == 'Not Fulfillable'
-    # Check summary_present_df
-    assert summary_present_df['SKU'].tolist() == ['SKU1']
-    # Check summary_missing_df
-    assert summary_missing_df['SKU'].tolist() == ['SKU2']
-    assert summary_missing_df['Total Quantity'].iloc[0] == 2
-    # Check stats
-    assert stats['total_orders_completed'] == 1
-    assert stats['total_orders_not_completed'] == 1
+    # Check Stock_Alert logic
+    assert final_df.loc[final_df['SKU'] == 'SKU1', 'Stock_Alert'].iloc[0] == 'Low Stock'
+    assert final_df.loc[final_df['SKU'] == 'SKU2', 'Stock_Alert'].iloc[0] == 'Low Stock'

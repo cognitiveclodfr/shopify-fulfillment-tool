@@ -26,30 +26,34 @@ def _validate_dataframes(orders_df, stock_df):
 
     return errors
 
-def run_full_analysis(self, stock_file_path, orders_file_path, output_dir_path, stock_delimiter):
+def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_delimiter, config):
     """
     Loads data, runs analysis, saves all report files, and updates history.
     """
     print("--- Starting Full Analysis Process ---")
-    try:
-        # 1. Load data
-        print("Step 1: Loading data files...")
+    # 1. Load data
+    print("Step 1: Loading data files...")
+    if stock_file_path is not None and orders_file_path is not None:
         if not os.path.exists(stock_file_path) or not os.path.exists(orders_file_path):
             return False, "One or both input files were not found.", None, None
-        
         stock_df = pd.read_csv(stock_file_path, delimiter=stock_delimiter)
         orders_df = pd.read_csv(orders_file_path)
-        print("Data loaded successfully.")
+    else:
+        # For testing: allow passing DataFrames directly
+        stock_df = config.get('test_stock_df')
+        orders_df = config.get('test_orders_df')
+        history_df = config.get('test_history_df', pd.DataFrame({'Order_Number': []}))
+    print("Data loaded successfully.")
 
-        # Validate dataframes
-        validation_errors = _validate_dataframes(orders_df, stock_df)
-        if validation_errors:
-            # Join all error messages into a single string
-            error_message = "\n".join(validation_errors)
-            print(f"ERROR: {error_message}")
-            return False, error_message, None, None
+    # Validate dataframes
+    validation_errors = _validate_dataframes(orders_df, stock_df)
+    if validation_errors:
+        error_message = "\n".join(validation_errors)
+        print(f"ERROR: {error_message}")
+        return False, error_message, None, None
 
-        history_path = 'fulfillment_history.csv'
+    history_path = 'fulfillment_history.csv'
+    if stock_file_path is not None and orders_file_path is not None:
         try:
             history_df = pd.read_csv(history_path)
             print(f"Loaded {len(history_df)} records from fulfillment history.")
@@ -57,24 +61,25 @@ def run_full_analysis(self, stock_file_path, orders_file_path, output_dir_path, 
             history_df = pd.DataFrame(columns=['Order_Number', 'Execution_Date'])
             print("Fulfillment history not found. A new one will be created.")
 
-        # 2. Run analysis (computation only)
-        print("Step 2: Running fulfillment simulation...")
-        final_df, summary_present_df, summary_missing_df, stats = analysis.run_analysis(
-            stock_df, orders_df, history_df
+    # 2. Run analysis (computation only)
+    print("Step 2: Running fulfillment simulation...")
+    final_df, summary_present_df, summary_missing_df, stats = analysis.run_analysis(
+        stock_df, orders_df, history_df
+    )
+    print("Analysis computation complete.")
+
+    # 2.5. Add stock alerts based on config
+    low_stock_threshold = config.get('settings', {}).get('low_stock_threshold')
+    if low_stock_threshold is not None and 'Final_Stock' in final_df.columns:
+        print(f"Applying low stock threshold: < {low_stock_threshold}")
+        final_df['Stock_Alert'] = np.where(
+            final_df['Final_Stock'] < low_stock_threshold,
+            'Low Stock',
+            ''
         )
-        print("Analysis computation complete.")
 
-        # 2.5. Add stock alerts based on config
-        low_stock_threshold = self.config.get('settings', {}).get('low_stock_threshold')
-        if low_stock_threshold is not None and 'Final_Stock' in final_df.columns:
-            print(f"Applying low stock threshold: < {low_stock_threshold}")
-            final_df['Stock_Alert'] = np.where(
-                final_df['Final_Stock'] < low_stock_threshold,
-                'Low Stock',
-                ''
-            )
-
-        # 3. Save Excel report
+    # 3. Save Excel report (skip in test mode)
+    if stock_file_path is not None and orders_file_path is not None:
         print("Step 3: Saving analysis report to Excel...")
         if not os.path.exists(output_dir_path):
             os.makedirs(output_dir_path)
@@ -110,13 +115,10 @@ def run_full_analysis(self, stock_file_path, orders_file_path, output_dir_path, 
             updated_history = pd.concat([history_df, newly_fulfilled]).drop_duplicates(subset=['Order_Number'], keep='last')
             updated_history.to_csv(history_path, index=False)
             print(f"Updated fulfillment history with {len(newly_fulfilled)} new records.")
-
         return True, output_file_path, final_df, stats
-
-    except Exception as e:
-        error_message = f"An unexpected error occurred during analysis. See logs/app_errors.log for details."
-        logger.error("Unhandled exception in run_full_analysis", exc_info=True)
-        return False, str(e), None, None
+    else:
+        # For tests, just return the DataFrames
+        return True, None, final_df, stats
 
 def create_packing_list_report(analysis_df, report_config):
     """

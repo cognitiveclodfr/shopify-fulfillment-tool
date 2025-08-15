@@ -54,7 +54,7 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
-from shopify_tool import core as core_logic
+from shopify_tool import core
 
 class App(ctk.CTk):
     def __init__(self):
@@ -324,7 +324,7 @@ class App(ctk.CTk):
         output_dir = self.config['paths']['output']['analysis_file']
         stock_delimiter = self.config['settings']['stock_csv_delimiter']
         
-    success, result, df, stats = core_logic.run_full_analysis(self, stock_path, orders_path, os.path.dirname(output_dir), stock_delimiter)
+    success, result, df, stats = core.run_full_analysis(stock_path, orders_path, os.path.dirname(output_dir), stock_delimiter, self.config)
     self.after(0, self.on_analysis_complete, success, result, df, stats)
 
     def on_analysis_complete(self, success, result, df, stats):
@@ -395,14 +395,14 @@ class App(ctk.CTk):
         Wrapper function that calls the appropriate core report function.
         """
         if report_type == "packing_lists":
-            success, message = core_logic.create_packing_list_report(
+            success, message = core.create_packing_list_report(
                 analysis_df=self.analysis_results_df,
                 report_config=report_config
             )
         elif report_type == "stock_exports":
             templates_path = resource_path(self.config['paths']['templates'])
             output_path = self.config['paths']['output_dir_stock']
-            success, message = core_logic.create_stock_export_report(
+            success, message = core.create_stock_export_report(
                 analysis_df=self.analysis_results_df,
                 report_config=report_config,
                 templates_path=templates_path,
