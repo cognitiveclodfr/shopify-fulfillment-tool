@@ -14,6 +14,14 @@
   "stock_csv_delimiter": ";",
   "low_stock_threshold": 10
   },
+  "tagging_rules": {
+    "special_sku_tags": {
+      "02-FACE-1001": "MASK",
+      "02-FACE-1002": "MASK",
+      "02-FACE-1003": "MASK"
+    },
+    "composite_order_tag": "BOX"
+  },
   "packing_lists": [
     {
       "name": "All Fulfillable Orders",

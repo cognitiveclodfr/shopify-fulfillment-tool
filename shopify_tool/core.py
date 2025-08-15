@@ -26,6 +26,42 @@ def _validate_dataframes(orders_df, stock_df):
 
     return errors
 
+def _apply_tagging_rules(df, config):
+    """Applies custom tagging rules to the Status_Note column."""
+    rules = config.get('tagging_rules', {})
+    special_skus = rules.get('special_sku_tags', {})
+    composite_tag = rules.get('composite_order_tag', 'BOX')
+
+    if not special_skus:
+        return df
+
+    print("Applying custom tagging rules...")
+    
+    order_notes = {}
+    # Iterate through each order group explicitly
+    for order_number, order_group in df.groupby('Order_Number'):
+        # Start with existing notes (like 'Repeat')
+        current_notes = set(note for note in order_group['Status_Note'].unique() if note)
+
+        order_skus = set(order_group['SKU'])
+        found_special_skus = False
+        
+        for sku, tag in special_skus.items():
+            if sku in order_skus:
+                current_notes.add(tag)
+                found_special_skus = True
+        
+        # If a special SKU is found and there are other items in the order
+        if found_special_skus and len(order_skus) > 1:
+            current_notes.add(composite_tag)
+            
+        order_notes[order_number] = ", ".join(sorted(list(current_notes)))
+
+    # Map the generated notes back to the main dataframe
+    df['Status_Note'] = df['Order_Number'].map(order_notes).fillna('')
+    
+    return df
+
 def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_delimiter, config):
     """
     Loads data, runs analysis, saves all report files, and updates history.
@@ -77,6 +113,9 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
             'Low Stock',
             ''
         )
+
+    # 2.6. Apply custom tagging rules
+    final_df = _apply_tagging_rules(final_df, config)
 
     # 3. Save Excel report (skip in test mode)
     if stock_file_path is not None and orders_file_path is not None:
