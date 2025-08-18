@@ -138,6 +138,7 @@ class App(ctk.CTk):
         self.tab_view.add("Execution Log")
         self.tab_view.add("Activity Log")
         self.tab_view.add("Analysis Data")
+        self.tab_view.add("Statistics")
 
         # --- Setup Tabs ---
         self.log_area = ctk.CTkTextbox(self.tab_view.tab("Execution Log"), wrap=tk.WORD)
