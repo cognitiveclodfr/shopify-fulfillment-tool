@@ -172,7 +172,8 @@ def create_packing_list_report(analysis_df, report_config):
             analysis_df=analysis_df,
             output_file=output_file,
             report_name=report_name,
-            filters=report_config.get('filters')
+            filters=report_config.get('filters'),
+            exclude_skus=report_config.get('exclude_skus') # Pass the new parameter
         )
         success_message = f"Report '{report_name}' created successfully at '{output_file}'."
         return True, success_message

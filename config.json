@@ -26,7 +26,8 @@
     {
       "name": "All Fulfillable Orders",
       "output_filename": "data/output/packing_list_ALL.xlsx",
-      "filters": {}
+      "filters": {},
+      "exclude_skus": ["07", "Shipping protection"]
     },
     {
       "name": "Single-Item Orders Only",

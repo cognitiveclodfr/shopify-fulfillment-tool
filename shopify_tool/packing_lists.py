@@ -2,7 +2,7 @@ import pandas as pd
 import os
 from datetime import datetime
 
-def create_packing_list(analysis_df, output_file, report_name="Packing List", filters=None):
+def create_packing_list(analysis_df, output_file, report_name="Packing List", filters=None, exclude_skus=None):
     """
     Creates a versatile packing list in .xlsx format with advanced formatting.
     """
@@ -21,6 +21,11 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
         
         full_query = " & ".join(query_parts)
         filtered_orders = analysis_df.query(full_query).copy()
+
+        # Exclude specified SKUs if any are provided
+        if exclude_skus and not filtered_orders.empty:
+            print(f"Excluding SKUs: {exclude_skus}")
+            filtered_orders = filtered_orders[~filtered_orders['SKU'].isin(exclude_skus)]
 
         if filtered_orders.empty:
             print("Result: No orders found matching the criteria.")
