@@ -564,16 +564,100 @@ class SettingsWindow(ctk.CTkToplevel):
         self.title("Application Settings")
         self.geometry("800x600")
 
+        # Make a deep copy of the config to edit, so we can cancel without side effects
+        self.config_data = json.loads(json.dumps(self.parent.config))
+
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
         self.transient(parent)
         self.grab_set()
 
-        # We will add widgets here in the next steps
-        ctk.CTkLabel(self, text="Settings will be here.").pack(pady=20)
+        self.create_widgets()
 
         self.parent.wait_window(self)
+
+    def create_widgets(self):
+        """Creates all widgets for the settings window."""
+        # Main container frame
+        main_frame = ctk.CTkFrame(self)
+        main_frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+        main_frame.grid_columnconfigure(0, weight=1)
+        main_frame.grid_rowconfigure(0, weight=1)
+
+        # Tab view for different settings categories
+        self.tab_view = ctk.CTkTabview(main_frame)
+        self.tab_view.grid(row=0, column=0, sticky="nsew")
+        
+        self.tab_view.add("General & Paths")
+        self.tab_view.add("Tagging Rules")
+        self.tab_view.add("Packing Lists")
+        self.tab_view.add("Stock Exports")
+
+        # Create content for the first tab
+        self.create_general_tab()
+
+        # Buttons frame
+        buttons_frame = ctk.CTkFrame(self)
+        buttons_frame.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="ew")
+        buttons_frame.grid_columnconfigure((0, 1), weight=1)
+
+        save_button = ctk.CTkButton(buttons_frame, text="Save and Close", command=self.save_settings)
+        save_button.grid(row=0, column=0, padx=10, pady=5, sticky="e")
+
+        cancel_button = ctk.CTkButton(buttons_frame, text="Cancel", command=self.destroy, fg_color="gray")
+        cancel_button.grid(row=0, column=1, padx=10, pady=5, sticky="w")
+
+    def create_general_tab(self):
+        """Creates widgets for the 'General & Paths' tab."""
+        general_tab = self.tab_view.tab("General & Paths")
+        general_tab.grid_columnconfigure(1, weight=1)
+
+        # --- Settings Section ---
+        ctk.CTkLabel(general_tab, text="General Settings", font=("Arial", 16, "bold")).grid(row=0, column=0, columnspan=2, pady=10, padx=10, sticky="w")
+
+        ctk.CTkLabel(general_tab, text="Stock CSV Delimiter:").grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        self.stock_delimiter_var = tk.StringVar(value=self.config_data.get('settings', {}).get('stock_csv_delimiter', ';'))
+        ctk.CTkEntry(general_tab, textvariable=self.stock_delimiter_var).grid(row=1, column=1, padx=10, pady=5, sticky="ew")
+        
+        ctk.CTkLabel(general_tab, text="Low Stock Threshold:").grid(row=2, column=0, padx=10, pady=5, sticky="w")
+        self.low_stock_var = tk.StringVar(value=self.config_data.get('settings', {}).get('low_stock_threshold', 10))
+        ctk.CTkEntry(general_tab, textvariable=self.low_stock_var).grid(row=2, column=1, padx=10, pady=5, sticky="ew")
+
+        # --- Paths Section ---
+        ctk.CTkLabel(general_tab, text="File Paths", font=("Arial", 16, "bold")).grid(row=3, column=0, columnspan=2, pady=(20, 10), padx=10, sticky="w")
+
+        ctk.CTkLabel(general_tab, text="Templates Directory:").grid(row=4, column=0, padx=10, pady=5, sticky="w")
+        self.templates_path_var = tk.StringVar(value=self.config_data.get('paths', {}).get('templates', ''))
+        ctk.CTkEntry(general_tab, textvariable=self.templates_path_var).grid(row=4, column=1, padx=10, pady=5, sticky="ew")
+
+        ctk.CTkLabel(general_tab, text="Stock Export Output Directory:").grid(row=5, column=0, padx=10, pady=5, sticky="w")
+        self.stock_output_path_var = tk.StringVar(value=self.config_data.get('paths', {}).get('output_dir_stock', ''))
+        ctk.CTkEntry(general_tab, textvariable=self.stock_output_path_var).grid(row=5, column=1, padx=10, pady=5, sticky="ew")
+
+    def save_settings(self):
+        """Saves the current settings back to the config object and file."""
+        try:
+            # Update settings
+            self.config_data['settings']['stock_csv_delimiter'] = self.stock_delimiter_var.get()
+            self.config_data['settings']['low_stock_threshold'] = int(self.low_stock_var.get())
+            
+            # Update paths
+            self.config_data['paths']['templates'] = self.templates_path_var.get()
+            self.config_data['paths']['output_dir_stock'] = self.stock_output_path_var.get()
+
+            # Write to the parent's config object and save to file
+            self.parent.config = self.config_data
+            with open(self.parent.config_path, 'w', encoding='utf-8') as f:
+                json.dump(self.parent.config, f, indent=2, ensure_ascii=False)
+            
+            messagebox.showinfo("Success", "Settings saved successfully.", parent=self)
+            self.destroy()
+
+        except ValueError:
+            messagebox.showerror("Validation Error", "Low Stock Threshold must be a valid number.", parent=self)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save settings: {e}", parent=self)
 
 if __name__ == "__main__":
     app = App()
