@@ -589,17 +589,18 @@ class SettingsWindow(ctk.CTkToplevel):
         self.tab_view = ctk.CTkTabview(main_frame)
         self.tab_view.grid(row=0, column=0, sticky="nsew")
         
-        self.tab_view.add("General & Paths")
-        self.tab_view.add("Tagging Rules")
-        self.tab_view.add("Packing Lists")
-        self.tab_view.add("Stock Exports")
+    self.tab_view.add("General & Paths")
+    self.tab_view.add("Tagging Rules")
+    self.tab_view.add("Packing Lists")
+    self.tab_view.add("Stock Exports")
 
-    # Create content for the first tab
+    # Create content for tabs
     self.create_general_tab()
-    # Create tagging rules tab
     self.create_tagging_tab()
+    self.create_packing_lists_tab()
+    self.create_stock_exports_tab()
 
-        # Buttons frame
+    # Buttons frame
         buttons_frame = ctk.CTkFrame(self)
         buttons_frame.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="ew")
         buttons_frame.grid_columnconfigure((0, 1), weight=1)
@@ -664,6 +665,39 @@ class SettingsWindow(ctk.CTkToplevel):
                     new_special_tags[sku] = tag
             self.config_data.setdefault('tagging_rules', {})
             self.config_data['tagging_rules']['special_sku_tags'] = new_special_tags
+            # Update packing lists
+            new_packing_lists = []
+            for widgets in getattr(self, 'packing_list_widgets', []):
+                try:
+                    filters = json.loads(widgets['filters_var'].get() or '{}')
+                    exclude_skus_str = widgets['exclude_skus_var'].get()
+                    exclude_skus = [sku.strip() for sku in exclude_skus_str.split(',') if sku.strip()]
+                    
+                    new_packing_lists.append({
+                        "name": widgets['name_var'].get(),
+                        "output_filename": widgets['filename_var'].get(),
+                        "filters": filters,
+                        "exclude_skus": exclude_skus
+                    })
+                except json.JSONDecodeError:
+                    messagebox.showerror("Validation Error", "Invalid JSON format in Packing List filters.", parent=self)
+                    return
+            self.config_data['packing_lists'] = new_packing_lists
+
+            # Update stock exports
+            new_stock_exports = []
+            for widgets in getattr(self, 'stock_export_widgets', []):
+                try:
+                    filters = json.loads(widgets['filters_var'].get() or '{}')
+                    new_stock_exports.append({
+                        "name": widgets['name_var'].get(),
+                        "template": widgets['template_var'].get(),
+                        "filters": filters
+                    })
+                except json.JSONDecodeError:
+                    messagebox.showerror("Validation Error", "Invalid JSON format in Stock Export filters.", parent=self)
+                    return
+            self.config_data['stock_exports'] = new_stock_exports
 
             # Write to the parent's config object and save to file
             self.parent.config = self.config_data
@@ -768,6 +802,127 @@ class SettingsWindow(ctk.CTkToplevel):
         
         # Remove from our list
         self.rule_widgets.remove(widget_to_delete)
+
+    def create_packing_lists_tab(self):
+        """Creates widgets for the 'Packing Lists' tab."""
+        tab = self.tab_view.tab("Packing Lists")
+        tab.grid_columnconfigure(0, weight=1)
+
+        self.packing_lists_frame = ctk.CTkScrollableFrame(tab, label_text="Configured Packing Lists")
+        self.packing_lists_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        self.packing_lists_frame.grid_columnconfigure(0, weight=1)
+
+        self.packing_list_widgets = []
+        self.populate_packing_lists()
+
+        add_button = ctk.CTkButton(tab, text="Add New Packing List", command=self.add_packing_list_entry)
+        add_button.grid(row=1, column=0, pady=10, padx=10, sticky="w")
+
+    def populate_packing_lists(self):
+        """Populates the UI with packing list configurations."""
+        for widgets in getattr(self, 'packing_list_widgets', []):
+            widgets['frame'].destroy()
+        self.packing_list_widgets = []
+
+        for report_config in self.config_data.get('packing_lists', []):
+            self.add_packing_list_entry(report_config)
+
+    def add_packing_list_entry(self, config=None):
+        """Adds a new entry for a packing list configuration."""
+        if config is None:
+            config = {"name": "New Packing List", "output_filename": "data/output/new_list.xlsx", "filters": {}, "exclude_skus": []}
+
+        entry_frame = ctk.CTkFrame(self.packing_lists_frame, border_width=1)
+        entry_frame.pack(fill="x", expand=True, padx=5, pady=5)
+        entry_frame.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(entry_frame, text="Name:").grid(row=0, column=0, padx=5, pady=2, sticky="w")
+        name_var = tk.StringVar(value=config.get('name', ''))
+        ctk.CTkEntry(entry_frame, textvariable=name_var).grid(row=0, column=1, columnspan=2, padx=5, pady=2, sticky="ew")
+
+        ctk.CTkLabel(entry_frame, text="Output Filename:").grid(row=1, column=0, padx=5, pady=2, sticky="w")
+        filename_var = tk.StringVar(value=config.get('output_filename', ''))
+        ctk.CTkEntry(entry_frame, textvariable=filename_var).grid(row=1, column=1, columnspan=2, padx=5, pady=2, sticky="ew")
+
+        ctk.CTkLabel(entry_frame, text="Filters (JSON):").grid(row=2, column=0, padx=5, pady=2, sticky="w")
+        filters_var = tk.StringVar(value=json.dumps(config.get('filters', {})))
+        ctk.CTkEntry(entry_frame, textvariable=filters_var).grid(row=2, column=1, columnspan=2, padx=5, pady=2, sticky="ew")
+
+        ctk.CTkLabel(entry_frame, text="Exclude SKUs (comma-separated):").grid(row=3, column=0, padx=5, pady=2, sticky="w")
+        exclude_skus_var = tk.StringVar(value=", ".join(config.get('exclude_skus', [])))
+        ctk.CTkEntry(entry_frame, textvariable=exclude_skus_var).grid(row=3, column=1, columnspan=2, padx=5, pady=2, sticky="ew")
+
+        delete_button = ctk.CTkButton(entry_frame, text="Delete", fg_color="red", width=60,
+                                      command=lambda f=entry_frame: self.delete_packing_list_entry(f))
+        delete_button.grid(row=4, column=2, padx=5, pady=5, sticky="e")
+
+        self.packing_list_widgets.append({
+            'frame': entry_frame, 'name_var': name_var, 'filename_var': filename_var,
+            'filters_var': filters_var, 'exclude_skus_var': exclude_skus_var
+        })
+        
+    def delete_packing_list_entry(self, frame_to_delete):
+        """Removes a packing list entry from the UI."""
+        frame_to_delete.destroy()
+        self.packing_list_widgets = [w for w in self.packing_list_widgets if w['frame'] is not frame_to_delete]
+
+    def create_stock_exports_tab(self):
+        """Creates widgets for the 'Stock Exports' tab."""
+        tab = self.tab_view.tab("Stock Exports")
+        tab.grid_columnconfigure(0, weight=1)
+
+        self.stock_exports_frame = ctk.CTkScrollableFrame(tab, label_text="Configured Stock Exports")
+        self.stock_exports_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        self.stock_exports_frame.grid_columnconfigure(0, weight=1)
+
+        self.stock_export_widgets = []
+        self.populate_stock_exports()
+
+        add_button = ctk.CTkButton(tab, text="Add New Stock Export", command=self.add_stock_export_entry)
+        add_button.grid(row=1, column=0, pady=10, padx=10, sticky="w")
+
+    def populate_stock_exports(self):
+        """Populates the UI with stock export configurations."""
+        for widgets in getattr(self, 'stock_export_widgets', []):
+            widgets['frame'].destroy()
+        self.stock_export_widgets = []
+
+        for report_config in self.config_data.get('stock_exports', []):
+            self.add_stock_export_entry(report_config)
+
+    def add_stock_export_entry(self, config=None):
+        """Adds a new entry for a stock export configuration."""
+        if config is None:
+            config = {"name": "New Stock Export", "template": "template.xls", "filters": {}}
+
+        entry_frame = ctk.CTkFrame(self.stock_exports_frame, border_width=1)
+        entry_frame.pack(fill="x", expand=True, padx=5, pady=5)
+        entry_frame.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(entry_frame, text="Name:").grid(row=0, column=0, padx=5, pady=2, sticky="w")
+        name_var = tk.StringVar(value=config.get('name', ''))
+        ctk.CTkEntry(entry_frame, textvariable=name_var).grid(row=0, column=1, columnspan=2, padx=5, pady=2, sticky="ew")
+
+        ctk.CTkLabel(entry_frame, text="Template Filename:").grid(row=1, column=0, padx=5, pady=2, sticky="w")
+        template_var = tk.StringVar(value=config.get('template', ''))
+        ctk.CTkEntry(entry_frame, textvariable=template_var).grid(row=1, column=1, columnspan=2, padx=5, pady=2, sticky="ew")
+
+        ctk.CTkLabel(entry_frame, text="Filters (JSON):").grid(row=2, column=0, padx=5, pady=2, sticky="w")
+        filters_var = tk.StringVar(value=json.dumps(config.get('filters', {})))
+        ctk.CTkEntry(entry_frame, textvariable=filters_var).grid(row=2, column=1, columnspan=2, padx=5, pady=2, sticky="ew")
+
+        delete_button = ctk.CTkButton(entry_frame, text="Delete", fg_color="red", width=60,
+                                      command=lambda f=entry_frame: self.delete_stock_export_entry(f))
+        delete_button.grid(row=3, column=2, padx=5, pady=5, sticky="e")
+
+        self.stock_export_widgets.append({
+            'frame': entry_frame, 'name_var': name_var, 'template_var': template_var, 'filters_var': filters_var
+        })
+        
+    def delete_stock_export_entry(self, frame_to_delete):
+        """Removes a stock export entry from the UI."""
+        frame_to_delete.destroy()
+        self.stock_export_widgets = [w for w in self.stock_export_widgets if w['frame'] is not frame_to_delete]
 
 if __name__ == "__main__":
     app = App()
