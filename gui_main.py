@@ -106,12 +106,14 @@ class App(ctk.CTk):
 
         ctk.CTkLabel(files_frame, textvariable=self.stock_file_path).grid(row=1, column=1, padx=10, pady=5, sticky="w")
 
-        actions_frame = ctk.CTkFrame(self)
-        actions_frame.grid(row=1, column=0, padx=10, pady=0, sticky="ew")
-        actions_frame.grid_columnconfigure((0, 1, 2), weight=1)
+    actions_frame = ctk.CTkFrame(self)
+    actions_frame.grid(row=1, column=0, padx=10, pady=0, sticky="ew")
+    # Reserve middle column to expand so buttons on the right stay aligned
+    actions_frame.grid_columnconfigure(1, weight=1)
 
-        self.run_analysis_button = ctk.CTkButton(actions_frame, text="Run Analysis", state="disabled", command=self.start_analysis_thread)
-        self.run_analysis_button.grid(row=0, column=0, columnspan=3, padx=10, pady=10, sticky="ew")
+    self.run_analysis_button = ctk.CTkButton(actions_frame, text="Run Analysis", state="disabled", command=self.start_analysis_thread)
+    # Span only two columns so a Settings button can be placed on the right
+    self.run_analysis_button.grid(row=0, column=0, columnspan=2, padx=10, pady=10, sticky="ew")
         ToolTip(self.run_analysis_button, "Start the fulfillment analysis based on the loaded files.")
 
         self.packing_list_button = ctk.CTkButton(actions_frame, text="Create Packing List", state="disabled", command=self.open_packing_list_window)
@@ -125,6 +127,11 @@ class App(ctk.CTk):
         self.report_builder_button = ctk.CTkButton(actions_frame, text="Report Builder", state="disabled", command=self.open_report_builder_window)
         self.report_builder_button.grid(row=1, column=2, padx=5, pady=5, sticky="ew")
         ToolTip(self.report_builder_button, "Create a custom report with your own filters and columns.")
+        
+    # Settings button (opens the Settings window)
+    self.settings_button = ctk.CTkButton(actions_frame, text="Settings", command=self.open_settings_window)
+    self.settings_button.grid(row=0, column=2, padx=10, pady=10, sticky="e")
+    ToolTip(self.settings_button, "Open the application settings window.")
 
         self.tab_view = ctk.CTkTabview(self)
         self.tab_view.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
@@ -372,6 +379,9 @@ class App(ctk.CTk):
             return
         ReportBuilderWindow(self)
 
+    def open_settings_window(self):
+        SettingsWindow(self)
+
     def create_report_window(self, report_type, title):
         """ Creates a new modal window for report selection. """
         window = ctk.CTkToplevel(self)
@@ -542,6 +552,28 @@ class TextRedirector:
         self.file.write(s)
     def flush(self):
         self.file.flush()
+
+
+class SettingsWindow(ctk.CTkToplevel):
+    """
+    A Toplevel window for managing application settings from config.json.
+    """
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.parent = parent
+        self.title("Application Settings")
+        self.geometry("800x600")
+
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+
+        self.transient(parent)
+        self.grab_set()
+
+        # We will add widgets here in the next steps
+        ctk.CTkLabel(self, text="Settings will be here.").pack(pady=20)
+
+        self.parent.wait_window(self)
 
 if __name__ == "__main__":
     app = App()
