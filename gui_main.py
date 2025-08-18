@@ -104,59 +104,58 @@ class App(ctk.CTk):
         load_stock_btn.grid(row=1, column=0, padx=10, pady=5)
         ToolTip(load_stock_btn, "Select the inventory/stock CSV file.")
 
-    ctk.CTkLabel(files_frame, textvariable=self.stock_file_path).grid(row=1, column=1, padx=10, pady=5, sticky="w")
+        ctk.CTkLabel(files_frame, textvariable=self.stock_file_path).grid(row=1, column=1, padx=10, pady=5, sticky="w")
 
-    actions_frame = ctk.CTkFrame(self)
-    actions_frame.grid(row=1, column=0, padx=10, pady=0, sticky="ew")
-    # Reserve middle column to expand so buttons on the right stay aligned
-    actions_frame.grid_columnconfigure(1, weight=1)
+        actions_frame = ctk.CTkFrame(self)
+        actions_frame.grid(row=1, column=0, padx=10, pady=0, sticky="ew")
+        # Reserve middle column to expand so buttons on the right stay aligned
+        actions_frame.grid_columnconfigure(1, weight=1)
 
-    self.run_analysis_button = ctk.CTkButton(actions_frame, text="Run Analysis", state="disabled", command=self.start_analysis_thread)
-    # Span only two columns so a Settings button can be placed on the right
-    self.run_analysis_button.grid(row=0, column=0, columnspan=2, padx=10, pady=10, sticky="ew")
-    ToolTip(self.run_analysis_button, "Start the fulfillment analysis based on the loaded files.")
+        self.run_analysis_button = ctk.CTkButton(actions_frame, text="Run Analysis", state="disabled", command=self.start_analysis_thread)
+        # Span only two columns so a Settings button can be placed on the right
+        self.run_analysis_button.grid(row=0, column=0, columnspan=2, padx=10, pady=10, sticky="ew")
+        ToolTip(self.run_analysis_button, "Start the fulfillment analysis based on the loaded files.")
 
-    self.packing_list_button = ctk.CTkButton(actions_frame, text="Create Packing List", state="disabled", command=self.open_packing_list_window)
-    self.packing_list_button.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
-    ToolTip(self.packing_list_button, "Generate packing lists based on pre-defined filters.")
+        self.packing_list_button = ctk.CTkButton(actions_frame, text="Create Packing List", state="disabled", command=self.open_packing_list_window)
+        self.packing_list_button.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
+        ToolTip(self.packing_list_button, "Generate packing lists based on pre-defined filters.")
 
-    self.stock_export_button = ctk.CTkButton(actions_frame, text="Create Stock Export", state="disabled", command=self.open_stock_export_window)
-    self.stock_export_button.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
-    ToolTip(self.stock_export_button, "Generate stock export files for couriers.")
+        self.stock_export_button = ctk.CTkButton(actions_frame, text="Create Stock Export", state="disabled", command=self.open_stock_export_window)
+        self.stock_export_button.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
+        ToolTip(self.stock_export_button, "Generate stock export files for couriers.")
 
-    self.report_builder_button = ctk.CTkButton(actions_frame, text="Report Builder", state="disabled", command=self.open_report_builder_window)
-    self.report_builder_button.grid(row=1, column=2, padx=5, pady=5, sticky="ew")
-    ToolTip(self.report_builder_button, "Create a custom report with your own filters and columns.")
+        self.report_builder_button = ctk.CTkButton(actions_frame, text="Report Builder", state="disabled", command=self.open_report_builder_window)
+        self.report_builder_button.grid(row=1, column=2, padx=5, pady=5, sticky="ew")
+        ToolTip(self.report_builder_button, "Create a custom report with your own filters and columns.")
         
-    # Settings button (opens the Settings window)
-    self.settings_button = ctk.CTkButton(actions_frame, text="Settings", command=self.open_settings_window)
-    self.settings_button.grid(row=0, column=2, padx=10, pady=10, sticky="e")
-    ToolTip(self.settings_button, "Open the application settings window.")
+        # Settings button (opens the Settings window)
+        self.settings_button = ctk.CTkButton(actions_frame, text="Settings", command=self.open_settings_window)
+        self.settings_button.grid(row=0, column=2, padx=10, pady=10, sticky="e")
+        ToolTip(self.settings_button, "Open the application settings window.")
 
-    self.tab_view = ctk.CTkTabview(self)
-    self.tab_view.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
-    self.tab_view.add("Execution Log")
-    self.tab_view.add("Activity Log")
-    self.tab_view.add("Statistics")
-    self.tab_view.add("Analysis Data")
+        self.tab_view = ctk.CTkTabview(self)
+        self.tab_view.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
+        self.tab_view.add("Execution Log")
+        self.tab_view.add("Activity Log")
+        self.tab_view.add("Analysis Data")
 
-    # --- Setup Tabs ---
-    self.log_area = ctk.CTkTextbox(self.tab_view.tab("Execution Log"), wrap=tk.WORD)
-    self.log_area.pack(fill="both", expand=True)
-    self.log_area.configure(state='disabled')
-    sys.stdout = TextRedirector(self.log_area, self.log_file_path)
-        
-    self.activity_log_frame = ctk.CTkFrame(self.tab_view.tab("Activity Log"))
-    self.activity_log_frame.pack(fill="both", expand=True)
-    self.create_activity_log()
+        # --- Setup Tabs ---
+        self.log_area = ctk.CTkTextbox(self.tab_view.tab("Execution Log"), wrap=tk.WORD)
+        self.log_area.pack(fill="both", expand=True)
+        self.log_area.configure(state='disabled')
+        sys.stdout = TextRedirector(self.log_area, self.log_file_path)
+            
+        self.activity_log_frame = ctk.CTkFrame(self.tab_view.tab("Activity Log"))
+        self.activity_log_frame.pack(fill="both", expand=True)
+        self.create_activity_log()
 
-    self.stats_frame = ctk.CTkFrame(self.tab_view.tab("Statistics"))
-    self.stats_frame.pack(fill="both", expand=True, padx=10, pady=10)
-    self.create_statistics_tab()
+        self.stats_frame = ctk.CTkFrame(self.tab_view.tab("Statistics"))
+        self.stats_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        self.create_statistics_tab()
 
-    self.data_viewer_frame = ctk.CTkFrame(self.tab_view.tab("Analysis Data"))
-    self.data_viewer_frame.pack(fill="both", expand=True)
-    self.create_data_viewer()
+        self.data_viewer_frame = ctk.CTkFrame(self.tab_view.tab("Analysis Data"))
+        self.data_viewer_frame.pack(fill="both", expand=True)
+        self.create_data_viewer()
 
     def create_statistics_tab(self):
         """ Creates the UI elements for the Statistics tab. """
@@ -586,30 +585,30 @@ class SettingsWindow(ctk.CTkToplevel):
         main_frame.grid_rowconfigure(0, weight=1)
 
         # Tab view for different settings categories
-    self.tab_view = ctk.CTkTabview(main_frame)
-    self.tab_view.grid(row=0, column=0, sticky="nsew")
-        
-    self.tab_view.add("General & Paths")
-    self.tab_view.add("Tagging Rules")
-    self.tab_view.add("Packing Lists")
-    self.tab_view.add("Stock Exports")
+        self.tab_view = ctk.CTkTabview(main_frame)
+        self.tab_view.grid(row=0, column=0, sticky="nsew")
+            
+        self.tab_view.add("General & Paths")
+        self.tab_view.add("Tagging Rules")
+        self.tab_view.add("Packing Lists")
+        self.tab_view.add("Stock Exports")
 
-    # Create content for tabs
-    self.create_general_tab()
-    self.create_tagging_tab()
-    self.create_packing_lists_tab()
-    self.create_stock_exports_tab()
+        # Create content for tabs
+        self.create_general_tab()
+        self.create_tagging_tab()
+        self.create_packing_lists_tab()
+        self.create_stock_exports_tab()
 
-    # Buttons frame
-    buttons_frame = ctk.CTkFrame(self)
-    buttons_frame.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="ew")
-    buttons_frame.grid_columnconfigure((0, 1), weight=1)
+        # Buttons frame
+        buttons_frame = ctk.CTkFrame(self)
+        buttons_frame.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="ew")
+        buttons_frame.grid_columnconfigure((0, 1), weight=1)
 
-    save_button = ctk.CTkButton(buttons_frame, text="Save and Close", command=self.save_settings)
-    save_button.grid(row=0, column=0, padx=10, pady=5, sticky="e")
+        save_button = ctk.CTkButton(buttons_frame, text="Save and Close", command=self.save_settings)
+        save_button.grid(row=0, column=0, padx=10, pady=5, sticky="e")
 
-    cancel_button = ctk.CTkButton(buttons_frame, text="Cancel", command=self.destroy, fg_color="gray")
-    cancel_button.grid(row=0, column=1, padx=10, pady=5, sticky="w")
+        cancel_button = ctk.CTkButton(buttons_frame, text="Cancel", command=self.destroy, fg_color="gray")
+        cancel_button.grid(row=0, column=1, padx=10, pady=5, sticky="w")
 
     def create_general_tab(self):
         """Creates widgets for the 'General & Paths' tab."""
