@@ -260,7 +260,6 @@ class App(ctk.CTk):
         """ Adds a new entry to the Activity Log tab. """
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.activity_log_tree.insert("", 0, values=(current_time, operation_type, description))
-        self.tab_view.set("Activity Log")
 
     def create_data_viewer(self):
         """ Creates the Treeview widget for displaying analysis data. """
