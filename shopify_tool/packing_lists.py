@@ -57,7 +57,7 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
             "Shipping_Provider": generation_timestamp,
             "Product_Name": output_filename
         }
-        print_list.rename(columns=rename_map, inplace=True)
+        print_list = print_list.rename(columns=rename_map)
         
         print("Creating Excel file...")
         with pd.ExcelWriter(output_file, engine='xlsxwriter') as writer:

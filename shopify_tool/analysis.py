@@ -3,7 +3,15 @@ import numpy as np
 
 def _generalize_shipping_method(method):
     """
-    Standardizes shipping method names to a consistent format.
+    Standardizes raw shipping method names to a consistent format.
+
+    For example, 'dhl express' becomes 'DHL'.
+
+    Args:
+        method (str or float): The raw shipping method from the orders file.
+
+    Returns:
+        str: The standardized shipping provider name.
     """
     if pd.isna(method):
         return 'Unknown'
@@ -18,8 +26,27 @@ def _generalize_shipping_method(method):
 
 def run_analysis(stock_df, orders_df, history_df):
     """
-    Performs a full fulfillment analysis and returns the results and statistics.
-    This function does not perform any file I/O.
+    Performs the core fulfillment analysis and simulation.
+
+    This function takes cleaned stock, order, and history data, simulates the
+    fulfillment process by prioritizing multi-item orders, and calculates
+    the final stock levels. It does not perform any file I/O.
+
+    Args:
+        stock_df (pd.DataFrame): DataFrame with stock levels for each SKU.
+        orders_df (pd.DataFrame): DataFrame with all order line items.
+        history_df (pd.DataFrame): DataFrame with previously fulfilled order numbers.
+
+    Returns:
+        tuple: A tuple containing four elements:
+            - final_df (pd.DataFrame): The main DataFrame with detailed results
+              for every line item, including fulfillment status.
+            - summary_present_df (pd.DataFrame): A summary of all items that
+              will be fulfilled.
+            - summary_missing_df (pd.DataFrame): A summary of items that could
+              not be fulfilled due to lack of stock.
+            - stats (dict): A dictionary containing key statistics about the
+              fulfillment analysis (e.g., total orders completed).
     """
     # --- Data Cleaning ---
     orders_df['Name'] = orders_df['Name'].ffill()
@@ -28,13 +55,13 @@ def run_analysis(stock_df, orders_df, history_df):
     
     columns_to_keep = ['Name', 'Lineitem sku', 'Lineitem quantity', 'Shipping Method', 'Shipping Country', 'Tags', 'Notes']
     orders_clean_df = orders_df[columns_to_keep].copy()
-    orders_clean_df.rename(columns={'Name': 'Order_Number', 'Lineitem sku': 'SKU', 'Lineitem quantity': 'Quantity'}, inplace=True)
-    orders_clean_df.dropna(subset=['SKU'], inplace=True)
+    orders_clean_df = orders_clean_df.rename(columns={'Name': 'Order_Number', 'Lineitem sku': 'SKU', 'Lineitem quantity': 'Quantity'})
+    orders_clean_df = orders_clean_df.dropna(subset=['SKU'])
 
     stock_clean_df = stock_df[['Артикул', 'Име', 'Наличност']].copy()
-    stock_clean_df.rename(columns={'Артикул': 'SKU', 'Име': 'Product_Name', 'Наличност': 'Stock'}, inplace=True)
-    stock_clean_df.dropna(subset=['SKU'], inplace=True)
-    stock_clean_df.drop_duplicates(subset=['SKU'], keep='first', inplace=True)
+    stock_clean_df = stock_clean_df.rename(columns={'Артикул': 'SKU', 'Име': 'Product_Name', 'Наличност': 'Stock'})
+    stock_clean_df = stock_clean_df.dropna(subset=['SKU'])
+    stock_clean_df = stock_clean_df.drop_duplicates(subset=['SKU'], keep='first')
     
     # --- Fulfillment Simulation ---
     order_item_counts = orders_clean_df.groupby('Order_Number').size().rename('item_count')
@@ -69,9 +96,9 @@ def run_analysis(stock_df, orders_df, history_df):
     final_df = pd.merge(final_df, order_item_counts, on='Order_Number')
     # Merge final stock levels to the main dataframe
     final_df = pd.merge(final_df, final_stock_levels, on='SKU', how='left')
-    final_df['Final_Stock'].fillna(final_df['Stock'], inplace=True) # If an item was not fulfilled, its final stock is its initial stock
+    final_df['Final_Stock'] = final_df['Final_Stock'].fillna(final_df['Stock']) # If an item was not fulfilled, its final stock is its initial stock
     final_df['Order_Type'] = np.where(final_df['item_count'] > 1, 'Multi', 'Single')
-    final_df['Stock'].fillna(0, inplace=True)
+    final_df['Stock'] = final_df['Stock'].fillna(0)
     final_df['Shipping_Provider'] = final_df['Shipping Method'].apply(_generalize_shipping_method)
     final_df['Order_Fulfillment_Status'] = final_df['Order_Number'].map(fulfillment_results)
     final_df['Destination_Country'] = np.where(final_df['Shipping_Provider'] == 'DHL', final_df['Shipping Country'], '')
@@ -83,7 +110,7 @@ def run_analysis(stock_df, orders_df, history_df):
     # --- Summary Reports Generation ---
     present_df = final_df[final_df['Order_Fulfillment_Status'] == 'Fulfillable'].copy()
     summary_present_df = present_df.groupby(['SKU', 'Product_Name'], as_index=False)['Quantity'].sum()
-    summary_present_df.rename(columns={'Product_Name': 'Name', 'Quantity': 'Total Quantity'}, inplace=True)
+    summary_present_df = summary_present_df.rename(columns={'Product_Name': 'Name', 'Quantity': 'Total Quantity'})
     summary_present_df = summary_present_df[['Name', 'SKU', 'Total Quantity']]
 
     # --- New logic for Summary_Missing ---
@@ -91,21 +118,21 @@ def run_analysis(stock_df, orders_df, history_df):
     not_fulfilled_df = final_df[final_df['Order_Fulfillment_Status'] == 'Not Fulfillable'].copy()
 
     # 2. Identify items that are "truly missing" by comparing required quantity vs initial stock.
-    truly_missing_df = not_fulfilled_df[not_fulfilled_df['Quantity'] > not_fulfilled_df['Stock']]
+    truly_missing_df = not_fulfilled_df[not_fulfilled_df['Quantity'] > not_fulfilled_df['Stock']].copy()
     # Ensure missing product names are handled before grouping
-    truly_missing_df['Product_Name'].fillna('N/A', inplace=True)
+    truly_missing_df['Product_Name'] = truly_missing_df['Product_Name'].fillna('N/A')
 
     # 3. Create the summary report from this filtered data.
     if not truly_missing_df.empty:
         summary_missing_df = truly_missing_df.groupby(['SKU', 'Product_Name'], as_index=False)['Quantity'].sum()
-        summary_missing_df.rename(columns={'Product_Name': 'Name', 'Quantity': 'Total Quantity'}, inplace=True)
+        summary_missing_df = summary_missing_df.rename(columns={'Product_Name': 'Name', 'Quantity': 'Total Quantity'})
         summary_missing_df = summary_missing_df[['Name', 'SKU', 'Total Quantity']]
     else:
         summary_missing_df = pd.DataFrame(columns=['Name', 'SKU', 'Total Quantity'])
 
     # --- Statistics Calculation ---
     stats = {}
-    completed_orders_df = final_df[final_df['Order_Fulfillment_Status'] == 'Fulfillable']
+    completed_orders_df = final_df[final_df['Order_Fulfillment_Status'] == 'Fulfillable'].copy()
     not_completed_orders_df = final_df[final_df['Order_Fulfillment_Status'] == 'Not Fulfillable']
     
     stats['total_orders_completed'] = int(completed_orders_df['Order_Number'].nunique())
@@ -116,7 +143,7 @@ def run_analysis(stock_df, orders_df, history_df):
     courier_stats = []
     if not completed_orders_df.empty:
         # Fill NA to include 'Unknown' providers in the stats
-        completed_orders_df['Shipping_Provider'].fillna('Unknown', inplace=True)
+        completed_orders_df.loc[:, 'Shipping_Provider'] = completed_orders_df['Shipping_Provider'].fillna('Unknown')
         grouped_by_courier = completed_orders_df.groupby('Shipping_Provider')
         for provider, group in grouped_by_courier:
             courier_data = {
