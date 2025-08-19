@@ -378,8 +378,13 @@ class SettingsWindow(ctk.CTkToplevel):
             "frame": row_frame,
             "col_var": col_var,
             "op_var": op_var,
-            "val_var": val_var
+            "val_var": val_var,
+            "value_widget": val_entry # Keep a reference to the current value widget
         }
+
+        # Add commands to trigger the dynamic widget update
+        col_combo.configure(command=lambda choice, rw=row_widgets: self._on_filter_criteria_changed(rw))
+        op_combo.configure(command=lambda choice, rw=row_widgets: self._on_filter_criteria_changed(rw))
 
         delete_button = ctk.CTkButton(row_frame, text="X", fg_color="red", width=30,
                                       command=lambda: self._delete_filter_rule_row(row_widgets, rows_list))
@@ -391,6 +396,37 @@ class SettingsWindow(ctk.CTkToplevel):
         """Destroys the widgets in a filter rule row and removes it from the list."""
         row_widgets['frame'].destroy()
         rows_list.remove(row_widgets)
+
+    def _on_filter_criteria_changed(self, row_widgets):
+        """
+        Handles changes in the column or operator dropdowns for a filter rule,
+        dynamically updating the value widget.
+        """
+        col = row_widgets['col_var'].get()
+        op = row_widgets['op_var'].get()
+        val_var = row_widgets['val_var']
+        row_frame = row_widgets['frame']
+
+        # Destroy the old value widget
+        if row_widgets['value_widget']:
+            row_widgets['value_widget'].destroy()
+
+        # Decide whether to show a ComboBox or an Entry
+        use_combobox = op not in ['in', 'not in'] and self.parent.analysis_results_df is not None and col in self.parent.analysis_results_df.columns
+
+        if use_combobox:
+            try:
+                unique_values = self.parent.analysis_results_df[col].dropna().unique().tolist()
+                unique_values.sort()
+            except Exception:
+                unique_values = [] # Fallback in case of error
+
+            new_widget = ctk.CTkComboBox(row_frame, values=unique_values, variable=val_var)
+        else:
+            new_widget = ctk.CTkEntry(row_frame, textvariable=val_var, placeholder_text="Value(s), comma-separated for 'in'")
+
+        new_widget.grid(row=0, column=2, padx=5, pady=5, sticky="ew")
+        row_widgets['value_widget'] = new_widget
 
     def create_stock_exports_tab(self):
         """Creates widgets for the 'Stock Exports' tab."""
