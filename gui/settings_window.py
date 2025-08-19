@@ -156,14 +156,25 @@ class SettingsWindow(ctk.CTkToplevel):
             new_stock_exports = []
             for widgets in getattr(self, 'stock_export_widgets', []):
                 try:
-                    filters = json.loads(widgets['filters_var'].get() or '{}')
+                    # Build the filters dictionary from the dynamic UI
+                    filters = {}
+                    for row in widgets['filter_rows']:
+                        col = row['col_var'].get()
+                        op = row['op_var'].get()
+                        val = row['val_var'].get()
+                        if val: # Only add filter if a value is provided
+                            if op in ['in', 'not in']:
+                                filters[col] = [v.strip() for v in val.split(',')]
+                            else:
+                                filters[col] = val
+
                     new_stock_exports.append({
                         "name": widgets['name_var'].get(),
                         "template": widgets['template_var'].get(),
                         "filters": filters
                     })
-                except json.JSONDecodeError:
-                    messagebox.showerror("Validation Error", "Invalid JSON format in Stock Export filters.", parent=self)
+                except Exception as e:
+                    messagebox.showerror("Save Error", f"Could not save Stock Export '{widgets['name_var'].get()}'.\nError: {e}", parent=self)
                     return
             self.config_data['stock_exports'] = new_stock_exports
 
@@ -469,17 +480,37 @@ class SettingsWindow(ctk.CTkToplevel):
         template_var = tk.StringVar(value=config.get('template', ''))
         ctk.CTkEntry(entry_frame, textvariable=template_var).grid(row=1, column=1, padx=5, pady=2, sticky="ew")
 
-        ctk.CTkLabel(entry_frame, text="Filters (JSON):").grid(row=2, column=0, padx=5, pady=2, sticky="w")
-        filters_var = tk.StringVar(value=json.dumps(config.get('filters', {})))
-        ctk.CTkEntry(entry_frame, textvariable=filters_var).grid(row=2, column=1, padx=5, pady=2, sticky="ew")
+        # --- Filter Builder UI ---
+        ctk.CTkLabel(entry_frame, text="Filters:").grid(row=2, column=0, padx=5, pady=2, sticky="w")
+        filters_frame = ctk.CTkFrame(entry_frame)
+        filters_frame.grid(row=2, column=1, sticky="ew")
 
+        add_filter_button = ctk.CTkButton(entry_frame, text="Add Filter", width=80)
+        add_filter_button.grid(row=3, column=1, padx=5, pady=(0, 5), sticky="w")
+
+        # --- Delete Button ---
         delete_button = ctk.CTkButton(entry_frame, text="Delete", fg_color="red", width=60,
                                       command=lambda f=entry_frame: self.delete_stock_export_entry(f))
-        delete_button.grid(row=3, column=1, padx=5, pady=5, sticky="e")
+        delete_button.grid(row=4, column=1, padx=5, pady=5, sticky="e")
 
-        self.stock_export_widgets.append({
-            'frame': entry_frame, 'name_var': name_var, 'template_var': template_var, 'filters_var': filters_var
-        })
+        widget_refs = {
+            'frame': entry_frame,
+            'name_var': name_var,
+            'template_var': template_var,
+            'filters_frame': filters_frame,
+            'filter_rows': []
+        }
+
+        add_filter_button.configure(command=lambda: self._add_filter_rule_row(filters_frame, widget_refs['filter_rows']))
+
+        self.stock_export_widgets.append(widget_refs)
+
+        # Populate existing filters
+        existing_filters = config.get('filters', {})
+        for col, val in existing_filters.items():
+            op = 'in' if isinstance(val, list) else '=='
+            val_str = ', '.join(val) if isinstance(val, list) else val
+            self._add_filter_rule_row(filters_frame, widget_refs['filter_rows'], col, op, val_str)
 
     def delete_stock_export_entry(self, frame_to_delete):
         """Removes a stock export entry from the UI."""
