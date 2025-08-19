@@ -58,6 +58,7 @@ def resource_path(relative_path):
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
 from shopify_tool import core
+from shopify_tool.analysis import recalculate_statistics
 from gui.report_builder_window import ReportBuilderWindow
 from gui.settings_window import SettingsWindow
 
@@ -284,6 +285,27 @@ class App(ctk.CTk):
         hsb.pack(side='bottom', fill='x')
         self.tree.configure(xscrollcommand=hsb.set)
 
+        self.tree.bind("<Double-1>", self._on_order_double_click)
+
+    def _on_order_double_click(self, event):
+        """Event handler for double-clicking an order in the Analysis Data table."""
+        if not self.analysis_results_df is not None:
+            return # Don't do anything if no data is loaded
+
+        item_id = self.tree.focus()
+        if not item_id:
+            return
+
+        try:
+            values = self.tree.item(item_id, 'values')
+            order_number_index = self.tree["columns"].index('Order_Number')
+            order_number = values[order_number_index]
+            self.toggle_fulfillment_status(order_number)
+
+        except (ValueError, IndexError) as e:
+            print(f"Could not process double-click: {e}")
+
+
     def update_data_viewer(self, df):
         """ Clears and repopulates the Treeview with new DataFrame data. """
         self.tree.delete(*self.tree.get_children())
@@ -415,6 +437,32 @@ class App(ctk.CTk):
             label.configure(text="✗", text_color="red", font=("Arial", 16, "bold"))
             error_message = f"Missing columns: {', '.join(missing_cols)}"
             tooltip.update_text(error_message)
+
+    def toggle_fulfillment_status(self, order_number):
+        """
+        Manually toggles the fulfillment status of an order and refreshes the UI.
+        Note: This is Phase 1, so it does not recalculate stock yet.
+        """
+        df = self.analysis_results_df
+        if df is None or order_number not in df['Order_Number'].values:
+            return
+
+        # Find current status (assuming all rows for an order have the same status)
+        current_status = df.loc[df['Order_Number'] == order_number, 'Order_Fulfillment_Status'].iloc[0]
+
+        # Determine the new status
+        new_status = "Not Fulfillable" if current_status == "Fulfillable" else "Fulfillable"
+
+        # Update the DataFrame
+        df.loc[df['Order_Number'] == order_number, 'Order_Fulfillment_Status'] = new_status
+
+        # Recalculate stats and update the UI
+        self.analysis_stats = recalculate_statistics(df)
+        self.update_data_viewer(df)
+        self.update_statistics_tab()
+
+        self.log_activity("Manual Edit", f"Order {order_number} status changed to '{new_status}'.")
+
 
     def open_packing_list_window(self):
         self.create_report_window("packing_lists", "Create Packing Lists")

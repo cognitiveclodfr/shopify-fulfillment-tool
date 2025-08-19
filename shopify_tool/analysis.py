@@ -131,9 +131,23 @@ def run_analysis(stock_df, orders_df, history_df):
         summary_missing_df = pd.DataFrame(columns=['Name', 'SKU', 'Total Quantity'])
 
     # --- Statistics Calculation ---
+    stats = recalculate_statistics(final_df)
+
+    return final_df, summary_present_df, summary_missing_df, stats
+
+def recalculate_statistics(df):
+    """
+    Calculates statistics based on the provided analysis DataFrame.
+
+    Args:
+        df (pd.DataFrame): The main analysis DataFrame.
+
+    Returns:
+        dict: A dictionary containing key statistics.
+    """
     stats = {}
-    completed_orders_df = final_df[final_df['Order_Fulfillment_Status'] == 'Fulfillable'].copy()
-    not_completed_orders_df = final_df[final_df['Order_Fulfillment_Status'] == 'Not Fulfillable']
+    completed_orders_df = df[df['Order_Fulfillment_Status'] == 'Fulfillable'].copy()
+    not_completed_orders_df = df[df['Order_Fulfillment_Status'] == 'Not Fulfillable']
     
     stats['total_orders_completed'] = int(completed_orders_df['Order_Number'].nunique())
     stats['total_orders_not_completed'] = int(not_completed_orders_df['Order_Number'].nunique())
@@ -155,4 +169,4 @@ def run_analysis(stock_df, orders_df, history_df):
     # Per instructions, use null (None) if no stats are available
     stats['couriers_stats'] = courier_stats if courier_stats else None
     
-    return final_df, summary_present_df, summary_missing_df, stats
+    return stats
