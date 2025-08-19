@@ -7,14 +7,15 @@ import numpy as np
 
 logger = logging.getLogger('ShopifyToolLogger')
 
-def _validate_dataframes(orders_df, stock_df):
+def _validate_dataframes(orders_df, stock_df, config):
     """
     Validates that the required columns are present in the dataframes.
     Returns a list of error messages. If the list is empty, validation passed.
     """
     errors = []
-    required_orders_cols = ['Name', 'Lineitem sku', 'Lineitem quantity']
-    required_stock_cols = ['Артикул', 'Наличност']
+    column_mappings = config.get('column_mappings', {})
+    required_orders_cols = column_mappings.get('orders_required', [])
+    required_stock_cols = column_mappings.get('stock_required', [])
 
     for col in required_orders_cols:
         if col not in orders_df.columns:
@@ -27,7 +28,17 @@ def _validate_dataframes(orders_df, stock_df):
     return errors
 
 def _apply_tagging_rules(df, config):
-    """Applies custom tagging rules to the Status_Note column."""
+    """
+    Applies custom tagging rules to the 'Status_Note' column based on the
+    provided configuration.
+
+    Args:
+        df (pd.DataFrame): The main analysis DataFrame.
+        config (dict): The application configuration dictionary.
+
+    Returns:
+        pd.DataFrame: The DataFrame with the 'Status_Note' column updated.
+    """
     rules = config.get('tagging_rules', {})
     special_skus = rules.get('special_sku_tags', {})
     composite_tag = rules.get('composite_order_tag', 'BOX')
@@ -64,7 +75,25 @@ def _apply_tagging_rules(df, config):
 
 def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_delimiter, config):
     """
-    Loads data, runs analysis, saves all report files, and updates history.
+    Orchestrates the entire fulfillment analysis process.
+
+    This function loads data from CSV files, runs the fulfillment simulation,
+    applies business rules (e.g., stock alerts, tagging), saves the
+    main analysis report to an Excel file, and updates the fulfillment history.
+
+    Args:
+        stock_file_path (str): Path to the stock data CSV file.
+        orders_file_path (str): Path to the Shopify orders export CSV file.
+        output_dir_path (str): Path to the directory where the output report will be saved.
+        stock_delimiter (str): The delimiter used in the stock CSV file.
+        config (dict): The application configuration dictionary.
+
+    Returns:
+        tuple: A tuple containing:
+            - bool: True for success, False for failure.
+            - str or None: A message indicating the result or the path to the output file.
+            - pd.DataFrame or None: The final analysis DataFrame.
+            - dict or None: A dictionary of calculated statistics.
     """
     print("--- Starting Full Analysis Process ---")
     # 1. Load data
@@ -82,7 +111,7 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
     print("Data loaded successfully.")
 
     # Validate dataframes
-    validation_errors = _validate_dataframes(orders_df, stock_df)
+    validation_errors = _validate_dataframes(orders_df, stock_df, config)
     if validation_errors:
         error_message = "\n".join(validation_errors)
         print(f"ERROR: {error_message}")
@@ -161,7 +190,17 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
 
 def create_packing_list_report(analysis_df, report_config):
     """
-    Generates a single packing list report.
+    Generates a single packing list report based on a report configuration.
+
+    Args:
+        analysis_df (pd.DataFrame): The main analysis DataFrame containing fulfillment data.
+        report_config (dict): A dictionary from the main config file that defines
+                              the filters, output filename, and other settings for this report.
+
+    Returns:
+        tuple: A tuple containing:
+            - bool: True for success, False for failure.
+            - str: A message indicating the result.
     """
     report_name = report_config.get('name', 'Unknown Report')
     try:
@@ -184,7 +223,18 @@ def create_packing_list_report(analysis_df, report_config):
 
 def create_stock_export_report(analysis_df, report_config, templates_path, output_path):
     """
-    Generates a single stock export report.
+    Generates a single stock export report based on a template and report configuration.
+
+    Args:
+        analysis_df (pd.DataFrame): The main analysis DataFrame.
+        report_config (dict): A dictionary from the main config defining the report.
+        templates_path (str): The path to the directory containing template files.
+        output_path (str): The path to the directory where the export file will be saved.
+
+    Returns:
+        tuple: A tuple containing:
+            - bool: True for success, False for failure.
+            - str: A message indicating the result.
     """
     report_name = report_config.get('name', 'Unknown Report')
     try:

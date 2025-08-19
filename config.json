@@ -11,8 +11,19 @@
     "output_dir_stock": "data/output/"
   },
   "settings": {
-  "stock_csv_delimiter": ";",
-  "low_stock_threshold": 10
+    "stock_csv_delimiter": ";",
+    "low_stock_threshold": 10
+  },
+  "column_mappings": {
+    "orders_required": [
+      "Name",
+      "Lineitem sku",
+      "Lineitem quantity"
+    ],
+    "stock_required": [
+      "Артикул",
+      "Наличност"
+    ]
   },
   "tagging_rules": {
     "special_sku_tags": {
