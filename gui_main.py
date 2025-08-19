@@ -374,16 +374,19 @@ class App(ctk.CTk):
         """
         Wrapper function that calls the core analysis function and handles the result.
         """
+        if not self.session_path:
+            self.after(0, messagebox.showerror, "Session Error", "Please create a new session before running an analysis.")
+            return
+
         stock_path = self.stock_file_path.get()
         orders_path = self.orders_file_path.get()
-        output_dir = self.config['paths']['output']['analysis_file']
         stock_delimiter = self.config['settings']['stock_csv_delimiter']
 
         try:
             success, result, df, stats = core.run_full_analysis(
                 stock_path,
                 orders_path,
-                os.path.dirname(output_dir),
+                self.session_path, # Use the session path as the output directory
                 stock_delimiter,
                 self.config
             )
@@ -595,19 +598,31 @@ class App(ctk.CTk):
         """
         Wrapper function that calls the appropriate core report function.
         """
+        if not self.session_path:
+            self.after(0, messagebox.showerror, "Session Error", "Please create a new session before generating reports.")
+            return
+
         if report_type == "packing_lists":
+            # The filename from config is now relative to the session path
+            relative_path = report_config.get('output_filename', 'default_packing_list.xlsx')
+            output_file = os.path.join(self.session_path, os.path.basename(relative_path))
+
+            # Update the report_config with the new full path for the core function
+            report_config_copy = report_config.copy()
+            report_config_copy['output_filename'] = output_file
+
             success, message = core.create_packing_list_report(
                 analysis_df=self.analysis_results_df,
-                report_config=report_config
+                report_config=report_config_copy
             )
         elif report_type == "stock_exports":
             templates_path = resource_path(self.config['paths']['templates'])
-            output_path = self.config['paths']['output_dir_stock']
+            # The output_path is now the session path, not the one from config
             success, message = core.create_stock_export_report(
                 analysis_df=self.analysis_results_df,
                 report_config=report_config,
                 templates_path=templates_path,
-                output_path=output_path
+                output_path=self.session_path
             )
         else:
             success = False
