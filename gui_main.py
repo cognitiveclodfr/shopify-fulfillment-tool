@@ -74,6 +74,7 @@ class App(ctk.CTk):
 
         self.analysis_results_df = None
         self.analysis_stats = None # To store the stats dictionary
+        self.session_path = None
         self.config_path = resource_path('config.json')
         self.config = self.load_config()
         self.log_file_path = resource_path('app_history.log')
@@ -92,27 +93,39 @@ class App(ctk.CTk):
     def create_widgets(self):
         """ Creates all the widgets for the main application window. """
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(2, weight=1)
+        self.grid_rowconfigure(3, weight=1) # Adjust row configure for new session frame
 
+        # --- Session Control Frame ---
+        session_frame = ctk.CTkFrame(self)
+        session_frame.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
+        session_frame.grid_columnconfigure(1, weight=1)
+
+        new_session_btn = ctk.CTkButton(session_frame, text="Create New Session", command=self._create_new_session)
+        new_session_btn.grid(row=0, column=0, padx=10, pady=10)
+
+        self.session_path_label = ctk.CTkLabel(session_frame, text="No session started.", text_color="gray")
+        self.session_path_label.grid(row=0, column=1, padx=10, pady=10, sticky="w")
+
+        # --- File Loading Frame ---
         files_frame = ctk.CTkFrame(self)
-        files_frame.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
+        files_frame.grid(row=1, column=0, padx=10, pady=10, sticky="ew")
         files_frame.grid_columnconfigure(1, weight=1)
 
         self.orders_file_path = tk.StringVar(value="Orders file not selected")
         self.stock_file_path = tk.StringVar(value="Stock file not selected")
 
-        load_orders_btn = ctk.CTkButton(files_frame, text="Load Orders File (.csv)", command=self.select_orders_file)
-        load_orders_btn.grid(row=0, column=0, padx=10, pady=5)
-        ToolTip(load_orders_btn, "Select the orders_export.csv file from Shopify.")
+        self.load_orders_btn = ctk.CTkButton(files_frame, text="Load Orders File (.csv)", command=self.select_orders_file, state=tk.DISABLED)
+        self.load_orders_btn.grid(row=0, column=0, padx=10, pady=5)
+        ToolTip(self.load_orders_btn, "Select the orders_export.csv file from Shopify.")
         
         ctk.CTkLabel(files_frame, textvariable=self.orders_file_path).grid(row=0, column=1, padx=10, pady=5, sticky="w")
         self.orders_file_status_label = ctk.CTkLabel(files_frame, text="", width=20)
         self.orders_file_status_label.grid(row=0, column=2, padx=5, pady=5, sticky="w")
         self.orders_file_tooltip = ToolTip(self.orders_file_status_label, "")
         
-        load_stock_btn = ctk.CTkButton(files_frame, text="Load Stock File (.csv)", command=self.select_stock_file)
-        load_stock_btn.grid(row=1, column=0, padx=10, pady=5)
-        ToolTip(load_stock_btn, "Select the inventory/stock CSV file.")
+        self.load_stock_btn = ctk.CTkButton(files_frame, text="Load Stock File (.csv)", command=self.select_stock_file, state=tk.DISABLED)
+        self.load_stock_btn.grid(row=1, column=0, padx=10, pady=5)
+        ToolTip(self.load_stock_btn, "Select the inventory/stock CSV file.")
 
         ctk.CTkLabel(files_frame, textvariable=self.stock_file_path).grid(row=1, column=1, padx=10, pady=5, sticky="w")
         self.stock_file_status_label = ctk.CTkLabel(files_frame, text="", width=20)
@@ -120,7 +133,7 @@ class App(ctk.CTk):
         self.stock_file_tooltip = ToolTip(self.stock_file_status_label, "")
 
         actions_frame = ctk.CTkFrame(self)
-        actions_frame.grid(row=1, column=0, padx=10, pady=0, sticky="ew")
+        actions_frame.grid(row=2, column=0, padx=10, pady=0, sticky="ew")
         # Reserve middle column to expand so buttons on the right stay aligned
         actions_frame.grid_columnconfigure(1, weight=1)
 
@@ -147,7 +160,7 @@ class App(ctk.CTk):
         ToolTip(self.settings_button, "Open the application settings window.")
 
         self.tab_view = ctk.CTkTabview(self)
-        self.tab_view.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
+        self.tab_view.grid(row=3, column=0, padx=10, pady=10, sticky="nsew")
         self.tab_view.add("Execution Log")
         self.tab_view.add("Activity Log")
         self.tab_view.add("Analysis Data")
@@ -436,6 +449,33 @@ class App(ctk.CTk):
             label.configure(text="✗", text_color="red", font=("Arial", 16, "bold"))
             error_message = f"Missing columns: {', '.join(missing_cols)}"
             tooltip.update_text(error_message)
+
+    def _create_new_session(self):
+        """Creates a new session by creating a unique dated folder for outputs."""
+        try:
+            base_output_dir = self.config['paths'].get('output_dir_stock', 'data/output')
+            date_str = datetime.now().strftime('%Y-%m-%d')
+
+            session_id = 1
+            while True:
+                session_path = os.path.join(base_output_dir, f"{date_str}_session_{session_id}")
+                if not os.path.exists(session_path):
+                    break
+                session_id += 1
+
+            os.makedirs(session_path, exist_ok=True)
+            self.session_path = session_path
+
+            self.session_path_label.configure(text=f"Current Session: {os.path.basename(self.session_path)}", text_color="white")
+            self.log_activity("Session", f"New session started. Output will be saved to: {self.session_path}")
+
+            # Enable file loading buttons
+            self.load_orders_btn.configure(state=tk.NORMAL)
+            self.load_stock_btn.configure(state=tk.NORMAL)
+
+        except Exception as e:
+            messagebox.showerror("Session Error", f"Could not create a new session folder.\nError: {e}")
+
 
     def toggle_fulfillment_status(self, order_number):
         """
