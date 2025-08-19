@@ -440,8 +440,8 @@ class App(ctk.CTk):
 
     def toggle_fulfillment_status(self, order_number):
         """
-        Manually toggles the fulfillment status of an order and refreshes the UI.
-        Note: This is Phase 1, so it does not recalculate stock yet.
+        Manually toggles the fulfillment status of an order, recalculates
+        stock, and refreshes the UI.
         """
         df = self.analysis_results_df
         if df is None or order_number not in df['Order_Number'].values:
@@ -450,10 +450,53 @@ class App(ctk.CTk):
         # Find current status (assuming all rows for an order have the same status)
         current_status = df.loc[df['Order_Number'] == order_number, 'Order_Fulfillment_Status'].iloc[0]
 
-        # Determine the new status
-        new_status = "Not Fulfillable" if current_status == "Fulfillable" else "Fulfillable"
+        if current_status == "Fulfillable":
+            # --- Logic to UN-FULFILL an order ---
+            new_status = "Not Fulfillable"
+            order_items = df.loc[df['Order_Number'] == order_number]
 
-        # Update the DataFrame
+            # Aggregate quantities for each SKU in the order
+            stock_to_return = order_items.groupby('SKU')['Quantity'].sum()
+
+            for sku, quantity in stock_to_return.items():
+                # Add the quantity back to the 'Final_Stock' for all rows with this SKU
+                df.loc[df['SKU'] == sku, 'Final_Stock'] += quantity
+        else:
+            # --- Logic to FORCE-FULFILL an order ---
+            new_status = "Fulfillable"
+            order_items = df.loc[df['Order_Number'] == order_number]
+            items_needed = order_items.groupby('SKU')['Quantity'].sum()
+
+            # Pre-flight check for stock availability
+            lacking_skus = []
+            for sku, needed_qty in items_needed.items():
+                # Check if the SKU is even in our dataframe (for the unlisted stock case)
+                if sku not in df['SKU'].unique():
+                    continue # This is an unlisted item, we assume it's on hand
+
+                # Get current final stock for this SKU
+                current_stock = df.loc[df['SKU'] == sku, 'Final_Stock'].iloc[0]
+
+                if needed_qty > current_stock:
+                    lacking_skus.append(sku)
+
+            if lacking_skus:
+                messagebox.showerror("Stock Error", f"Cannot force fulfill. Insufficient stock for SKUs: {', '.join(lacking_skus)}")
+                return # Abort the toggle
+
+            # If check passes, deduct stock
+            for sku, needed_qty in items_needed.items():
+                # For unlisted SKUs, we need to add them to the df to track their negative stock
+                if sku not in df['SKU'].unique():
+                    # Find one of the order rows to copy base data from
+                    template_row = order_items.iloc[0].to_dict()
+                    new_row = {key: (None if key not in ['SKU', 'Quantity'] else template_row[key]) for key in df.columns}
+                    new_row.update({'SKU': sku, 'Quantity': 0, 'Stock': 0, 'Final_Stock': 0})
+                    df.loc[len(df)] = new_row
+
+                df.loc[df['SKU'] == sku, 'Final_Stock'] -= needed_qty
+
+        # Update the DataFrame with the new status
         df.loc[df['Order_Number'] == order_number, 'Order_Fulfillment_Status'] = new_status
 
         # Recalculate stats and update the UI
