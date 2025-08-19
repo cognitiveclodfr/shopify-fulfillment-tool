@@ -13,6 +13,13 @@ class SettingsWindow(ctk.CTkToplevel):
         self.title("Application Settings")
         self.geometry("800x600")
 
+        # Define constants for the filter builder
+        self.FILTERABLE_COLUMNS = [
+            'Order_Type', 'Shipping_Provider', 'Order_Fulfillment_Status',
+            'Tags', 'Status_Note', 'Destination_Country'
+        ]
+        self.OPERATORS = ['==', '!=', 'in', 'not in']
+
         # Make a deep copy of the config to edit, so we can cancel without side effects
         self.config_data = json.loads(json.dumps(self.parent.config))
 
@@ -118,7 +125,19 @@ class SettingsWindow(ctk.CTkToplevel):
             new_packing_lists = []
             for widgets in getattr(self, 'packing_list_widgets', []):
                 try:
-                    filters = json.loads(widgets['filters_var'].get() or '{}')
+                    # Build the filters dictionary from the dynamic UI
+                    filters = {}
+                    for row in widgets['filter_rows']:
+                        col = row['col_var'].get()
+                        op = row['op_var'].get()
+                        val = row['val_var'].get()
+                        if val: # Only add filter if a value is provided
+                            # For 'in'/'not in', the value should be a list
+                            if op in ['in', 'not in']:
+                                filters[col] = [v.strip() for v in val.split(',')]
+                            else:
+                                filters[col] = val
+
                     exclude_skus_str = widgets['exclude_skus_var'].get()
                     exclude_skus = [sku.strip() for sku in exclude_skus_str.split(',') if sku.strip()]
 
@@ -293,27 +312,83 @@ class SettingsWindow(ctk.CTkToplevel):
         filename_var = tk.StringVar(value=config.get('output_filename', ''))
         ctk.CTkEntry(entry_frame, textvariable=filename_var).grid(row=1, column=1, columnspan=2, padx=5, pady=2, sticky="ew")
 
-        ctk.CTkLabel(entry_frame, text="Filters (JSON):").grid(row=2, column=0, padx=5, pady=2, sticky="w")
-        filters_var = tk.StringVar(value=json.dumps(config.get('filters', {})))
-        ctk.CTkEntry(entry_frame, textvariable=filters_var).grid(row=2, column=1, columnspan=2, padx=5, pady=2, sticky="ew")
+        # --- Filter Builder UI ---
+        ctk.CTkLabel(entry_frame, text="Filters:").grid(row=2, column=0, padx=5, pady=2, sticky="w")
 
-        ctk.CTkLabel(entry_frame, text="Exclude SKUs (comma-separated):").grid(row=3, column=0, padx=5, pady=2, sticky="w")
+        filters_frame = ctk.CTkFrame(entry_frame)
+        filters_frame.grid(row=2, column=1, columnspan=2, padx=5, pady=2, sticky="ew")
+
+        add_filter_button = ctk.CTkButton(entry_frame, text="Add Filter", width=80)
+        add_filter_button.grid(row=3, column=1, padx=5, pady=(0, 5), sticky="w")
+
+        ctk.CTkLabel(entry_frame, text="Exclude SKUs (comma-separated):").grid(row=4, column=0, padx=5, pady=2, sticky="w")
         exclude_skus_var = tk.StringVar(value=", ".join(config.get('exclude_skus', [])))
         ctk.CTkEntry(entry_frame, textvariable=exclude_skus_var).grid(row=3, column=1, columnspan=2, padx=5, pady=2, sticky="ew")
 
         delete_button = ctk.CTkButton(entry_frame, text="Delete", fg_color="red", width=60,
                                       command=lambda f=entry_frame: self.delete_packing_list_entry(f))
-        delete_button.grid(row=4, column=2, padx=5, pady=5, sticky="e")
+        delete_button.grid(row=5, column=2, padx=5, pady=5, sticky="e")
 
-        self.packing_list_widgets.append({
-            'frame': entry_frame, 'name_var': name_var, 'filename_var': filename_var,
-            'filters_var': filters_var, 'exclude_skus_var': exclude_skus_var
-        })
+        widget_refs = {
+            'frame': entry_frame,
+            'name_var': name_var,
+            'filename_var': filename_var,
+            'exclude_skus_var': exclude_skus_var,
+            'filters_frame': filters_frame, # Reference to the container for filter rows
+            'filter_rows': [] # List to hold widgets for each filter rule
+        }
+
+        add_filter_button.configure(command=lambda: self._add_filter_rule_row(filters_frame, widget_refs['filter_rows']))
+
+        self.packing_list_widgets.append(widget_refs)
+
+        # Populate existing filters
+        existing_filters = config.get('filters', {})
+        for col, val in existing_filters.items():
+            op = 'in' if isinstance(val, list) else '=='
+            val_str = ', '.join(val) if isinstance(val, list) else val
+            self._add_filter_rule_row(filters_frame, widget_refs['filter_rows'], col, op, val_str)
 
     def delete_packing_list_entry(self, frame_to_delete):
         """Removes a packing list entry from the UI."""
         frame_to_delete.destroy()
         self.packing_list_widgets = [w for w in self.packing_list_widgets if w['frame'] is not frame_to_delete]
+
+    def _add_filter_rule_row(self, parent_frame, rows_list, col="", op="", val=""):
+        """Dynamically adds a new row of widgets for creating a filter rule."""
+        row_frame = ctk.CTkFrame(parent_frame)
+        row_frame.pack(fill="x", expand=True, pady=2)
+
+        col_var = tk.StringVar(value=col or self.FILTERABLE_COLUMNS[0])
+        op_var = tk.StringVar(value=op or self.OPERATORS[0])
+        val_var = tk.StringVar(value=val)
+
+        col_combo = ctk.CTkComboBox(row_frame, values=self.FILTERABLE_COLUMNS, variable=col_var, width=150)
+        col_combo.pack(side="left", padx=5, pady=5)
+
+        op_combo = ctk.CTkComboBox(row_frame, values=self.OPERATORS, variable=op_var, width=80)
+        op_combo.pack(side="left", padx=5, pady=5)
+
+        val_entry = ctk.CTkEntry(row_frame, textvariable=val_var, placeholder_text="Value")
+        val_entry.pack(side="left", fill="x", expand=True, padx=5, pady=5)
+
+        row_widgets = {
+            "frame": row_frame,
+            "col_var": col_var,
+            "op_var": op_var,
+            "val_var": val_var
+        }
+
+        delete_button = ctk.CTkButton(row_frame, text="X", fg_color="red", width=30,
+                                      command=lambda: self._delete_filter_rule_row(row_widgets, rows_list))
+        delete_button.pack(side="right", padx=5, pady=5)
+
+        rows_list.append(row_widgets)
+
+    def _delete_filter_rule_row(self, row_widgets, rows_list):
+        """Destroys the widgets in a filter rule row and removes it from the list."""
+        row_widgets['frame'].destroy()
+        rows_list.remove(row_widgets)
 
     def create_stock_exports_tab(self):
         """Creates widgets for the 'Stock Exports' tab."""
