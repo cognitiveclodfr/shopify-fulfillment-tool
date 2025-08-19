@@ -11,7 +11,7 @@ class SettingsWindow(ctk.CTkToplevel):
         super().__init__(parent)
         self.parent = parent
         self.title("Application Settings")
-        self.geometry("800x600")
+        self.geometry("800x800")
 
         # Define constants for the filter builder
         self.FILTERABLE_COLUMNS = [
@@ -314,20 +314,21 @@ class SettingsWindow(ctk.CTkToplevel):
 
         # --- Filter Builder UI ---
         ctk.CTkLabel(entry_frame, text="Filters:").grid(row=2, column=0, padx=5, pady=2, sticky="w")
-
         filters_frame = ctk.CTkFrame(entry_frame)
-        filters_frame.grid(row=2, column=1, columnspan=2, padx=5, pady=2, sticky="ew")
+        filters_frame.grid(row=2, column=1, sticky="ew")
 
         add_filter_button = ctk.CTkButton(entry_frame, text="Add Filter", width=80)
         add_filter_button.grid(row=3, column=1, padx=5, pady=(0, 5), sticky="w")
 
+        # --- Exclude SKUs ---
         ctk.CTkLabel(entry_frame, text="Exclude SKUs (comma-separated):").grid(row=4, column=0, padx=5, pady=2, sticky="w")
         exclude_skus_var = tk.StringVar(value=", ".join(config.get('exclude_skus', [])))
-        ctk.CTkEntry(entry_frame, textvariable=exclude_skus_var).grid(row=3, column=1, columnspan=2, padx=5, pady=2, sticky="ew")
+        ctk.CTkEntry(entry_frame, textvariable=exclude_skus_var).grid(row=4, column=1, sticky="ew")
 
+        # --- Delete Button ---
         delete_button = ctk.CTkButton(entry_frame, text="Delete", fg_color="red", width=60,
                                       command=lambda f=entry_frame: self.delete_packing_list_entry(f))
-        delete_button.grid(row=5, column=2, padx=5, pady=5, sticky="e")
+        delete_button.grid(row=5, column=1, padx=5, pady=5, sticky="e")
 
         widget_refs = {
             'frame': entry_frame,
@@ -357,20 +358,21 @@ class SettingsWindow(ctk.CTkToplevel):
     def _add_filter_rule_row(self, parent_frame, rows_list, col="", op="", val=""):
         """Dynamically adds a new row of widgets for creating a filter rule."""
         row_frame = ctk.CTkFrame(parent_frame)
-        row_frame.pack(fill="x", expand=True, pady=2)
+        row_frame.grid(sticky="ew", pady=2)
+        row_frame.grid_columnconfigure(2, weight=1) # Allow the value entry to expand
 
         col_var = tk.StringVar(value=col or self.FILTERABLE_COLUMNS[0])
         op_var = tk.StringVar(value=op or self.OPERATORS[0])
         val_var = tk.StringVar(value=val)
 
         col_combo = ctk.CTkComboBox(row_frame, values=self.FILTERABLE_COLUMNS, variable=col_var, width=150)
-        col_combo.pack(side="left", padx=5, pady=5)
+        col_combo.grid(row=0, column=0, padx=5, pady=5)
 
         op_combo = ctk.CTkComboBox(row_frame, values=self.OPERATORS, variable=op_var, width=80)
-        op_combo.pack(side="left", padx=5, pady=5)
+        op_combo.grid(row=0, column=1, padx=5, pady=5)
 
         val_entry = ctk.CTkEntry(row_frame, textvariable=val_var, placeholder_text="Value")
-        val_entry.pack(side="left", fill="x", expand=True, padx=5, pady=5)
+        val_entry.grid(row=0, column=2, padx=5, pady=5, sticky="ew")
 
         row_widgets = {
             "frame": row_frame,
@@ -381,7 +383,7 @@ class SettingsWindow(ctk.CTkToplevel):
 
         delete_button = ctk.CTkButton(row_frame, text="X", fg_color="red", width=30,
                                       command=lambda: self._delete_filter_rule_row(row_widgets, rows_list))
-        delete_button.pack(side="right", padx=5, pady=5)
+        delete_button.grid(row=0, column=3, padx=5, pady=5)
 
         rows_list.append(row_widgets)
 
@@ -425,19 +427,19 @@ class SettingsWindow(ctk.CTkToplevel):
 
         ctk.CTkLabel(entry_frame, text="Name:").grid(row=0, column=0, padx=5, pady=2, sticky="w")
         name_var = tk.StringVar(value=config.get('name', ''))
-        ctk.CTkEntry(entry_frame, textvariable=name_var).grid(row=0, column=1, columnspan=2, padx=5, pady=2, sticky="ew")
+        ctk.CTkEntry(entry_frame, textvariable=name_var).grid(row=0, column=1, padx=5, pady=2, sticky="ew")
 
         ctk.CTkLabel(entry_frame, text="Template Filename:").grid(row=1, column=0, padx=5, pady=2, sticky="w")
         template_var = tk.StringVar(value=config.get('template', ''))
-        ctk.CTkEntry(entry_frame, textvariable=template_var).grid(row=1, column=1, columnspan=2, padx=5, pady=2, sticky="ew")
+        ctk.CTkEntry(entry_frame, textvariable=template_var).grid(row=1, column=1, padx=5, pady=2, sticky="ew")
 
         ctk.CTkLabel(entry_frame, text="Filters (JSON):").grid(row=2, column=0, padx=5, pady=2, sticky="w")
         filters_var = tk.StringVar(value=json.dumps(config.get('filters', {})))
-        ctk.CTkEntry(entry_frame, textvariable=filters_var).grid(row=2, column=1, columnspan=2, padx=5, pady=2, sticky="ew")
+        ctk.CTkEntry(entry_frame, textvariable=filters_var).grid(row=2, column=1, padx=5, pady=2, sticky="ew")
 
         delete_button = ctk.CTkButton(entry_frame, text="Delete", fg_color="red", width=60,
                                       command=lambda f=entry_frame: self.delete_stock_export_entry(f))
-        delete_button.grid(row=3, column=2, padx=5, pady=5, sticky="e")
+        delete_button.grid(row=3, column=1, padx=5, pady=5, sticky="e")
 
         self.stock_export_widgets.append({
             'frame': entry_frame, 'name_var': name_var, 'template_var': template_var, 'filters_var': filters_var
