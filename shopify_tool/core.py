@@ -27,6 +27,38 @@ def _validate_dataframes(orders_df, stock_df, config):
 
     return errors
 
+def validate_csv_headers(file_path, required_columns, delimiter=','):
+    """
+    Quickly validates if a CSV file contains the required column headers.
+
+    Args:
+        file_path (str): The path to the CSV file.
+        required_columns (list): A list of column names that must be present.
+        delimiter (str): The delimiter used in the CSV file.
+
+    Returns:
+        tuple: A tuple containing:
+            - bool: True if all required columns are present, False otherwise.
+            - list: A list of missing columns. An empty list if all are present.
+    """
+    if not required_columns:
+        return True, []
+
+    try:
+        headers = pd.read_csv(file_path, nrows=0, delimiter=delimiter).columns.tolist()
+        missing_columns = [col for col in required_columns if col not in headers]
+
+        if not missing_columns:
+            return True, []
+        else:
+            return False, missing_columns
+
+    except FileNotFoundError:
+        return False, ["File not found."]
+    except Exception as e:
+        logger.error(f"Error validating CSV headers for {file_path}: {e}")
+        return False, [f"An unexpected error occurred: {e}"]
+
 def _apply_tagging_rules(df, config):
     """
     Applies custom tagging rules to the 'Status_Note' column based on the

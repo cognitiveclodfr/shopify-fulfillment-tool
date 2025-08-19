@@ -26,6 +26,9 @@ class ToolTip:
         self.widget.bind("<Enter>", self.show_tooltip)
         self.widget.bind("<Leave>", self.hide_tooltip)
 
+    def update_text(self, new_text):
+        self.text = new_text
+
     def show_tooltip(self, event):
         if self.tooltip_window or not self.text:
             return
@@ -102,12 +105,18 @@ class App(ctk.CTk):
         ToolTip(load_orders_btn, "Select the orders_export.csv file from Shopify.")
         
         ctk.CTkLabel(files_frame, textvariable=self.orders_file_path).grid(row=0, column=1, padx=10, pady=5, sticky="w")
+        self.orders_file_status_label = ctk.CTkLabel(files_frame, text="", width=20)
+        self.orders_file_status_label.grid(row=0, column=2, padx=5, pady=5, sticky="w")
+        self.orders_file_tooltip = ToolTip(self.orders_file_status_label, "")
         
         load_stock_btn = ctk.CTkButton(files_frame, text="Load Stock File (.csv)", command=self.select_stock_file)
         load_stock_btn.grid(row=1, column=0, padx=10, pady=5)
         ToolTip(load_stock_btn, "Select the inventory/stock CSV file.")
 
         ctk.CTkLabel(files_frame, textvariable=self.stock_file_path).grid(row=1, column=1, padx=10, pady=5, sticky="w")
+        self.stock_file_status_label = ctk.CTkLabel(files_frame, text="", width=20)
+        self.stock_file_status_label.grid(row=1, column=2, padx=5, pady=5, sticky="w")
+        self.stock_file_tooltip = ToolTip(self.stock_file_status_label, "")
 
         actions_frame = ctk.CTkFrame(self)
         actions_frame.grid(row=1, column=0, padx=10, pady=0, sticky="ew")
@@ -301,6 +310,7 @@ class App(ctk.CTk):
         if filepath:
             self.orders_file_path.set(filepath)
             print(f"Orders file selected: {filepath}")
+            self.start_validation_thread(filepath, 'orders')
             self.check_files_selected()
 
     def select_stock_file(self):
@@ -308,6 +318,7 @@ class App(ctk.CTk):
         if filepath:
             self.stock_file_path.set(filepath)
             print(f"Stock file selected: {filepath}")
+            self.start_validation_thread(filepath, 'stock')
             self.check_files_selected()
 
     def check_files_selected(self):
@@ -369,6 +380,41 @@ class App(ctk.CTk):
             messagebox.showerror("Analysis Error", f"An error occurred during analysis:\n{result}")
         
         self.run_analysis_button.configure(state="normal")
+
+    def start_validation_thread(self, file_path, file_type):
+        """Starts a new thread to validate the CSV headers."""
+        threading.Thread(target=self.run_validation_logic, args=(file_path, file_type), daemon=True).start()
+
+    def run_validation_logic(self, file_path, file_type):
+        """The logic that runs in a separate thread to validate a file."""
+        if file_type == 'orders':
+            required_cols = self.config.get('column_mappings', {}).get('orders_required', [])
+            delimiter = ','
+        else: # stock
+            required_cols = self.config.get('column_mappings', {}).get('stock_required', [])
+            delimiter = self.config.get('settings', {}).get('stock_csv_delimiter', ';')
+
+        is_valid, missing_cols = core.validate_csv_headers(file_path, required_cols, delimiter)
+
+        # Schedule the UI update on the main thread
+        self.after(0, self.on_validation_complete, file_type, is_valid, missing_cols)
+
+    def on_validation_complete(self, file_type, is_valid, missing_cols):
+        """Handles the result of the validation and updates the UI."""
+        if file_type == 'orders':
+            label = self.orders_file_status_label
+            tooltip = self.orders_file_tooltip
+        else: # stock
+            label = self.stock_file_status_label
+            tooltip = self.stock_file_tooltip
+
+        if is_valid:
+            label.configure(text="✓", text_color="green", font=("Arial", 16, "bold"))
+            tooltip.update_text("File is valid.")
+        else:
+            label.configure(text="✗", text_color="red", font=("Arial", 16, "bold"))
+            error_message = f"Missing columns: {', '.join(missing_cols)}"
+            tooltip.update_text(error_message)
 
     def open_packing_list_window(self):
         self.create_report_window("packing_lists", "Create Packing Lists")
