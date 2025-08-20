@@ -49,6 +49,24 @@ class ToolTip:
             self.tooltip_window.destroy()
         self.tooltip_window = None
 
+def get_persistent_data_path(filename):
+    """
+    Generates a path to a file in a persistent application data folder.
+    Creates the folder if it doesn't exist.
+    """
+    # Use APPDATA for Windows, or user's home directory for other platforms
+    app_data_path = os.getenv('APPDATA') or os.path.expanduser("~")
+    app_dir = os.path.join(app_data_path, "ShopifyFulfillmentTool")
+
+    try:
+        os.makedirs(app_dir, exist_ok=True)
+    except OSError as e:
+        # Fallback to current directory if AppData is not writable
+        logger.error(f"Could not create AppData directory: {e}. Falling back to local directory.")
+        app_dir = "."
+
+    return os.path.join(app_dir, filename)
+
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
     try:
@@ -98,8 +116,9 @@ class App(ctk.CTk):
         self.session_path = None
         self.config_path = resource_path('config.json')
         self.config = self.load_config()
-        self.log_file_path = resource_path('app_history.log')
-        self.session_file = resource_path('session_data.pkl')
+        # Use persistent path for log file and session file
+        self.log_file_path = get_persistent_data_path('app_history.log')
+        self.session_file = get_persistent_data_path('session_data.pkl')
 
         self.create_widgets()
 
