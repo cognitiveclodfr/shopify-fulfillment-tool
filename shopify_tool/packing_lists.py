@@ -1,13 +1,16 @@
 import pandas as pd
 import os
+import logging
 from datetime import datetime
+
+logger = logging.getLogger('ShopifyToolLogger')
 
 def create_packing_list(analysis_df, output_file, report_name="Packing List", filters=None, exclude_skus=None):
     """
     Creates a versatile packing list in .xlsx format with advanced formatting.
     """
     try:
-        print(f"\n--- Creating report: '{report_name}' ---")
+        logger.info(f"--- Creating report: '{report_name}' ---")
 
         # Build the query string to filter the DataFrame
         query_parts = ["Order_Fulfillment_Status == 'Fulfillable'"]
@@ -24,14 +27,14 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
 
         # Exclude specified SKUs if any are provided
         if exclude_skus and not filtered_orders.empty:
-            print(f"Excluding SKUs: {exclude_skus}")
+            logger.info(f"Excluding SKUs: {exclude_skus}")
             filtered_orders = filtered_orders[~filtered_orders['SKU'].isin(exclude_skus)]
 
         if filtered_orders.empty:
-            print("Result: No orders found matching the criteria.")
+            logger.warning(f"Report '{report_name}': No orders found matching the criteria.")
             return
 
-        print(f"Found {filtered_orders['Order_Number'].nunique()} orders for the report.")
+        logger.info(f"Found {filtered_orders['Order_Number'].nunique()} orders for the report.")
 
         # Fill NaN values to avoid issues during processing
         for col in ['Destination_Country', 'Product_Name', 'SKU']:
@@ -59,7 +62,7 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
         }
         print_list = print_list.rename(columns=rename_map)
         
-        print("Creating Excel file...")
+        logger.info("Creating Excel file...")
         with pd.ExcelWriter(output_file, engine='xlsxwriter') as writer:
             sheet_name = os.path.splitext(output_filename)[0]
             print_list.to_excel(writer, sheet_name=sheet_name, index=False)
@@ -115,7 +118,7 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
             worksheet.repeat_rows(0)  # Repeat header row
             worksheet.fit_to_pages(1, 0)  # Fit to 1 page wide
 
-        print(f"Result: Success! File saved to '{output_file}'")
+        logger.info(f"Report '{report_name}' created successfully.")
 
     except Exception as e:
-        print(f"ERROR while creating packing list: {e}")
+        logger.error(f"ERROR while creating packing list: {e}")

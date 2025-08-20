@@ -3,6 +3,188 @@ import tkinter as tk
 from tkinter import messagebox
 import json
 
+class RuleBuilderFrame(ctk.CTkScrollableFrame):
+    """A custom frame for building and managing a list of rules."""
+
+    # Define constants based on user feedback and backend implementation
+    CONDITION_FIELDS = [
+        'Order_Number', 'Order_Type', 'SKU', 'Product_Name', 'Stock_Alert',
+        'Order_Fulfillment_Status', 'Shipping_Provider', 'Destination_Country',
+        'Tags', 'Status_Note', 'Total_Price' # Added Total_Price from example
+    ]
+    CONDITION_OPERATORS = [
+        'equals', 'does not equal', 'contains', 'does not contain',
+        'is greater than', 'is less than', 'starts with', 'ends with',
+        'is empty', 'is not empty'
+    ]
+    ACTION_TYPES = [
+        'ADD_TAG', 'SET_STATUS', 'SET_PRIORITY',
+        'EXCLUDE_FROM_REPORT', 'EXCLUDE_SKU'
+    ]
+
+    def __init__(self, master, rules_data, **kwargs):
+        super().__init__(master, **kwargs)
+        self.rules_data = rules_data
+        self.rule_widgets = []
+        self.grid_columnconfigure(0, weight=1)
+        self.populate_rules()
+
+    def populate_rules(self):
+        """Clears and repopulates the frame with rule widgets."""
+        for widgets in self.rule_widgets:
+            widgets['frame'].destroy()
+        self.rule_widgets = []
+
+        for rule_config in self.rules_data:
+            self.add_rule_entry(rule_config)
+
+    def add_rule_entry(self, config=None):
+        """Adds a UI block for a single rule."""
+        if config is None:
+            config = {
+                "name": "New Rule",
+                "match": "ALL",
+                "conditions": [],
+                "actions": []
+            }
+
+        rule_frame = ctk.CTkFrame(self, border_width=1)
+        rule_frame.grid(padx=5, pady=(5, 10), sticky="ew")
+        rule_frame.grid_columnconfigure(1, weight=1)
+
+        # --- Rule Header ---
+        header_frame = ctk.CTkFrame(rule_frame, fg_color="transparent")
+        header_frame.grid(row=0, column=0, columnspan=2, sticky="ew", padx=5, pady=5)
+        header_frame.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(header_frame, text="Rule Name:").grid(row=0, column=0, padx=(0,5))
+        name_var = tk.StringVar(value=config.get('name', ''))
+        ctk.CTkEntry(header_frame, textvariable=name_var).grid(row=0, column=1, sticky="ew")
+
+        delete_rule_btn = ctk.CTkButton(header_frame, text="Delete Rule", fg_color=master.parent.STYLE['color_destructive'], width=100,
+                                        command=lambda f=rule_frame: self.delete_rule_ui(f))
+        delete_rule_btn.grid(row=0, column=2, padx=(10, 0))
+
+        # --- Conditions (IF) ---
+        conditions_frame = ctk.CTkFrame(rule_frame)
+        conditions_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=5, pady=5)
+        conditions_frame.grid_columnconfigure(0, weight=1)
+
+        match_var = tk.StringVar(value=config.get('match', 'ALL'))
+        match_menu = ctk.CTkOptionMenu(conditions_frame, variable=match_var, values=["ALL", "ANY"])
+        ctk.CTkLabel(conditions_frame, text="Execute actions if").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        match_menu.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+        ctk.CTkLabel(conditions_frame, text="of the following conditions are met:").grid(row=0, column=2, padx=5, pady=5, sticky="w")
+
+        conditions_list_frame = ctk.CTkFrame(conditions_frame, fg_color="transparent")
+        conditions_list_frame.grid(row=1, column=0, columnspan=3, sticky="ew", padx=5)
+
+        # --- Actions (THEN) ---
+        actions_frame = ctk.CTkFrame(rule_frame)
+        actions_frame.grid(row=2, column=0, columnspan=2, sticky="ew", padx=5, pady=5)
+        actions_frame.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(actions_frame, text="Then, perform these actions:").grid(row=0, column=0, columnspan=2, sticky="w", padx=5, pady=5)
+
+        actions_list_frame = ctk.CTkFrame(actions_frame, fg_color="transparent")
+        actions_list_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=5)
+
+        widget_refs = {
+            'frame': rule_frame,
+            'name_var': name_var,
+            'match_var': match_var,
+            'conditions': [], # List of dicts for condition rows
+            'actions': [] # List of dicts for action rows
+        }
+
+        # --- Add Buttons ---
+        add_condition_btn = ctk.CTkButton(conditions_frame, text="Add Condition", width=120,
+                                           command=lambda: self.add_condition_row(conditions_list_frame, widget_refs['conditions']))
+        add_condition_btn.grid(row=2, column=0, columnspan=3, padx=5, pady=5, sticky="w")
+
+        add_action_btn = ctk.CTkButton(actions_frame, text="Add Action", width=120,
+                                       command=lambda: self.add_action_row(actions_list_frame, widget_refs['actions']))
+        add_action_btn.grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky="w")
+
+        # Populate existing conditions and actions
+        for cond in config.get('conditions', []):
+            self.add_condition_row(conditions_list_frame, widget_refs['conditions'], cond)
+        for act in config.get('actions', []):
+            self.add_action_row(actions_list_frame, widget_refs['actions'], act)
+
+        self.rule_widgets.append(widget_refs)
+
+    def add_condition_row(self, parent, conditions_list, config=None):
+        """Adds a UI row for a single condition."""
+        if config is None: config = {}
+        row_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        row_frame.pack(fill="x", pady=2)
+
+        field_var = tk.StringVar(value=config.get('field', self.CONDITION_FIELDS[0]))
+        op_var = tk.StringVar(value=config.get('operator', self.CONDITION_OPERATORS[0]))
+        val_var = tk.StringVar(value=config.get('value', ''))
+
+        ctk.CTkComboBox(row_frame, values=self.CONDITION_FIELDS, variable=field_var).pack(side="left", padx=5)
+        ctk.CTkComboBox(row_frame, values=self.CONDITION_OPERATORS, variable=op_var, width=150).pack(side="left", padx=5)
+        ctk.CTkEntry(row_frame, textvariable=val_var, placeholder_text="Value").pack(side="left", padx=5, fill="x", expand=True)
+        ctk.CTkButton(row_frame, text="X", width=30, fg_color=self.master.parent.STYLE['color_destructive'],
+                      command=lambda: self.delete_row(row_frame, conditions_list, condition_widgets)).pack(side="left", padx=5)
+
+        condition_widgets = {'frame': row_frame, 'field_var': field_var, 'op_var': op_var, 'val_var': val_var}
+        conditions_list.append(condition_widgets)
+
+    def add_action_row(self, parent, actions_list, config=None):
+        """Adds a UI row for a single action."""
+        if config is None: config = {}
+        row_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        row_frame.pack(fill="x", pady=2)
+
+        type_var = tk.StringVar(value=config.get('type', self.ACTION_TYPES[0]))
+        val_var = tk.StringVar(value=config.get('value', ''))
+
+        ctk.CTkComboBox(row_frame, values=self.ACTION_TYPES, variable=type_var).pack(side="left", padx=5)
+        ctk.CTkEntry(row_frame, textvariable=val_var, placeholder_text="Value").pack(side="left", padx=5, fill="x", expand=True)
+        ctk.CTkButton(row_frame, text="X", width=30, fg_color=self.master.parent.STYLE['color_destructive'],
+                      command=lambda: self.delete_row(row_frame, actions_list, action_widgets)).pack(side="left", padx=5)
+
+        action_widgets = {'frame': row_frame, 'type_var': type_var, 'val_var': val_var}
+        actions_list.append(action_widgets)
+
+    def delete_row(self, frame, widget_list, widget_dict):
+        frame.destroy()
+        widget_list.remove(widget_dict)
+
+    def delete_rule_ui(self, frame):
+        frame.destroy()
+        self.rule_widgets = [w for w in self.rule_widgets if w['frame'] is not frame]
+
+    def get_rules_config(self):
+        """Constructs and returns the rules configuration from the UI state."""
+        new_rules = []
+        for rule_w in self.rule_widgets:
+            conditions = []
+            for cond_w in rule_w['conditions']:
+                conditions.append({
+                    "field": cond_w['field_var'].get(),
+                    "operator": cond_w['op_var'].get(),
+                    "value": cond_w['val_var'].get()
+                })
+
+            actions = []
+            for act_w in rule_w['actions']:
+                actions.append({
+                    "type": act_w['type_var'].get(),
+                    "value": act_w['val_var'].get()
+                })
+
+            new_rules.append({
+                "name": rule_w['name_var'].get(),
+                "match": rule_w['match_var'].get(),
+                "conditions": conditions,
+                "actions": actions
+            })
+        return new_rules
+
+
 class SettingsWindow(ctk.CTkToplevel):
     """
     A Toplevel window for managing application settings from config.json.
@@ -46,13 +228,14 @@ class SettingsWindow(ctk.CTkToplevel):
         self.tab_view.grid(row=0, column=0, sticky="nsew")
 
         self.tab_view.add("General & Paths")
-        self.tab_view.add("Tagging Rules")
+        self.tab_view.add("Rules")
         self.tab_view.add("Packing Lists")
         self.tab_view.add("Stock Exports")
 
         # Create content for tabs
         self.create_general_tab()
-        self.create_tagging_tab()
+        # self.create_tagging_tab() # This will be replaced
+        self.create_rules_tab()
         self.create_packing_lists_tab()
         self.create_stock_exports_tab()
 
@@ -61,10 +244,10 @@ class SettingsWindow(ctk.CTkToplevel):
         buttons_frame.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="ew")
         buttons_frame.grid_columnconfigure((0, 1), weight=1)
 
-        save_button = ctk.CTkButton(buttons_frame, text="Save and Close", command=self.save_settings)
+        save_button = ctk.CTkButton(buttons_frame, text="Save and Close", command=self.save_settings, fg_color=self.parent.STYLE['color_accent'])
         save_button.grid(row=0, column=0, padx=10, pady=5, sticky="e")
 
-        cancel_button = ctk.CTkButton(buttons_frame, text="Cancel", command=self.destroy, fg_color="gray")
+        cancel_button = ctk.CTkButton(buttons_frame, text="Cancel", command=self.destroy, fg_color=self.parent.STYLE['color_gray'])
         cancel_button.grid(row=0, column=1, padx=10, pady=5, sticky="w")
 
     def create_general_tab(self):
@@ -105,22 +288,9 @@ class SettingsWindow(ctk.CTkToplevel):
             self.config_data['paths']['templates'] = self.templates_path_var.get()
             self.config_data['paths']['output_dir_stock'] = self.stock_output_path_var.get()
 
-            # Update tagging rules
-            try:
-                self.config_data['tagging_rules']['composite_order_tag'] = self.composite_tag_var.get()
-            except Exception:
-                # Ensure structure exists
-                self.config_data.setdefault('tagging_rules', {})
-                self.config_data['tagging_rules']['composite_order_tag'] = getattr(self, 'composite_tag_var', tk.StringVar(value='BOX')).get()
+            # Get the new rules configuration from the builder
+            self.config_data['rules'] = self.rule_builder.get_rules_config()
 
-            new_special_tags = {}
-            for widgets in getattr(self, 'rule_widgets', []):
-                sku = widgets['sku_var'].get()
-                tag = widgets['tag_var'].get()
-                if sku: # Only save if SKU is not empty
-                    new_special_tags[sku] = tag
-            self.config_data.setdefault('tagging_rules', {})
-            self.config_data['tagging_rules']['special_sku_tags'] = new_special_tags
             # Update packing lists
             new_packing_lists = []
             for widgets in getattr(self, 'packing_list_widgets', []):
@@ -191,96 +361,28 @@ class SettingsWindow(ctk.CTkToplevel):
         except Exception as e:
             messagebox.showerror("Error", f"Failed to save settings: {e}", parent=self)
 
-    def create_tagging_tab(self):
-        """Creates widgets for the 'Tagging Rules' tab."""
-        tagging_tab = self.tab_view.tab("Tagging Rules")
-        tagging_tab.grid_columnconfigure(0, weight=1)
+    def create_rules_tab(self):
+        """Creates widgets for the 'Rules' tab."""
+        rules_tab = self.tab_view.tab("Rules")
+        rules_tab.grid_columnconfigure(0, weight=1)
+        rules_tab.grid_rowconfigure(1, weight=1)
 
-        # --- Composite Tag Section ---
-        ctk.CTkLabel(tagging_tab, text="Composite Order Tag", font=("Arial", 16, "bold")).grid(row=0, column=0, columnspan=2, pady=10, padx=10, sticky="w")
+        # Main frame for the rule builder
+        builder_main_frame = ctk.CTkFrame(rules_tab, fg_color="transparent")
+        builder_main_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
+        builder_main_frame.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(tagging_tab, text="Tag for multi-item orders with a special SKU:").grid(row=1, column=0, padx=10, pady=5, sticky="w")
-        self.composite_tag_var = tk.StringVar(value=self.config_data.get('tagging_rules', {}).get('composite_order_tag', 'BOX'))
-        ctk.CTkEntry(tagging_tab, textvariable=self.composite_tag_var).grid(row=1, column=1, padx=10, pady=5, sticky="w")
+        add_rule_button = ctk.CTkButton(builder_main_frame, text="Add New Rule",
+                                        command=lambda: self.rule_builder.add_rule_entry())
+        add_rule_button.pack(anchor="w")
 
-        # --- Special SKU Tags Section ---
-        ctk.CTkLabel(tagging_tab, text="Special SKU Tags", font=("Arial", 16, "bold")).grid(row=2, column=0, columnspan=2, pady=(20, 10), padx=10, sticky="w")
-
-        # Frame for the list of rules
-        self.rules_frame = ctk.CTkFrame(tagging_tab)
-        self.rules_frame.grid(row=3, column=0, columnspan=2, sticky="nsew", padx=10)
-        self.rules_frame.grid_columnconfigure(0, weight=1)
-
-        # List to keep track of rule entry widgets
-        self.rule_widgets = []
-        self.populate_tagging_rules()
-
-        # Add new rule button
-        add_button = ctk.CTkButton(tagging_tab, text="Add New Rule", command=self.add_rule_entry)
-        add_button.grid(row=4, column=0, columnspan=2, pady=10, padx=10, sticky="w")
-
-    def populate_tagging_rules(self):
-        """Clears and repopulates the rules frame based on config data."""
-        # Clear existing widgets
-        for widgets in getattr(self, 'rule_widgets', []):
-            widgets['sku_entry'].destroy()
-            widgets['tag_entry'].destroy()
-            widgets['delete_button'].destroy()
-        self.rule_widgets = []
-
-        # Add header
-        header_frame = ctk.CTkFrame(self.rules_frame, fg_color="transparent")
-        header_frame.grid(row=0, column=0, sticky="ew")
-        header_frame.grid_columnconfigure(0, weight=4)
-        header_frame.grid_columnconfigure(1, weight=4)
-        header_frame.grid_columnconfigure(2, weight=1)
-        ctk.CTkLabel(header_frame, text="SKU", font=("Arial", 12, "bold")).grid(row=0, column=0, padx=5)
-        ctk.CTkLabel(header_frame, text="Tag", font=("Arial", 12, "bold")).grid(row=0, column=1, padx=5)
-
-        # Populate with rules from config
-        special_tags = self.config_data.get('tagging_rules', {}).get('special_sku_tags', {})
-        for sku, tag in special_tags.items():
-            self.add_rule_entry(sku, tag)
-
-    def add_rule_entry(self, sku="", tag=""):
-        """Adds a new row of widgets for a single SKU-tag rule."""
-        row_index = len(self.rule_widgets) + 1 # +1 for header
-
-        sku_var = tk.StringVar(value=sku)
-        tag_var = tk.StringVar(value=tag)
-
-        sku_entry = ctk.CTkEntry(self.rules_frame, textvariable=sku_var)
-        sku_entry.grid(row=row_index, column=0, padx=5, pady=5, sticky="ew")
-
-        tag_entry = ctk.CTkEntry(self.rules_frame, textvariable=tag_var)
-        tag_entry.grid(row=row_index, column=1, padx=5, pady=5, sticky="ew")
-
-        delete_button = ctk.CTkButton(self.rules_frame, text="Delete", fg_color="red", width=60,
-                                      command=lambda r=row_index: self.delete_rule_entry(r))
-        delete_button.grid(row=row_index, column=2, padx=5, pady=5)
-
-        self.rule_widgets.append({
-            'row': row_index,
-            'sku_var': sku_var,
-            'tag_var': tag_var,
-            'sku_entry': sku_entry,
-            'tag_entry': tag_entry,
-            'delete_button': delete_button
-        })
-
-    def delete_rule_entry(self, row_to_delete):
-        """Removes a rule entry from the UI."""
-        # Find the widget set by its row index
-        widget_to_delete = next((w for w in self.rule_widgets if w['row'] == row_to_delete), None)
-        if not widget_to_delete: return
-
-        # Destroy widgets
-        widget_to_delete['sku_entry'].destroy()
-        widget_to_delete['tag_entry'].destroy()
-        widget_to_delete['delete_button'].destroy()
-
-        # Remove from our list
-        self.rule_widgets.remove(widget_to_delete)
+        # Create the scrollable frame for the rules
+        self.rule_builder = RuleBuilderFrame(
+            master=rules_tab,
+            rules_data=self.config_data.get('rules', []),
+            label_text="Automation Rules"
+        )
+        self.rule_builder.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
 
     def create_packing_lists_tab(self):
         """Creates widgets for the 'Packing Lists' tab."""

@@ -1,17 +1,20 @@
 import pandas as pd
 import os
 import xlrd
+import logging
 from xlutils.copy import copy
+
+logger = logging.getLogger('ShopifyToolLogger')
 
 def create_stock_export(analysis_df, template_file, output_file, report_name="Stock Export", filters=None):
     """
     Creates a stock export file by writing data into an existing .xls template file.
     """
     try:
-        print(f"\n--- Creating report: '{report_name}' ---")
+        logger.info(f"--- Creating report: '{report_name}' ---")
 
         if not os.path.exists(template_file) or os.path.getsize(template_file) == 0:
-            print(f"ERROR: Template file '{template_file}' not found or is empty.")
+            logger.error(f"Template file '{template_file}' not found or is empty.")
             return
 
         # Build the query string to filter the DataFrame
@@ -27,7 +30,7 @@ def create_stock_export(analysis_df, template_file, output_file, report_name="St
         filtered_items = analysis_df.query(full_query).copy()
 
         if filtered_items.empty:
-            print("Result: No items found matching the criteria.")
+            logger.warning(f"Report '{report_name}': No items found matching the criteria.")
             return
 
         # Summarize quantities by SKU
@@ -35,17 +38,16 @@ def create_stock_export(analysis_df, template_file, output_file, report_name="St
         sku_summary = sku_summary[sku_summary['Quantity'] > 0]
         
         if sku_summary.empty:
-            print("Result: No items with a positive quantity to export.")
+            logger.warning(f"Report '{report_name}': No items with a positive quantity to export.")
             return
             
-        print(f"Found {len(sku_summary)} unique SKUs to write.")
+        logger.info(f"Found {len(sku_summary)} unique SKUs to write for report '{report_name}'.")
 
         try:
             # Open the template file for reading
             rb = xlrd.open_workbook(template_file, formatting_info=True)
         except xlrd.biffh.XLRDError as e:
-            print(f"ERROR: Cannot read template file '{template_file}'. The file may be corrupt.")
-            print(f"   Details: {e}")
+            logger.error(f"Cannot read template file '{template_file}'. The file may be corrupt. Details: {e}")
             return
 
         # Create a writable copy of the template
@@ -59,7 +61,7 @@ def create_stock_export(analysis_df, template_file, output_file, report_name="St
             sheet_to_write.write(index + 1, 2, 'бройка') # This is a specific required value.
             
         wb.save(output_file)
-        print(f"Result: Success! File created: '{output_file}'")
+        logger.info(f"Stock export '{report_name}' created successfully.")
 
     except Exception as e:
-        print(f"ERROR while creating stock export: {e}")
+        logger.error(f"Error while creating stock export '{report_name}': {e}")
