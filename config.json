@@ -25,14 +25,7 @@
       "Наличност"
     ]
   },
-  "tagging_rules": {
-    "special_sku_tags": {
-      "02-FACE-1001": "MASK",
-      "02-FACE-1002": "MASK",
-      "02-FACE-1003": "MASK"
-    },
-    "composite_order_tag": "BOX"
-  },
+  "rules": [],
   "packing_lists": [
     {
       "name": "All Fulfillable Orders",

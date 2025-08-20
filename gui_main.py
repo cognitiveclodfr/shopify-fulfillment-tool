@@ -7,6 +7,7 @@ import os
 import pandas as pd
 import json
 import logging
+import pickle
 from shopify_tool.logger_config import setup_logging
 from datetime import datetime
 
@@ -58,28 +59,89 @@ def resource_path(relative_path):
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
 from shopify_tool import core
-from shopify_tool.analysis import recalculate_statistics
+from shopify_tool.analysis import recalculate_statistics, toggle_order_fulfillment
 from gui.report_builder_window import ReportBuilderWindow
 from gui.settings_window import SettingsWindow
+from gui.column_manager_window import ColumnManagerWindow
+from gui.log_viewer import LogViewer
 
 
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("Shopify Fulfillment Tool v5.1")
-        self.geometry("900x750")
-        ctk.set_appearance_mode("System")
-        ctk.set_default_color_theme("blue")
+        self.title("Shopify Fulfillment Tool v8.0")
+        self.geometry("950x800")
+        ctk.set_appearance_mode("Dark")
+
+        # --- Style Configuration ---
+        self.STYLE = {
+            "font_family": ("Segoe UI",),
+            "font_normal": (("Segoe UI", 12)),
+            "font_bold": (("Segoe UI", 12, "bold")),
+            "font_h1": (("Segoe UI", 18, "bold")),
+            "font_h2": (("Segoe UI", 14, "bold")),
+            "color_accent": "#3B82F6",
+            "color_destructive": "#EF4444",
+            "color_success": "#22C55E",
+            "color_warning": "#F97316",
+            "color_gray": "gray",
+            "padding_outer": 10,
+            "padding_inner": 5
+        }
 
         self.analysis_results_df = None
+        self.all_columns = []
+        self.visible_columns = []
         self.analysis_stats = None # To store the stats dictionary
         self.session_path = None
         self.config_path = resource_path('config.json')
         self.config = self.load_config()
         self.log_file_path = resource_path('app_history.log')
+        self.session_file = resource_path('session_data.pkl')
 
         self.create_widgets()
+
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+        self.load_session()
+
+    def on_closing(self):
+        """Handle the event of the window closing."""
+        if self.analysis_results_df is not None:
+            if messagebox.askyesno("Save Session", "Do you want to save your current session before closing?", parent=self):
+                try:
+                    session_data = {
+                        'dataframe': self.analysis_results_df,
+                        'visible_columns': self.visible_columns
+                    }
+                    with open(self.session_file, 'wb') as f:
+                        pickle.dump(session_data, f)
+                    logger.info("Session saved successfully.")
+                except Exception as e:
+                    logger.error(f"Error saving session: {e}")
+        self.destroy()
+
+    def load_session(self):
+        """Check for and load a previous session file."""
+        if os.path.exists(self.session_file):
+            if messagebox.askyesno("Restore Session", "A previous session was found. Do you want to restore it?", parent=self):
+                try:
+                    with open(self.session_file, 'rb') as f:
+                        session_data = pickle.load(f)
+
+                    self.analysis_results_df = session_data.get('dataframe')
+                    self.visible_columns = session_data.get('visible_columns', list(self.analysis_results_df.columns))
+
+                    # Manually trigger the post-analysis UI updates
+                    self.analysis_stats = recalculate_statistics(self.analysis_results_df)
+                    self._post_analysis_ui_update()
+                    self.log_activity("Session", "Restored previous session.")
+
+                except Exception as e:
+                    messagebox.showerror("Load Error", f"Failed to load session file: {e}", parent=self)
+            # Always remove the file after checking
+            os.remove(self.session_file)
+
     def load_config(self):
         """ Loads the main configuration file. """
         try:
@@ -93,84 +155,80 @@ class App(ctk.CTk):
     def create_widgets(self):
         """ Creates all the widgets for the main application window. """
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(3, weight=1) # Adjust row configure for new session frame
+        self.grid_rowconfigure(3, weight=1)
 
         # --- Session Control Frame ---
         session_frame = ctk.CTkFrame(self)
-        session_frame.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
+        session_frame.grid(row=0, column=0, padx=self.STYLE['padding_outer'], pady=self.STYLE['padding_outer'], sticky="ew")
         session_frame.grid_columnconfigure(1, weight=1)
 
-        new_session_btn = ctk.CTkButton(session_frame, text="Create New Session", command=self._create_new_session)
-        new_session_btn.grid(row=0, column=0, padx=10, pady=10)
+        new_session_btn = ctk.CTkButton(session_frame, text="Create New Session", command=self._create_new_session, fg_color=self.STYLE['color_accent'])
+        new_session_btn.grid(row=0, column=0, padx=self.STYLE['padding_inner'], pady=self.STYLE['padding_inner'])
 
-        self.session_path_label = ctk.CTkLabel(session_frame, text="No session started.", text_color="gray")
-        self.session_path_label.grid(row=0, column=1, padx=10, pady=10, sticky="w")
+        self.session_path_label = ctk.CTkLabel(session_frame, text="No session started.", text_color=self.STYLE['color_gray'], font=self.STYLE['font_normal'])
+        self.session_path_label.grid(row=0, column=1, padx=self.STYLE['padding_inner'], pady=self.STYLE['padding_inner'], sticky="w")
 
         # --- File Loading Frame ---
         files_frame = ctk.CTkFrame(self)
-        files_frame.grid(row=1, column=0, padx=10, pady=10, sticky="ew")
+        files_frame.grid(row=1, column=0, padx=self.STYLE['padding_outer'], pady=(0, self.STYLE['padding_outer']), sticky="ew")
         files_frame.grid_columnconfigure(1, weight=1)
 
         self.orders_file_path = tk.StringVar(value="Orders file not selected")
         self.stock_file_path = tk.StringVar(value="Stock file not selected")
 
         self.load_orders_btn = ctk.CTkButton(files_frame, text="Load Orders File (.csv)", command=self.select_orders_file, state=tk.DISABLED)
-        self.load_orders_btn.grid(row=0, column=0, padx=10, pady=5)
+        self.load_orders_btn.grid(row=0, column=0, padx=self.STYLE['padding_inner'], pady=self.STYLE['padding_inner'])
         ToolTip(self.load_orders_btn, "Select the orders_export.csv file from Shopify.")
         
-        ctk.CTkLabel(files_frame, textvariable=self.orders_file_path).grid(row=0, column=1, padx=10, pady=5, sticky="w")
+        ctk.CTkLabel(files_frame, textvariable=self.orders_file_path, font=self.STYLE['font_normal']).grid(row=0, column=1, padx=self.STYLE['padding_inner'], pady=self.STYLE['padding_inner'], sticky="w")
         self.orders_file_status_label = ctk.CTkLabel(files_frame, text="", width=20)
-        self.orders_file_status_label.grid(row=0, column=2, padx=5, pady=5, sticky="w")
+        self.orders_file_status_label.grid(row=0, column=2, padx=self.STYLE['padding_inner'], pady=self.STYLE['padding_inner'], sticky="w")
         self.orders_file_tooltip = ToolTip(self.orders_file_status_label, "")
         
         self.load_stock_btn = ctk.CTkButton(files_frame, text="Load Stock File (.csv)", command=self.select_stock_file, state=tk.DISABLED)
-        self.load_stock_btn.grid(row=1, column=0, padx=10, pady=5)
+        self.load_stock_btn.grid(row=1, column=0, padx=self.STYLE['padding_inner'], pady=self.STYLE['padding_inner'])
         ToolTip(self.load_stock_btn, "Select the inventory/stock CSV file.")
 
-        ctk.CTkLabel(files_frame, textvariable=self.stock_file_path).grid(row=1, column=1, padx=10, pady=5, sticky="w")
+        ctk.CTkLabel(files_frame, textvariable=self.stock_file_path, font=self.STYLE['font_normal']).grid(row=1, column=1, padx=self.STYLE['padding_inner'], pady=self.STYLE['padding_inner'], sticky="w")
         self.stock_file_status_label = ctk.CTkLabel(files_frame, text="", width=20)
-        self.stock_file_status_label.grid(row=1, column=2, padx=5, pady=5, sticky="w")
+        self.stock_file_status_label.grid(row=1, column=2, padx=self.STYLE['padding_inner'], pady=self.STYLE['padding_inner'], sticky="w")
         self.stock_file_tooltip = ToolTip(self.stock_file_status_label, "")
 
         actions_frame = ctk.CTkFrame(self)
-        actions_frame.grid(row=2, column=0, padx=10, pady=0, sticky="ew")
-        # Reserve middle column to expand so buttons on the right stay aligned
+        actions_frame.grid(row=2, column=0, padx=self.STYLE['padding_outer'], pady=0, sticky="ew")
         actions_frame.grid_columnconfigure(1, weight=1)
 
-        self.run_analysis_button = ctk.CTkButton(actions_frame, text="Run Analysis", state="disabled", command=self.start_analysis_thread)
-        # Span only two columns so a Settings button can be placed on the right
-        self.run_analysis_button.grid(row=0, column=0, columnspan=2, padx=10, pady=10, sticky="ew")
+        self.run_analysis_button = ctk.CTkButton(actions_frame, text="Run Analysis", state="disabled", command=self.start_analysis_thread, fg_color=self.STYLE['color_accent'], height=40)
+        self.run_analysis_button.grid(row=0, column=0, columnspan=2, padx=self.STYLE['padding_inner'], pady=self.STYLE['padding_inner'], sticky="ew")
         ToolTip(self.run_analysis_button, "Start the fulfillment analysis based on the loaded files.")
 
         self.packing_list_button = ctk.CTkButton(actions_frame, text="Create Packing List", state="disabled", command=self.open_packing_list_window)
-        self.packing_list_button.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
+        self.packing_list_button.grid(row=1, column=0, padx=self.STYLE['padding_inner'], pady=self.STYLE['padding_inner'], sticky="ew")
         ToolTip(self.packing_list_button, "Generate packing lists based on pre-defined filters.")
 
         self.stock_export_button = ctk.CTkButton(actions_frame, text="Create Stock Export", state="disabled", command=self.open_stock_export_window)
-        self.stock_export_button.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
+        self.stock_export_button.grid(row=1, column=1, padx=self.STYLE['padding_inner'], pady=self.STYLE['padding_inner'], sticky="ew")
         ToolTip(self.stock_export_button, "Generate stock export files for couriers.")
 
         self.report_builder_button = ctk.CTkButton(actions_frame, text="Report Builder", state="disabled", command=self.open_report_builder_window)
-        self.report_builder_button.grid(row=1, column=2, padx=5, pady=5, sticky="ew")
+        self.report_builder_button.grid(row=1, column=2, padx=self.STYLE['padding_inner'], pady=self.STYLE['padding_inner'], sticky="ew")
         ToolTip(self.report_builder_button, "Create a custom report with your own filters and columns.")
         
-        # Settings button (opens the Settings window)
-        self.settings_button = ctk.CTkButton(actions_frame, text="Settings", command=self.open_settings_window)
-        self.settings_button.grid(row=0, column=2, padx=10, pady=10, sticky="e")
+        self.settings_button = ctk.CTkButton(actions_frame, text="Settings", command=self.open_settings_window, fg_color=self.STYLE['color_gray'])
+        self.settings_button.grid(row=0, column=2, padx=self.STYLE['padding_inner'], pady=self.STYLE['padding_inner'], sticky="e")
         ToolTip(self.settings_button, "Open the application settings window.")
 
         self.tab_view = ctk.CTkTabview(self)
-        self.tab_view.grid(row=3, column=0, padx=10, pady=10, sticky="nsew")
+        self.tab_view.grid(row=3, column=0, padx=self.STYLE['padding_outer'], pady=self.STYLE['padding_outer'], sticky="nsew")
         self.tab_view.add("Execution Log")
         self.tab_view.add("Activity Log")
         self.tab_view.add("Analysis Data")
         self.tab_view.add("Statistics")
 
         # --- Setup Tabs ---
-        self.log_area = ctk.CTkTextbox(self.tab_view.tab("Execution Log"), wrap=tk.WORD)
-        self.log_area.pack(fill="both", expand=True)
-        self.log_area.configure(state='disabled')
-        sys.stdout = TextRedirector(self.log_area, self.log_file_path)
+        log_viewer_frame = self.tab_view.tab("Execution Log")
+        self.log_viewer = LogViewer(log_viewer_frame)
+        self.log_viewer.pack(fill="both", expand=True)
             
         self.activity_log_frame = ctk.CTkFrame(self.tab_view.tab("Activity Log"))
         self.activity_log_frame.pack(fill="both", expand=True)
@@ -187,8 +245,8 @@ class App(ctk.CTk):
     def create_statistics_tab(self):
         """ Creates the UI elements for the Statistics tab. """
         # Configure column weights for stability
-        self.stats_frame.grid_columnconfigure(0, weight=0) # Column for labels
-        self.stats_frame.grid_columnconfigure(1, weight=1) # Column for values (expands)
+        self.stats_frame.grid_columnconfigure(0, weight=0)
+        self.stats_frame.grid_columnconfigure(1, weight=1)
 
         self.stats_labels = {}
         stat_keys = {
@@ -200,19 +258,19 @@ class App(ctk.CTk):
         
         row_counter = 0
         for key, text in stat_keys.items():
-            label = ctk.CTkLabel(self.stats_frame, text=text, font=("Arial", 14, "bold"), anchor="w")
-            label.grid(row=row_counter, column=0, sticky="ew", padx=10, pady=5)
-            value_label = ctk.CTkLabel(self.stats_frame, text="-", font=("Arial", 14), anchor="w")
-            value_label.grid(row=row_counter, column=1, sticky="ew", padx=10, pady=5)
+            label = ctk.CTkLabel(self.stats_frame, text=text, font=self.STYLE['font_h2'], anchor="w")
+            label.grid(row=row_counter, column=0, sticky="ew", padx=self.STYLE['padding_outer'], pady=self.STYLE['padding_inner'])
+            value_label = ctk.CTkLabel(self.stats_frame, text="-", font=self.STYLE['font_h2'], anchor="w")
+            value_label.grid(row=row_counter, column=1, sticky="ew", padx=self.STYLE['padding_outer'], pady=self.STYLE['padding_inner'])
             self.stats_labels[key] = value_label
             row_counter += 1
             
-        courier_header = ctk.CTkLabel(self.stats_frame, text="Couriers Stats:", font=("Arial", 14, "bold"), anchor="w")
-        courier_header.grid(row=row_counter, column=0, columnspan=2, sticky="ew", padx=10, pady=(15, 5))
+        courier_header = ctk.CTkLabel(self.stats_frame, text="Couriers Stats:", font=self.STYLE['font_h2'], anchor="w")
+        courier_header.grid(row=row_counter, column=0, columnspan=2, sticky="ew", padx=self.STYLE['padding_outer'], pady=(15, self.STYLE['padding_inner']))
         row_counter += 1
         
         self.courier_stats_frame = ctk.CTkFrame(self.stats_frame)
-        self.courier_stats_frame.grid(row=row_counter, column=0, columnspan=2, sticky="ew", padx=10)
+        self.courier_stats_frame.grid(row=row_counter, column=0, columnspan=2, sticky="ew", padx=self.STYLE['padding_outer'])
         # Configure courier frame columns for stability
         self.courier_stats_frame.grid_columnconfigure(0, weight=1)
         self.courier_stats_frame.grid_columnconfigure(1, weight=1)
@@ -274,76 +332,263 @@ class App(ctk.CTk):
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.activity_log_tree.insert("", 0, values=(current_time, operation_type, description))
 
+    def _sync_treeview_y_scroll(self, *args):
+        """Callback to synchronize the y-scroll of both treeviews."""
+        self.frozen_tree.yview(*args)
+        self.main_tree.yview(*args)
+
+    def _sync_treeview_selection(self, event, tree_from, tree_to):
+        """Callback to synchronize selection between the two treeviews."""
+        # a bit of a hack to prevent infinite recursion
+        if self.is_syncing:
+            return
+        self.is_syncing = True
+
+        selection = tree_from.selection()
+        tree_to.selection_set(selection)
+        if selection:
+            tree_to.focus(selection[0])
+
+        self.is_syncing = False
+
     def create_data_viewer(self):
         """ Creates the Treeview widget for displaying analysis data. """
+        self.is_syncing = False
+        # Configure the grid
+        self.data_viewer_frame.grid_rowconfigure(1, weight=1)
+        self.data_viewer_frame.grid_columnconfigure(1, weight=1) # Main tree gets weight
+
+        # Top bar for controls
+        top_bar = ctk.CTkFrame(self.data_viewer_frame, fg_color="transparent")
+        top_bar.grid(row=0, column=0, columnspan=2, sticky="ew", padx=5, pady=5)
+
+        self.column_manager_button = ctk.CTkButton(top_bar, text="Manage Columns", command=self.open_column_manager, state="disabled")
+        self.column_manager_button.pack(side="left")
+
+        # Treeview frame
+        tree_frame = ctk.CTkFrame(self.data_viewer_frame, fg_color="transparent")
+        tree_frame.grid(row=1, column=0, columnspan=2, sticky="nsew")
+        tree_frame.grid_rowconfigure(0, weight=1)
+        tree_frame.grid_columnconfigure(1, weight=1) # Main tree container gets weight
+
         style = ttk.Style()
         style.theme_use("default")
-        style.configure("Treeview", background="#2B2B2B", foreground="white", fieldbackground="#2B2B2B", borderwidth=0)
+        style.configure("Treeview", background="#2B2B2B", foreground="white", fieldbackground="#2B2B2B", borderwidth=0, rowheight=25)
         style.map('Treeview', background=[('selected', '#22559b')])
-        style.configure("Treeview.Heading", background="#565b5e", foreground="white", relief="flat")
+        style.configure("Treeview.Heading", background="#565b5e", foreground="white", relief="flat", font=('Arial', 10, 'bold'))
         style.map("Treeview.Heading", background=[('active', '#3484F0')])
         
-        style.configure("Fulfillable.Treeview", background="#0A380A", foreground="white")
-        style.configure("NotFulfillable.Treeview", background="#4A1A1A", foreground="white")
+        style.configure("Fulfillable.Treeview", background="#166534", foreground="white") # Green-800
+        style.configure("NotFulfillable.Treeview", background="#991B1B", foreground="white") # Red-800
 
-        self.tree = ttk.Treeview(self.data_viewer_frame, style="Treeview")
-        self.tree.pack(side="left", fill="both", expand=True)
+        # --- Frozen Tree (for Order_Number) ---
+        self.frozen_tree = ttk.Treeview(tree_frame, style="Treeview", show="headings")
+        self.frozen_tree.grid(row=0, column=0, sticky="nsew")
+
+        # --- Main Tree (for all other columns) ---
+        self.main_tree = ttk.Treeview(tree_frame, style="Treeview", show="headings")
+        self.main_tree.grid(row=0, column=1, sticky="nsew")
         
-        vsb = ttk.Scrollbar(self.data_viewer_frame, orient="vertical", command=self.tree.yview)
-        vsb.pack(side='right', fill='y')
-        self.tree.configure(yscrollcommand=vsb.set)
+        # --- Scrollbars ---
+        vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self._sync_treeview_y_scroll)
+        vsb.grid(row=0, column=2, sticky="ns")
+        self.frozen_tree.configure(yscrollcommand=vsb.set)
+        self.main_tree.configure(yscrollcommand=vsb.set)
 
-        hsb = ttk.Scrollbar(self.data_viewer_frame, orient="horizontal", command=self.tree.xview)
-        hsb.pack(side='bottom', fill='x')
-        self.tree.configure(xscrollcommand=hsb.set)
+        hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=self.main_tree.xview)
+        hsb.grid(row=1, column=1, sticky="ew") # Only for the main tree
+        self.main_tree.configure(xscrollcommand=hsb.set)
 
-        self.tree.bind("<Double-1>", self._on_order_double_click)
+        # --- Bindings ---
+        self.frozen_tree.bind("<Double-1>", self._on_order_double_click)
+        self.main_tree.bind("<Double-1>", self._on_order_double_click)
+        self.frozen_tree.bind("<Button-3>", self._show_context_menu)
+        self.main_tree.bind("<Button-3>", self._show_context_menu)
+        self.frozen_tree.bind("<<TreeviewSelect>>", lambda e: self._sync_treeview_selection(e, self.frozen_tree, self.main_tree))
+        self.main_tree.bind("<<TreeviewSelect>>", lambda e: self._sync_treeview_selection(e, self.main_tree, self.frozen_tree))
 
-    def _on_order_double_click(self, event):
-        """Event handler for double-clicking an order in the Analysis Data table."""
-        if not self.analysis_results_df is not None:
-            return # Don't do anything if no data is loaded
-
-        item_id = self.tree.focus()
+    def _show_context_menu(self, event):
+        """Creates and displays a context menu for the clicked treeview item."""
+        tree = event.widget
+        item_id = tree.identify_row(event.y)
         if not item_id:
             return
 
+        # Select the row that was right-clicked
+        tree.selection_set(item_id)
+        tree.focus(item_id)
+
         try:
-            values = self.tree.item(item_id, 'values')
-            order_number_index = self.tree["columns"].index('Order_Number')
-            order_number = values[order_number_index]
+            order_number = self.frozen_tree.item(item_id, 'values')[0]
+            # SKU is in the main tree. Find its index.
+            sku_index = self.main_tree['columns'].index('SKU')
+            sku = self.main_tree.item(item_id, 'values')[sku_index]
+        except (ValueError, IndexError):
+            return # Clicked on a non-data row or something went wrong
+
+        menu = tk.Menu(self, tearoff=0)
+
+        menu.add_command(label="Change Status", command=lambda: self.toggle_fulfillment_status(order_number))
+        menu.add_command(label="Copy Order Number", command=lambda: self._copy_to_clipboard(order_number))
+        menu.add_command(label="Add Tag Manually...", command=lambda: self._add_tag_manually(item_id))
+        menu.add_separator()
+        menu.add_command(label="Remove This Item from Order", command=lambda: self._remove_item_from_order(item_id, order_number, sku))
+        menu.add_command(label="Remove Entire Order", command=lambda: self._remove_entire_order(order_number))
+
+        menu.tk_popup(event.x_root, event.y_root)
+
+    def _copy_to_clipboard(self, text):
+        self.clipboard_clear()
+        self.clipboard_append(text)
+        self.log_activity("Clipboard", f"Copied '{text}' to clipboard.")
+
+    def _add_tag_manually(self, item_id):
+        dialog = ctk.CTkInputDialog(text="Enter tag to add:", title="Add Manual Tag")
+        tag_to_add = dialog.get_input()
+
+        if tag_to_add:
+            # Find all rows for this order to apply the tag consistently
+            order_number = self.frozen_tree.item(item_id, 'values')[0]
+            order_rows_indices = self.analysis_results_df[self.analysis_results_df['Order_Number'] == order_number].index
+
+            for index in order_rows_indices:
+                current_tags = self.analysis_results_df.loc[index, 'Tags']
+                if pd.isna(current_tags) or current_tags == '':
+                    new_tags = tag_to_add
+                elif tag_to_add not in current_tags.split(','):
+                    new_tags = f"{current_tags},{tag_to_add}"
+                else:
+                    new_tags = current_tags
+                self.analysis_results_df.loc[index, 'Tags'] = new_tags
+
+            self.update_data_viewer(self.analysis_results_df)
+            self.log_activity("Manual Tag", f"Added tag '{tag_to_add}' to order {order_number}.")
+
+    def _remove_item_from_order(self, item_id, order_number, sku):
+        if not messagebox.askyesno("Confirm", f"Are you sure you want to remove item {sku} from order {order_number}?\nThis cannot be undone.", parent=self):
+            return
+
+        # We need the original index from the dataframe to remove it
+        # This is a bit tricky since tree iid is not the df index.
+        # We can find the unique row by combining order number and sku, and assuming no duplicate skus in an order in the raw file.
+        # A more robust way would be to store df index in the tree, but for now this should work.
+
+        # Find the specific row in the DataFrame to remove
+        df_indices = self.analysis_results_df[
+            (self.analysis_results_df['Order_Number'] == order_number) &
+            (self.analysis_results_df['SKU'] == sku)
+        ].index
+
+        if not df_indices.empty:
+            # For now, remove the first match if there are duplicates
+            self.analysis_results_df.drop(df_indices[0], inplace=True)
+            self.analysis_results_df.reset_index(drop=True, inplace=True)
+
+            self.update_data_viewer(self.analysis_results_df)
+            self.analysis_stats = recalculate_statistics(self.analysis_results_df)
+            self.update_statistics_tab()
+            self.log_activity("Data Edit", f"Removed item {sku} from order {order_number}.")
+
+    def _remove_entire_order(self, order_number):
+        if not messagebox.askyesno("Confirm", f"Are you sure you want to remove the entire order {order_number}?\nThis cannot be undone.", parent=self):
+            return
+
+        self.analysis_results_df = self.analysis_results_df[
+            self.analysis_results_df['Order_Number'] != order_number
+        ].reset_index(drop=True)
+
+        self.update_data_viewer(self.analysis_results_df)
+        self.analysis_stats = recalculate_statistics(self.analysis_results_df)
+        self.update_statistics_tab()
+        self.log_activity("Data Edit", f"Removed order {order_number}.")
+
+    def _on_order_double_click(self, event):
+        """Event handler for double-clicking an order in the Analysis Data table."""
+        if self.analysis_results_df is None: return
+
+        # Identify which tree received the click
+        tree = event.widget
+        item_id = tree.focus()
+        if not item_id: return
+
+        try:
+            # Always get the order number from the frozen tree, it's reliable
+            order_number = self.frozen_tree.item(item_id, 'values')[0]
             self.toggle_fulfillment_status(order_number)
-
         except (ValueError, IndexError) as e:
-            print(f"Could not process double-click: {e}")
-
+            logger.warning(f"Could not process double-click, likely on a non-data row: {e}")
 
     def update_data_viewer(self, df):
-        """ Clears and repopulates the Treeview with new DataFrame data. """
-        self.tree.delete(*self.tree.get_children())
-        self.tree["columns"] = list(df.columns)
-        self.tree["show"] = "headings"
-        for col in self.tree["columns"]:
-            self.tree.heading(col, text=col)
-            self.tree.column(col, width=100, anchor='w')
-        
-        self.tree.tag_configure("Fulfillable", background="#2E4B2E", foreground="lightgreen")
-        self.tree.tag_configure("NotFulfillable", background="#5A2E2E", foreground="#FFB0B0")
+        """ Clears and repopulates both Treeviews with new DataFrame data. """
+        self.frozen_tree.delete(*self.frozen_tree.get_children())
+        self.main_tree.delete(*self.main_tree.get_children())
 
+        if df is None or df.empty:
+            self.all_columns = []
+            self.visible_columns = []
+            self.column_manager_button.configure(state="disabled")
+            return
+
+        # First time loading data, initialize column lists
+        if not self.all_columns:
+            self.all_columns = list(df.columns)
+            # Ensure Order_Number is not in the list of columns to be managed
+            if 'Order_Number' in self.all_columns:
+                self.all_columns.remove('Order_Number')
+            self.visible_columns = self.all_columns[:] # Initially all are visible
+        
+        # Configure Frozen Tree
+        self.frozen_tree["columns"] = ['Order_Number']
+        self.frozen_tree.heading('Order_Number', text='Order_Number')
+        self.frozen_tree.column('Order_Number', width=120, anchor='w')
+
+        # Configure Main Tree
+        self.main_tree["columns"] = self.all_columns
+        self.main_tree["displaycolumns"] = self.visible_columns
+        for col in self.all_columns:
+            self.main_tree.heading(col, text=col)
+            self.main_tree.column(col, width=100, anchor='w')
+
+        # Common tag configurations
+        for tree in [self.frozen_tree, self.main_tree]:
+            tree.tag_configure("Fulfillable", background="#2E4B2E", foreground="lightgreen")
+            tree.tag_configure("NotFulfillable", background="#5A2E2E", foreground="#FFB0B0")
+
+        # Inserting data
         for index, row in df.iterrows():
             status = row.get("Order_Fulfillment_Status", "")
             tag = ""
-            if status == "Fulfillable":
-                tag = "Fulfillable"
-            elif status == "Not Fulfillable":
-                tag = "NotFulfillable"
-            self.tree.insert("", "end", values=list(row), tags=(tag,))
+            if status == "Fulfillable": tag = "Fulfillable"
+            elif status == "Not Fulfillable": tag = "NotFulfillable"
+
+            # Insert into frozen tree
+            order_number_val = (row['Order_Number'],)
+            frozen_iid = self.frozen_tree.insert("", "end", values=order_number_val, tags=(tag,))
+
+            # Insert into main tree with the same iid
+            main_values = list(row.drop('Order_Number'))
+            self.main_tree.insert("", "end", iid=frozen_iid, values=main_values, tags=(tag,))
+
+        self.column_manager_button.configure(state="normal")
+
+    def open_column_manager(self):
+        """Opens the column management window."""
+        if not self.all_columns:
+            messagebox.showwarning("No Data", "Please run an analysis to load data first.", parent=self)
+            return
+        # Pass the list of non-frozen columns to the manager
+        ColumnManagerWindow(self, self.all_columns, self.visible_columns)
+
+    def update_tree_columns(self, new_visible_columns):
+        """Callback function from the ColumnManagerWindow to update the main tree."""
+        self.visible_columns = new_visible_columns
+        self.main_tree["displaycolumns"] = self.visible_columns
 
     def select_orders_file(self):
         filepath = filedialog.askopenfilename(title="Select Orders File", filetypes=[("CSV files", "*.csv")])
         if filepath:
             self.orders_file_path.set(filepath)
-            print(f"Orders file selected: {filepath}")
+            logger.info(f"Orders file selected: {filepath}")
             self.start_validation_thread(filepath, 'orders')
             self.check_files_selected()
 
@@ -351,7 +596,7 @@ class App(ctk.CTk):
         filepath = filedialog.askopenfilename(title="Select Stock File", filetypes=[("CSV files", "*.csv")])
         if filepath:
             self.stock_file_path.set(filepath)
-            print(f"Stock file selected: {filepath}")
+            logger.info(f"Stock file selected: {filepath}")
             self.start_validation_thread(filepath, 'stock')
             self.check_files_selected()
 
@@ -359,7 +604,7 @@ class App(ctk.CTk):
         """ Enables the 'Run Analysis' button if both files are selected. """
         if "not selected" not in self.orders_file_path.get() and "not selected" not in self.stock_file_path.get():
             self.run_analysis_button.configure(state="normal")
-            print("Both files loaded. Ready for analysis.")
+            logger.info("Both files loaded. Ready for analysis.")
 
     def start_analysis_thread(self):
         """ Starts the analysis process in a separate thread to avoid freezing the GUI. """
@@ -405,18 +650,21 @@ class App(ctk.CTk):
             self.log_activity("Analysis", f"Analysis complete. Report saved to: {result}")
             self.analysis_results_df = df
             self.analysis_stats = stats
-            
-            self.update_data_viewer(self.analysis_results_df)
-            self.update_statistics_tab()
-            
-            self.packing_list_button.configure(state="normal")
-            self.stock_export_button.configure(state="normal")
-            self.report_builder_button.configure(state="normal")
-            self.tab_view.set("Statistics")
+            self._post_analysis_ui_update()
         else:
             messagebox.showerror("Analysis Error", f"An error occurred during analysis:\n{result}")
         
         self.run_analysis_button.configure(state="normal")
+
+    def _post_analysis_ui_update(self):
+        """Centralized method to update UI elements after analysis or session load."""
+        self.update_data_viewer(self.analysis_results_df)
+        self.update_statistics_tab()
+
+        self.packing_list_button.configure(state="normal")
+        self.stock_export_button.configure(state="normal")
+        self.report_builder_button.configure(state="normal")
+        self.tab_view.set("Statistics")
 
     def start_validation_thread(self, file_path, file_type):
         """Starts a new thread to validate the CSV headers."""
@@ -480,73 +728,46 @@ class App(ctk.CTk):
             messagebox.showerror("Session Error", f"Could not create a new session folder.\nError: {e}")
 
 
-    def toggle_fulfillment_status(self, order_number):
-        """
-        Manually toggles the fulfillment status of an order, recalculates
-        stock, and refreshes the UI.
-        """
-        df = self.analysis_results_df
-        if df is None or order_number not in df['Order_Number'].values:
+    def _on_order_double_click(self, event):
+        """Event handler for double-clicking an order in the Analysis Data table."""
+        if self.analysis_results_df is None:
+            return  # Don't do anything if no data is loaded
+
+        item_id = self.tree.focus()
+        if not item_id:
             return
 
-        # Find current status (assuming all rows for an order have the same status)
-        current_status = df.loc[df['Order_Number'] == order_number, 'Order_Fulfillment_Status'].iloc[0]
+        try:
+            values = self.tree.item(item_id, 'values')
+            order_number_index = self.tree["columns"].index('Order_Number')
+            order_number = values[order_number_index]
 
-        if current_status == "Fulfillable":
-            # --- Logic to UN-FULFILL an order ---
-            new_status = "Not Fulfillable"
-            order_items = df.loc[df['Order_Number'] == order_number]
+            # Call the refactored method
+            self.toggle_fulfillment_status(order_number)
 
-            # Aggregate quantities for each SKU in the order
-            stock_to_return = order_items.groupby('SKU')['Quantity'].sum()
+        except (ValueError, IndexError) as e:
+            print(f"Could not process double-click: {e}")
 
-            for sku, quantity in stock_to_return.items():
-                # Add the quantity back to the 'Final_Stock' for all rows with this SKU
-                df.loc[df['SKU'] == sku, 'Final_Stock'] += quantity
+    def toggle_fulfillment_status(self, order_number):
+        """
+        UI-facing method to handle toggling fulfillment status.
+        Calls the core logic, and then updates the UI.
+        """
+        success, result, updated_df = toggle_order_fulfillment(self.analysis_results_df, order_number)
+
+        if success:
+            self.analysis_results_df = updated_df
+            # Recalculate stats and update the UI
+            self.analysis_stats = recalculate_statistics(self.analysis_results_df)
+            self.update_data_viewer(self.analysis_results_df)
+            self.update_statistics_tab()
+
+            # Log the successful action
+            new_status = self.analysis_results_df.loc[self.analysis_results_df['Order_Number'] == order_number, 'Order_Fulfillment_Status'].iloc[0]
+            self.log_activity("Manual Edit", f"Order {order_number} status changed to '{new_status}'.")
         else:
-            # --- Logic to FORCE-FULFILL an order ---
-            new_status = "Fulfillable"
-            order_items = df.loc[df['Order_Number'] == order_number]
-            items_needed = order_items.groupby('SKU')['Quantity'].sum()
-
-            # Pre-flight check for stock availability
-            lacking_skus = []
-            for sku, needed_qty in items_needed.items():
-                # Check if the SKU is even in our dataframe (for the unlisted stock case)
-                if sku not in df['SKU'].unique():
-                    continue # This is an unlisted item, we assume it's on hand
-
-                # Get current final stock for this SKU
-                current_stock = df.loc[df['SKU'] == sku, 'Final_Stock'].iloc[0]
-
-                if needed_qty > current_stock:
-                    lacking_skus.append(sku)
-
-            if lacking_skus:
-                messagebox.showerror("Stock Error", f"Cannot force fulfill. Insufficient stock for SKUs: {', '.join(lacking_skus)}")
-                return # Abort the toggle
-
-            # If check passes, deduct stock
-            for sku, needed_qty in items_needed.items():
-                # For unlisted SKUs, we need to add them to the df to track their negative stock
-                if sku not in df['SKU'].unique():
-                    # Find one of the order rows to copy base data from
-                    template_row = order_items.iloc[0].to_dict()
-                    new_row = {key: (None if key not in ['SKU', 'Quantity'] else template_row[key]) for key in df.columns}
-                    new_row.update({'SKU': sku, 'Quantity': 0, 'Stock': 0, 'Final_Stock': 0})
-                    df.loc[len(df)] = new_row
-
-                df.loc[df['SKU'] == sku, 'Final_Stock'] -= needed_qty
-
-        # Update the DataFrame with the new status
-        df.loc[df['Order_Number'] == order_number, 'Order_Fulfillment_Status'] = new_status
-
-        # Recalculate stats and update the UI
-        self.analysis_stats = recalculate_statistics(df)
-        self.update_data_viewer(df)
-        self.update_statistics_tab()
-
-        self.log_activity("Manual Edit", f"Order {order_number} status changed to '{new_status}'.")
+            # Show an error message if the toggle failed
+            messagebox.showerror("Error", result)
 
 
     def open_packing_list_window(self):
@@ -632,21 +853,6 @@ class App(ctk.CTk):
             self.after(0, self.log_activity, "Report Generation", message)
         else:
             self.after(0, messagebox.showerror, "Error", message)
-
-
-class TextRedirector:
-    """ A class to redirect stdout to a Tkinter Text widget and a log file. """
-    def __init__(self, widget, file_path):
-        self.widget = widget
-        self.file = open(file_path, "a", encoding="utf-8")
-    def write(self, s):
-        self.widget.configure(state='normal')
-        self.widget.insert(tk.END, s)
-        self.widget.configure(state='disabled')
-        self.widget.see(tk.END)
-        self.file.write(s)
-    def flush(self):
-        self.file.flush()
 
 
 if __name__ == "__main__":

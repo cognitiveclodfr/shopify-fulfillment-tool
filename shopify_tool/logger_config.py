@@ -8,23 +8,29 @@ def setup_logging():
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
 
-    log_file = os.path.join(log_dir, 'app_errors.log')
+    log_file = os.path.join(log_dir, 'app_history.log')
 
-    # Create a logger
+    # Get the root logger used by the application
     logger = logging.getLogger('ShopifyToolLogger')
-    logger.setLevel(logging.ERROR) # We only want to log critical errors
+    logger.setLevel(logging.INFO)  # Set the lowest level to capture all messages
 
-    # Create a handler that writes log records to a file, with rotation
-    # 1MB per file, keeping up to 5 backup files.
-    handler = RotatingFileHandler(log_file, maxBytes=1024*1024, backupCount=5, encoding='utf-8')
+    # Prevent adding handlers multiple times
+    if logger.hasHandlers():
+        logger.handlers.clear()
 
-    # Create a formatter and set it for the handler
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s (%(filename)s:%(lineno)d)')
-    handler.setFormatter(formatter)
+    # Create a handler for writing to a file
+    file_handler = RotatingFileHandler(log_file, maxBytes=1024*1024, backupCount=5, encoding='utf-8')
+    file_handler.setLevel(logging.INFO) # Log everything to the file
+    file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s (%(filename)s:%(lineno)d)')
+    file_handler.setFormatter(file_formatter)
+    logger.addHandler(file_handler)
 
-    # Add the handler to the logger
-    # Avoid adding handlers multiple times if the function is called more than once
-    if not logger.handlers:
-        logger.addHandler(handler)
+    # The UI handler will be added separately in the GUI code
+    # We add a basic StreamHandler for non-GUI execution or debugging
+    stream_handler = logging.StreamHandler()
+    stream_handler.setLevel(logging.INFO)
+    stream_formatter = logging.Formatter('%(levelname)s: %(message)s')
+    stream_handler.setFormatter(stream_formatter)
+    logger.addHandler(stream_handler)
 
     return logger

@@ -54,7 +54,7 @@ class ReportBuilderWindow(ctk.CTkToplevel):
         ctk.CTkComboBox(filter_frame, values=["==", "!=", ">", "<", "contains"], variable=self.filter_operator_var).pack(side="left", padx=5)
         ctk.CTkEntry(filter_frame, placeholder_text="Value", textvariable=self.filter_value_var).pack(side="left", padx=5, fill="x", expand=True)
 
-        generate_btn = ctk.CTkButton(self, text="Step 3: Generate and Save Custom Report", command=self.generate_custom_report, height=40)
+        generate_btn = ctk.CTkButton(self, text="Step 3: Generate and Save Custom Report", command=self.generate_custom_report, height=40, fg_color=self.parent.STYLE['color_accent'])
         generate_btn.grid(row=2, column=0, padx=10, pady=10, sticky="ew")
 
     def generate_custom_report(self):

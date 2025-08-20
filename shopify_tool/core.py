@@ -3,6 +3,7 @@ import logging
 import pandas as pd
 from datetime import datetime
 from . import analysis, packing_lists, stock_export
+from .rules import RuleEngine
 import numpy as np
 
 logger = logging.getLogger('ShopifyToolLogger')
@@ -59,52 +60,6 @@ def validate_csv_headers(file_path, required_columns, delimiter=','):
         logger.error(f"Error validating CSV headers for {file_path}: {e}")
         return False, [f"An unexpected error occurred: {e}"]
 
-def _apply_tagging_rules(df, config):
-    """
-    Applies custom tagging rules to the 'Status_Note' column based on the
-    provided configuration.
-
-    Args:
-        df (pd.DataFrame): The main analysis DataFrame.
-        config (dict): The application configuration dictionary.
-
-    Returns:
-        pd.DataFrame: The DataFrame with the 'Status_Note' column updated.
-    """
-    rules = config.get('tagging_rules', {})
-    special_skus = rules.get('special_sku_tags', {})
-    composite_tag = rules.get('composite_order_tag', 'BOX')
-
-    if not special_skus:
-        return df
-
-    print("Applying custom tagging rules...")
-    
-    order_notes = {}
-    # Iterate through each order group explicitly
-    for order_number, order_group in df.groupby('Order_Number'):
-        # Start with existing notes (like 'Repeat')
-        current_notes = set(note for note in order_group['Status_Note'].unique() if note)
-
-        order_skus = set(order_group['SKU'])
-        found_special_skus = False
-        
-        for sku, tag in special_skus.items():
-            if sku in order_skus:
-                current_notes.add(tag)
-                found_special_skus = True
-        
-        # If a special SKU is found and there are other items in the order
-        if found_special_skus and len(order_skus) > 1:
-            current_notes.add(composite_tag)
-            
-        order_notes[order_number] = ", ".join(sorted(list(current_notes)))
-
-    # Map the generated notes back to the main dataframe
-    df['Status_Note'] = df['Order_Number'].map(order_notes).fillna('')
-    
-    return df
-
 def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_delimiter, config):
     """
     Orchestrates the entire fulfillment analysis process.
@@ -127,9 +82,9 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
             - pd.DataFrame or None: The final analysis DataFrame.
             - dict or None: A dictionary of calculated statistics.
     """
-    print("--- Starting Full Analysis Process ---")
+    logger.info("--- Starting Full Analysis Process ---")
     # 1. Load data
-    print("Step 1: Loading data files...")
+    logger.info("Step 1: Loading data files...")
     if stock_file_path is not None and orders_file_path is not None:
         if not os.path.exists(stock_file_path) or not os.path.exists(orders_file_path):
             return False, "One or both input files were not found.", None, None
@@ -140,47 +95,52 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
         stock_df = config.get('test_stock_df')
         orders_df = config.get('test_orders_df')
         history_df = config.get('test_history_df', pd.DataFrame({'Order_Number': []}))
-    print("Data loaded successfully.")
+    logger.info("Data loaded successfully.")
 
     # Validate dataframes
     validation_errors = _validate_dataframes(orders_df, stock_df, config)
     if validation_errors:
         error_message = "\n".join(validation_errors)
-        print(f"ERROR: {error_message}")
+        logger.error(f"Validation Error: {error_message}")
         return False, error_message, None, None
 
     history_path = 'fulfillment_history.csv'
     if stock_file_path is not None and orders_file_path is not None:
         try:
             history_df = pd.read_csv(history_path)
-            print(f"Loaded {len(history_df)} records from fulfillment history.")
+            logger.info(f"Loaded {len(history_df)} records from fulfillment history.")
         except FileNotFoundError:
             history_df = pd.DataFrame(columns=['Order_Number', 'Execution_Date'])
-            print("Fulfillment history not found. A new one will be created.")
+            logger.warning("Fulfillment history not found. A new one will be created.")
 
     # 2. Run analysis (computation only)
-    print("Step 2: Running fulfillment simulation...")
+    logger.info("Step 2: Running fulfillment simulation...")
     final_df, summary_present_df, summary_missing_df, stats = analysis.run_analysis(
         stock_df, orders_df, history_df
     )
-    print("Analysis computation complete.")
+    logger.info("Analysis computation complete.")
 
     # 2.5. Add stock alerts based on config
     low_stock_threshold = config.get('settings', {}).get('low_stock_threshold')
     if low_stock_threshold is not None and 'Final_Stock' in final_df.columns:
-        print(f"Applying low stock threshold: < {low_stock_threshold}")
+        logger.info(f"Applying low stock threshold: < {low_stock_threshold}")
         final_df['Stock_Alert'] = np.where(
             final_df['Final_Stock'] < low_stock_threshold,
             'Low Stock',
             ''
         )
 
-    # 2.6. Apply custom tagging rules
-    final_df = _apply_tagging_rules(final_df, config)
+    # 2.6. Apply the new rule engine
+    rules = config.get('rules', [])
+    if rules:
+        logger.info("Applying new rule engine...")
+        engine = RuleEngine(rules)
+        final_df = engine.apply(final_df)
+        logger.info("Rule engine application complete.")
 
     # 3. Save Excel report (skip in test mode)
     if stock_file_path is not None and orders_file_path is not None:
-        print("Step 3: Saving analysis report to Excel...")
+        logger.info("Step 3: Saving analysis report to Excel...")
         if not os.path.exists(output_dir_path):
             os.makedirs(output_dir_path)
         output_file_path = os.path.join(output_dir_path, "fulfillment_analysis.xlsx")
@@ -205,16 +165,16 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
             for row_num, status in enumerate(final_df['Order_Fulfillment_Status']):
                 if status == 'Not Fulfillable':
                     worksheet.set_row(row_num + 1, None, highlight_format)
-        print(f"Excel report saved to '{output_file_path}'")
+        logger.info(f"Excel report saved to '{output_file_path}'")
 
         # 4. Update history
-        print("Step 4: Updating fulfillment history...")
+        logger.info("Step 4: Updating fulfillment history...")
         newly_fulfilled = final_df[final_df['Order_Fulfillment_Status'] == 'Fulfillable'][['Order_Number']].drop_duplicates()
         if not newly_fulfilled.empty:
             newly_fulfilled['Execution_Date'] = datetime.now().strftime("%Y-%m-%d")
             updated_history = pd.concat([history_df, newly_fulfilled]).drop_duplicates(subset=['Order_Number'], keep='last')
             updated_history.to_csv(history_path, index=False)
-            print(f"Updated fulfillment history with {len(newly_fulfilled)} new records.")
+            logger.info(f"Updated fulfillment history with {len(newly_fulfilled)} new records.")
         return True, output_file_path, final_df, stats
     else:
         # For tests, just return the DataFrames
