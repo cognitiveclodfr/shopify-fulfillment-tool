@@ -86,6 +86,8 @@ class RuleEngine:
                     needed_columns.add('_is_excluded')
                 elif action_type == 'EXCLUDE_SKU':
                     needed_columns.add('Status_Note')
+                elif action_type == 'ADD_TAG':
+                    needed_columns.add('Status_Note')
 
         # Add only the necessary columns if they don't already exist
         if 'Priority' in needed_columns and 'Priority' not in df.columns:
@@ -141,13 +143,18 @@ class RuleEngine:
             value = action.get('value')
 
             if action_type == 'ADD_TAG':
-                # Append tag, ensuring not to add duplicates
-                current_tags = df.loc[matches, 'Tags'].astype(str)
-                # Avoids adding 'nan' to tags if the field is empty
-                current_tags[current_tags.str.lower() == 'nan'] = ''
-                new_tags = current_tags.apply(lambda t: t + f", {value}" if value not in t.split(', ') else t)
-                new_tags = new_tags.str.strip(', ')
-                df.loc[matches, 'Tags'] = new_tags
+                # Per user feedback, ADD_TAG should modify Status_Note, not Tags
+                current_notes = df.loc[matches, 'Status_Note'].astype(str)
+                current_notes[current_notes.str.lower() == 'nan'] = ''
+
+                # Append new tag, handling empty notes and preventing duplicates
+                def append_note(note):
+                    if value in note.split(', '):
+                        return note
+                    return f"{note}, {value}" if note else value
+
+                new_notes = current_notes.apply(append_note)
+                df.loc[matches, 'Status_Note'] = new_notes
 
             elif action_type == 'SET_STATUS':
                 df.loc[matches, 'Order_Fulfillment_Status'] = value
