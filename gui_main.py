@@ -70,6 +70,7 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
 
+        self.is_syncing = False
         self.title("Shopify Fulfillment Tool v8.0")
         self.geometry("950x800")
         ctk.set_appearance_mode("Dark")
@@ -106,19 +107,19 @@ class App(ctk.CTk):
         self.load_session()
 
     def on_closing(self):
-        """Handle the event of the window closing."""
+        """Handle the event of the window closing by automatically saving the session."""
         if self.analysis_results_df is not None:
-            if messagebox.askyesno("Save Session", "Do you want to save your current session before closing?", parent=self):
-                try:
-                    session_data = {
-                        'dataframe': self.analysis_results_df,
-                        'visible_columns': self.visible_columns
-                    }
-                    with open(self.session_file, 'wb') as f:
-                        pickle.dump(session_data, f)
-                    logger.info("Session saved successfully.")
-                except Exception as e:
-                    logger.error(f"Error saving session: {e}")
+            logger.info("Auto-saving session...")
+            try:
+                session_data = {
+                    'dataframe': self.analysis_results_df,
+                    'visible_columns': self.visible_columns
+                }
+                with open(self.session_file, 'wb') as f:
+                    pickle.dump(session_data, f)
+                logger.info("Session saved successfully.")
+            except Exception as e:
+                logger.error(f"Error saving session automatically: {e}")
         self.destroy()
 
     def load_session(self):
@@ -353,7 +354,6 @@ class App(ctk.CTk):
 
     def create_data_viewer(self):
         """ Creates the Treeview widget for displaying analysis data. """
-        self.is_syncing = False
         # Configure the grid
         self.data_viewer_frame.grid_rowconfigure(1, weight=1)
         self.data_viewer_frame.grid_columnconfigure(1, weight=1) # Main tree gets weight
@@ -406,6 +406,17 @@ class App(ctk.CTk):
         self.main_tree.bind("<Button-3>", self._show_context_menu)
         self.frozen_tree.bind("<<TreeviewSelect>>", lambda e: self._sync_treeview_selection(e, self.frozen_tree, self.main_tree))
         self.main_tree.bind("<<TreeviewSelect>>", lambda e: self._sync_treeview_selection(e, self.main_tree, self.frozen_tree))
+        self.frozen_tree.bind("<MouseWheel>", self._on_mousewheel)
+        self.main_tree.bind("<MouseWheel>", self._on_mousewheel)
+
+    def _on_mousewheel(self, event):
+        """Synchronize mouse wheel scrolling between the two trees."""
+        # On Windows, event.delta is a multiple of 120. On Linux, it's 1 or -1.
+        if event.delta > 0:
+            self.main_tree.yview_scroll(-2, "units")
+        else:
+            self.main_tree.yview_scroll(2, "units")
+        return "break" # Prevents the event from propagating further
 
     def _show_context_menu(self, event):
         """Creates and displays a context menu for the clicked treeview item."""
@@ -414,9 +425,11 @@ class App(ctk.CTk):
         if not item_id:
             return
 
-        # Select the row that was right-clicked
+        # Select the row that was right-clicked, preventing sync recursion
+        self.is_syncing = True
         tree.selection_set(item_id)
         tree.focus(item_id)
+        self.is_syncing = False
 
         try:
             order_number = self.frozen_tree.item(item_id, 'values')[0]
@@ -536,7 +549,7 @@ class App(ctk.CTk):
             if 'Order_Number' in self.all_columns:
                 self.all_columns.remove('Order_Number')
             self.visible_columns = self.all_columns[:] # Initially all are visible
-        
+
         # Configure Frozen Tree
         self.frozen_tree["columns"] = ['Order_Number']
         self.frozen_tree.heading('Order_Number', text='Order_Number')
