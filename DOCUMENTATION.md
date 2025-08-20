@@ -1,75 +1,91 @@
-# Документація проекту: Shopify Fulfillment Tool v7.0
+# Shopify Fulfillment Tool v8.0 - User Guide
 
-## 1. Огляд проекту
+## 1. Project Overview
 
-**Shopify Fulfillment Tool** — це настільний додаток для Windows, розроблений для автоматизації та оптимізації процесу комплектації замовлень для інтернет-магазинів, що працюють на платформі Shopify.
+The **Shopify Fulfillment Tool** is a desktop application designed to streamline and automate the order fulfillment process for e-commerce stores running on Shopify.
 
-Основна мета інструменту — аналізувати експортні файли замовлень та залишків на складі, визначати, які замовлення можуть бути виконані, та генерувати необхідні документи (пакувальні листи, файли для кур'єрських служб).
+Its primary purpose is to analyze order and stock export files, determine which orders are fulfillable, and generate necessary documents like packing lists and courier export files. The graphical user interface (GUI) makes it accessible for warehouse staff without requiring command-line knowledge.
 
-Додаток має графічний інтерфейс користувача (GUI), що робить його доступним для співробітників складу без необхідності роботи з командним рядком.
+## 2. Key Features
 
-## 2. Функціонал
+This version includes a major UI/UX overhaul and significant new functionality:
 
-Версія 7.0 включає наступний основний функціонал:
+-   **Session Management:** Automatically saves the current analysis state upon closing the app and prompts to restore it on the next launch, preventing data loss.
+-   **Advanced Rule Engine:** A powerful IF/THEN rule builder to automate workflows. Users can create rules to tag orders, change fulfillment status, set priorities, and more based on a combination of conditions (e.g., `IF Shipping_Provider is 'DHL' AND Order_Type is 'Multi' THEN Add Note 'EXPRESS'`).
+-   **Enhanced Interactive Data Table:**
+    -   **Frozen Column:** The `Order_Number` column is locked in place during horizontal scrolling for easy reference.
+    -   **Column Management:** Users can now show, hide, and reorder columns to create a personalized view.
+    -   **Context Menu:** A right-click menu on any order provides quick access to common actions like changing status, copying the order number, or removing items.
+    -   **Manual Override:** Double-click an order to toggle its fulfillment status. The application automatically recalculates stock levels and all related statistics.
+-   **Advanced Logging:** The "Execution Log" tab now features a structured, color-coded log viewer with filtering and search capabilities, making it easier to monitor the application's activity and diagnose issues.
+-   **Real-time File Validation:** Instantly validates required columns when loading `.csv` files, preventing errors during analysis.
+-   **Flexible Report Generation:** Create custom packing lists and stock export files based on a powerful filtering system.
 
-- **Управління сесіями:** Кожен сеанс роботи зберігається в окрему унікальну папку з поточною датою, що дозволяє легко організовувати та знаходити результати аналізу та звіти.
-- **Аналіз замовлень:** Програма проводить комплексний аналіз, порівнюючи потреби в товарах із замовлень із поточними залишками на складі.
-- **Пріоритезація замовлень:** Аналіз автоматично пріоритезує замовлення з більшою кількістю позицій, щоб максимізувати кількість виконаних замовлень.
-- **Інтерактивна таблиця аналізу:**
-    - Користувачі можуть вручну змінювати статус виконання замовлення (`Fulfillable` / `Not Fulfillable`) подвійним кліком миші.
-    - При ручній зміні статусу програма **автоматично перераховує залишки на складі** та оновлює всю статистику.
-    - Підтримується "примусове" виконання замовлень, навіть якщо товару немає в облікових залишках (для випадків, коли товар є фізично).
-- **Валідація файлів у реальному часі:** При завантаженні файлів `.csv` програма миттєво перевіряє наявність необхідних колонок і показує статус (✓ або ✗), що запобігає помилкам при аналізі.
-- **Генерація звітів:**
-    - **Головний звіт аналізу:** Детальний `.xlsx` файл з усіма даними по кожній позиції в замовленнях.
-    - **Пакувальні листи:** Генерація кастомізованих пакувальних листів на основі гнучких фільтрів.
-    - **Файли для кур'єрських служб (Stock Exports):** Генерація файлів у потрібному форматі для різних служб доставки.
-- **Гнучке налаштування через UI:**
-    - **Редактор фільтрів:** Зручний інтерфейс для налаштування правил фільтрації для звітів без необхідності писати JSON вручну.
-    - **Налаштування тегів:** Можливість задавати правила для автоматичного додавання тегів до замовлень.
-    - **Загальні налаштування:** Можливість змінювати роздільник для CSV-файлів, поріг низького залишку та шляхи до файлів.
-- **Автоматизація збірки (CI/CD):** Налаштовано GitHub Actions для автоматичної збірки `.exe` файлу при створенні нового релізу на GitHub.
+## 3. User Guide
 
-## 3. Інструкція користувача
+### Step 1: Launching the Application & Managing Sessions
 
-1.  **Запуск програми:** Запустіть `.exe` файл.
-2.  **Створення сесії:**
-    -   Натисніть кнопку **"Create New Session"**. Програма створить нову унікальну папку для результатів вашої роботи.
-    -   Після цього стануть активними кнопки завантаження файлів.
-3.  **Завантаження файлів:**
-    -   Натисніть **"Load Orders File (.csv)"** і виберіть файл експорту замовлень з Shopify.
-    -   Натисніть **"Load Stock File (.csv)"** і виберіть файл із залишками на складі.
-    -   Поруч із назвою кожного файлу з'явиться іконка статусу валідації. Зелена галочка (✓) означає, що файл коректний. Червоний хрестик (✗) означає, що у файлі відсутні необхідні колонки (деталі можна побачити у підказці при наведенні).
-4.  **Запуск аналізу:**
-    -   Коли обидва файли завантажено, кнопка **"Run Analysis"** стане активною. Натисніть її.
-    -   Дочекайтеся завершення аналізу. Результати з'являться у вкладках "Analysis Data" та "Statistics".
-5.  **Ручне редагування (опційно):**
-    *   Перейдіть на вкладку "Analysis Data".
-    *   Щоб змінити статус замовлення, зробіть **подвійний клік** на будь-якому рядку цього замовлення.
-    *   Статус зміниться, а всі дані (залишки, статистика) автоматично перерахуються.
-    *   Якщо товару для "примусового" виконання недостатньо на складі, ви побачите повідомлення про помилку.
-6.  **Генерація звітів:**
-    -   Після успішного аналізу стануть активними кнопки **"Create Packing List"** та **"Create Stock Export"**.
-    -   Натисніть на потрібну кнопку та виберіть тип звіту зі списку.
-    -   Згенерований файл буде збережено у папці поточної сесії.
-7.  **Налаштування (опційно):**
-    -   Натисніть кнопку **"Settings"**, щоб відкрити вікно налаштувань.
-    -   Тут ви можете змінювати загальні параметри, правила тегування та гнучко налаштовувати фільтри для звітів за допомогою нового візуального редактора.
+-   **Launch:** Run the `.exe` file.
+-   **Restoring a Session:** If you have a previously saved session, a dialog box will appear asking if you want to restore it. Click "Yes" to load your previous work.
+-   **Creating a New Session:** If you start fresh, click the **"Create New Session"** button. The tool will create a unique, dated folder for all the reports generated during your work session.
 
-## 4. Аналіз поточної версії (7.0)
+### Step 2: Loading Data Files
 
-#### ✅ Сильні сторони
+-   Click **"Load Orders File (.csv)"** to select your orders export file from Shopify.
+-   Click **"Load Stock File (.csv)"** to select your current inventory/stock file.
+-   Next to each file name, a status icon will appear. A green check (✓) means the file is valid. A red cross (✗) means required columns are missing; hover over the icon to see which ones.
 
--   **Модульність та структура:** Код добре структурований, логіка розділена на пакети (`gui`, `shopify_tool`), що спрощує підтримку та подальшу розробку.
--   **Гнучкість та конфігурація:** Майже вся поведінка програми (шляхи, фільтри, правила) винесена у `config.json` і може бути налаштована через зручний UI, що робить інструмент дуже гнучким.
--   **Високий рівень UX (User Experience):** Додано багато функцій, орієнтованих на зручність користувача: сесії, валідація файлів "на льоту", інтерактивне редагування, візуальний редактор фільтрів.
--   **Надійність:** Використання окремих потоків для довготривалих операцій (аналіз, валідація) запобігає "зависанню" інтерфейсу. Наявність тестів для бекенд-логіки забезпечує стабільність.
--   **Автоматизація розгортання:** Налаштований CI/CD процес для збірки `.exe` файлу значно спрощує доставку нових версій кінцевим користувачам.
+### Step 3: Running the Analysis
 
-#### ⚠️ Можливі покращення та недоліки
+-   Once both files are loaded and validated, the **"Run Analysis"** button will become active. Click it to start the analysis.
+-   The application will process the data, and the results will appear in the "Analysis Data" and "Statistics" tabs. The "Execution Log" will show a detailed breakdown of the process.
 
--   **Система тегів:** Поточний UI для налаштування правил тегування є базовим. Його можна значно розширити, додавши конструктор правил, аналогічний редактору фільтрів (наприклад, "Якщо `Shipping_Provider` == 'DHL', додати тег 'EXPRESS'").
--   **Тестування UI:** Графічний інтерфейс наразі не покритий автоматичними тестами, що створює ризик регресій у майбутньому при зміні UI. Можна розглянути впровадження інструментів для тестування GUI, таких як `pytest-qt` або спеціалізовані скрипти.
--   **Обробка "фізичних" залишків:** Примусове виконання замовлення з товаром, якого немає на обліку, хоч і працює, але створює у DataFrame новий рядок з нульовими даними. Це може ускладнити подальший аналіз. Можливо, варто розглянути створення окремої "віртуальної" таблиці для таких товарів.
--   **Централізація логіки:** Частина логіки (наприклад, перерахунок залишків при ручному редагуванні) наразі знаходиться у файлі `gui_main.py`. Для кращої архітектури її можна було б винести у `shopify_tool/core.py`.
--   **Відсутність збереження стану сесії:** Програма не зберігає завантажені дані (`DataFrame`) між запусками. Якщо користувач закриє програму, результати аналізу будуть втрачені, і потрібно буде починати спочатку. Можна додати функціонал збереження та завантаження стану сесії.
+### Step 4: Interacting with the Data Table
+
+The "Analysis Data" table is now highly interactive:
+
+-   **Change Status (Double-Click):** Double-click any row of an order to toggle its fulfillment status between "Fulfillable" and "Not Fulfillable".
+-   **Context Menu (Right-Click):** Right-click any row to open a context menu with these actions:
+    -   `Change Status`: Same as double-clicking.
+    -   `Copy Order Number`: Copies the order number to your clipboard.
+    -   `Add Tag Manually...`: Opens a dialog to add a custom note to the `Status_Note` column for that order.
+    -   `Remove This Item from Order`: Deletes the specific line item from the analysis (requires confirmation).
+    -   `Remove Entire Order`: Deletes all line items for that order from the analysis (requires confirmation).
+-   **Manage Columns:** Click the **"Manage Columns"** button above the table to open a window where you can show, hide, and reorder columns.
+-   **Horizontal Scrolling:** Scroll horizontally to see all data. The `Order_Number` column will remain frozen on the left.
+
+### Step 5: Using the Rule Engine (Settings)
+
+The **Settings** window contains the powerful new Rule Builder.
+
+1.  Click the **"Settings"** button on the main window.
+2.  Go to the **"Rules"** tab.
+3.  Click **"Add New Rule"**. A new block for your rule will appear.
+4.  **Configure the Rule:**
+    -   **Rule Name:** Give your rule a descriptive name (e.g., "High-Value DHL Orders").
+    -   **Match Logic:** Choose "ALL" (AND) or "ANY" (OR) to determine if all or any of the conditions must be met.
+    -   **Conditions (IF):**
+        -   Click **"Add Condition"**.
+        -   Select a `Field` (e.g., `Shipping_Provider`), an `Operator` (e.g., `equals`), and a `Value` (e.g., `DHL`).
+        -   Add more conditions as needed.
+    -   **Actions (THEN):**
+        -   Click **"Add Action"**.
+        -   Select an `Action Type` (e.g., `ADD_TAG`) and a `Value` (e.g., `PRIORITY`).
+        -   The `ADD_TAG` action will append the value to the `Status_Note` column.
+5.  Click **"Save and Close"**. The new rules will be applied the next time you run an analysis.
+
+**Example Rule:**
+
+-   **Name:** Tag Express Multi-Item Orders
+-   **Match:** ALL
+-   **Conditions:**
+    1.  `Shipping_Provider` `contains` `DHL`
+    2.  `Order_Type` `equals` `Multi`
+-   **Actions:**
+    1.  `ADD_TAG` with value `EXPRESS-MULTI`
+
+### Step 6: Generating Reports
+
+-   After a successful analysis, the **"Create Packing List"** and **"Create Stock Export"** buttons become active.
+-   Click a button and select the desired report type from the list that appears.
+-   The generated file will be saved in the current session's output folder.
