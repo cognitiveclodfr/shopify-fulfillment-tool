@@ -108,8 +108,8 @@ class App(ctk.CTk):
 
     def on_closing(self):
         """Handle the event of the window closing by automatically saving the session."""
-        if self.analysis_results_df is not None:
-            logger.info("Auto-saving session...")
+        if self.analysis_results_df is not None and not self.analysis_results_df.empty:
+            logger.info(f"Attempting to save session to {self.session_file}")
             try:
                 session_data = {
                     'dataframe': self.analysis_results_df,
@@ -117,15 +117,20 @@ class App(ctk.CTk):
                 }
                 with open(self.session_file, 'wb') as f:
                     pickle.dump(session_data, f)
-                logger.info("Session saved successfully.")
+                logger.info(f"Session saved successfully to {self.session_file}")
             except Exception as e:
-                logger.error(f"Error saving session automatically: {e}")
+                logger.error(f"Error saving session automatically: {e}", exc_info=True)
+        else:
+            logger.info("No data to save, skipping session save.")
         self.destroy()
 
     def load_session(self):
         """Check for and load a previous session file."""
+        logger.info(f"Checking for session file at {self.session_file}...")
         if os.path.exists(self.session_file):
+            logger.info("Session file found.")
             if messagebox.askyesno("Restore Session", "A previous session was found. Do you want to restore it?", parent=self):
+                logger.info("User chose to restore session.")
                 try:
                     with open(self.session_file, 'rb') as f:
                         session_data = pickle.load(f)
@@ -133,15 +138,27 @@ class App(ctk.CTk):
                     self.analysis_results_df = session_data.get('dataframe')
                     self.visible_columns = session_data.get('visible_columns', list(self.analysis_results_df.columns))
 
+                    logger.info("Session data loaded. Updating UI.")
                     # Manually trigger the post-analysis UI updates
                     self.analysis_stats = recalculate_statistics(self.analysis_results_df)
                     self._post_analysis_ui_update()
                     self.log_activity("Session", "Restored previous session.")
+                    logger.info("UI updated with restored session data.")
 
                 except Exception as e:
+                    logger.error(f"Failed to load session file: {e}", exc_info=True)
                     messagebox.showerror("Load Error", f"Failed to load session file: {e}", parent=self)
-            # Always remove the file after checking
-            os.remove(self.session_file)
+            else:
+                logger.info("User chose not to restore session.")
+
+            # Always remove the file after checking to prevent re-loading the same session
+            try:
+                os.remove(self.session_file)
+                logger.info(f"Session file {self.session_file} removed.")
+            except Exception as e:
+                logger.error(f"Failed to remove session file: {e}", exc_info=True)
+        else:
+            logger.info("No session file found.")
 
     def load_config(self):
         """ Loads the main configuration file. """
@@ -411,11 +428,15 @@ class App(ctk.CTk):
 
     def _on_mousewheel(self, event):
         """Synchronize mouse wheel scrolling between the two trees."""
-        # On Windows, event.delta is a multiple of 120. On Linux, it's 1 or -1.
-        if event.delta > 0:
-            self.main_tree.yview_scroll(-2, "units")
+        # The delta value is different on different platforms, so we normalize it
+        # to a simple up/down direction. The number of units can be adjusted for speed.
+        if event.num == 5 or event.delta < 0:
+            delta = 2
         else:
-            self.main_tree.yview_scroll(2, "units")
+            delta = -2
+
+        self.frozen_tree.yview_scroll(delta, "units")
+        self.main_tree.yview_scroll(delta, "units")
         return "break" # Prevents the event from propagating further
 
     def _show_context_menu(self, event):
@@ -425,11 +446,9 @@ class App(ctk.CTk):
         if not item_id:
             return
 
-        # Select the row that was right-clicked, preventing sync recursion
-        self.is_syncing = True
-        tree.selection_set(item_id)
-        tree.focus(item_id)
-        self.is_syncing = False
+        # The user's click already sets the focus.
+        # Programmatically setting selection here caused a recursive loop.
+        # We just need to identify the item under the cursor.
 
         try:
             order_number = self.frozen_tree.item(item_id, 'values')[0]

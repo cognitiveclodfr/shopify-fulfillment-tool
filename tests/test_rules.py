@@ -11,6 +11,7 @@ def sample_df():
         'Shipping_Provider': ['DHL', 'DHL', 'PostOne', 'DPD', 'DHL'],
         'Total_Price': [50, 50, 150, 200, 80],
         'Tags': ['Tag1', 'Tag1', '', 'Urgent', ''],
+        'Status_Note': ['', '', 'Repeat', '', 'Repeat'],
         'Order_Fulfillment_Status': ['Fulfillable', 'Fulfillable', 'Fulfillable', 'Not Fulfillable', 'Fulfillable'],
         'SKU': ['SKU-A', 'SKU-B', 'SKU-C', 'SKU-D', 'SKU-E'],
         'Quantity': [1, 1, 2, 3, 1]
@@ -19,7 +20,7 @@ def sample_df():
 
 def test_add_tag_with_simple_rule(sample_df):
     """
-    Tests a simple rule to add a tag based on a single condition.
+    Tests a simple rule to add a tag to the Status_Note column.
     """
     rules = [
         {
@@ -37,13 +38,16 @@ def test_add_tag_with_simple_rule(sample_df):
     engine = RuleEngine(rules)
     result_df = engine.apply(sample_df.copy())
 
-    # Check that rows with 'DHL' got the new tag
+    # Check that rows with 'DHL' got the new note
     dhl_rows = result_df[result_df['Shipping_Provider'] == 'DHL']
-    assert all(dhl_rows['Tags'].str.contains('DHL-SHIP'))
+    assert all(dhl_rows['Status_Note'].str.contains('DHL-SHIP'))
 
-    # Check that other rows did not get the tag
+    # Check that other rows did not get the note
     other_rows = result_df[result_df['Shipping_Provider'] != 'DHL']
-    assert not any(other_rows['Tags'].str.contains('DHL-SHIP'))
+    assert not any(other_rows['Status_Note'].str.contains('DHL-SHIP'))
+
+    # Check that a pre-existing note was preserved
+    assert 'Repeat, DHL-SHIP' in result_df.loc[4, 'Status_Note']
 
 def test_set_priority_with_multiple_conditions_all(sample_df):
     """
