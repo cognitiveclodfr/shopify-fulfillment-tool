@@ -22,9 +22,10 @@ class RuleBuilderFrame(ctk.CTkScrollableFrame):
         'EXCLUDE_FROM_REPORT', 'EXCLUDE_SKU'
     ]
 
-    def __init__(self, master, rules_data, **kwargs):
+    def __init__(self, master, rules_data, style, **kwargs):
         super().__init__(master, **kwargs)
         self.rules_data = rules_data
+        self.style = style
         self.rule_widgets = []
         self.grid_columnconfigure(0, weight=1)
         self.populate_rules()
@@ -61,7 +62,7 @@ class RuleBuilderFrame(ctk.CTkScrollableFrame):
         name_var = tk.StringVar(value=config.get('name', ''))
         ctk.CTkEntry(header_frame, textvariable=name_var).grid(row=0, column=1, sticky="ew")
 
-        delete_rule_btn = ctk.CTkButton(header_frame, text="Delete Rule", fg_color=master.parent.STYLE['color_destructive'], width=100,
+        delete_rule_btn = ctk.CTkButton(header_frame, text="Delete Rule", fg_color=self.style['color_destructive'], width=100,
                                         command=lambda f=rule_frame: self.delete_rule_ui(f))
         delete_rule_btn.grid(row=0, column=2, padx=(10, 0))
 
@@ -126,7 +127,7 @@ class RuleBuilderFrame(ctk.CTkScrollableFrame):
         ctk.CTkComboBox(row_frame, values=self.CONDITION_FIELDS, variable=field_var).pack(side="left", padx=5)
         ctk.CTkComboBox(row_frame, values=self.CONDITION_OPERATORS, variable=op_var, width=150).pack(side="left", padx=5)
         ctk.CTkEntry(row_frame, textvariable=val_var, placeholder_text="Value").pack(side="left", padx=5, fill="x", expand=True)
-        ctk.CTkButton(row_frame, text="X", width=30, fg_color=self.master.parent.STYLE['color_destructive'],
+        ctk.CTkButton(row_frame, text="X", width=30, fg_color=self.style['color_destructive'],
                       command=lambda: self.delete_row(row_frame, conditions_list, condition_widgets)).pack(side="left", padx=5)
 
         condition_widgets = {'frame': row_frame, 'field_var': field_var, 'op_var': op_var, 'val_var': val_var}
@@ -143,7 +144,7 @@ class RuleBuilderFrame(ctk.CTkScrollableFrame):
 
         ctk.CTkComboBox(row_frame, values=self.ACTION_TYPES, variable=type_var).pack(side="left", padx=5)
         ctk.CTkEntry(row_frame, textvariable=val_var, placeholder_text="Value").pack(side="left", padx=5, fill="x", expand=True)
-        ctk.CTkButton(row_frame, text="X", width=30, fg_color=self.master.parent.STYLE['color_destructive'],
+        ctk.CTkButton(row_frame, text="X", width=30, fg_color=self.style['color_destructive'],
                       command=lambda: self.delete_row(row_frame, actions_list, action_widgets)).pack(side="left", padx=5)
 
         action_widgets = {'frame': row_frame, 'type_var': type_var, 'val_var': val_var}
@@ -380,6 +381,7 @@ class SettingsWindow(ctk.CTkToplevel):
         self.rule_builder = RuleBuilderFrame(
             master=rules_tab,
             rules_data=self.config_data.get('rules', []),
+            style=self.parent.STYLE,
             label_text="Automation Rules"
         )
         self.rule_builder.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)

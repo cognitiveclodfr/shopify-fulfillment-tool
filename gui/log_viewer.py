@@ -21,11 +21,11 @@ class LogViewer(ctk.CTkFrame):
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
 
-        self.log_queue = deque(maxlen=1000) # Store up to 1000 log records
+        self.all_logs = deque(maxlen=1000) # Master list of all log records
+        self.log_queue = deque(maxlen=1000)
         self.log_handler = TreeViewLogHandler(self.log_queue)
 
         # Configure the logger to use our handler
-        # A specific logger name can be used, or the root logger
         logger = logging.getLogger('ShopifyToolLogger')
         logger.addHandler(self.log_handler)
 
@@ -82,50 +82,35 @@ class LogViewer(ctk.CTkFrame):
         self.tree.tag_configure('CRITICAL', background='#EF4444', foreground='white')
 
     def _process_log_queue(self):
-        """Periodically check the queue for new log messages and add them to the tree."""
+        """Periodically check the queue for new log messages and add them to the master list."""
         while self.log_queue:
-            message = self.log_queue.popleft()
-            self._add_log_entry(message)
+            record = self.log_queue.popleft()
+            self.all_logs.append(record)
+            # Live update: add new logs that match current filter
+            self._add_log_entry_if_match(record)
 
-        # Poll every 100ms
         self.after(100, self._process_log_queue)
 
-    def _add_log_entry(self, record):
-        """Adds a single log entry to the Treeview from a LogRecord object."""
-        try:
-            log_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(record.created))
-            level = record.levelname
-            message = record.getMessage()
-
-            # Insert at the top
-            item_id = self.tree.insert("", 0, values=(log_time, level, message), tags=(level,))
-
-            # Re-apply filters to the new item
-            self._filter_item(item_id)
-
-        except Exception as e:
-            # Use logger to report errors in the logger itself
-            logging.getLogger('ShopifyToolLogger').error(f"Error adding log entry to GUI: {e}")
-
-    def _apply_filters(self, *args):
-        """Apply the current level and search filters to all items in the tree."""
-        for item_id in self.tree.get_children():
-            self._filter_item(item_id)
-
-    def _filter_item(self, item_id):
-        """Show or hide a single item based on the current filters."""
-        values = self.tree.item(item_id, 'values')
+    def _add_log_entry_if_match(self, record):
+        """Adds a log entry to the treeview only if it matches the current filters."""
         level_filter = self.level_filter_var.get()
         search_term = self.search_var.get().lower()
+        level = record.levelname
+        message = record.getMessage().lower()
 
-        level_match = (level_filter == "ALL") or (values[1] == level_filter)
-        search_match = (search_term == "") or (search_term in values[2].lower())
+        level_match = (level_filter == "ALL") or (level == level_filter)
+        search_match = (search_term == "") or (search_term in message)
 
         if level_match and search_match:
-            # Re-attach the item if it was hidden
-            parent = self.tree.parent(item_id)
-            if parent: # If it's a top-level item, parent is '', otherwise it's a child
-                 self.tree.move(item_id, '', self.tree.index(item_id))
-        else:
-            # Detach the item to hide it
-            self.tree.detach(item_id)
+            log_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(record.created))
+            self.tree.insert("", 0, values=(log_time, level, record.getMessage()), tags=(level,))
+
+    def _apply_filters(self, *args):
+        """Clear the tree and repopulate it based on the current filters."""
+        # Clear the tree view
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        # Repopulate with logs from the master list that match the filters
+        for record in self.all_logs:
+            self._add_log_entry_if_match(record)
