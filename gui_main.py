@@ -357,16 +357,21 @@ class App(ctk.CTk):
 
     def _sync_treeview_selection(self, event, tree_from, tree_to):
         """Callback to synchronize selection between the two treeviews."""
-        # a bit of a hack to prevent infinite recursion
+        selection = tree_from.selection()
+
+        # If the selection is already the same, do nothing. This is the key to preventing loops.
+        if selection == tree_to.selection():
+            return
+
+        # The is_syncing flag is a secondary guard against potential race conditions.
         if self.is_syncing:
             return
-        self.is_syncing = True
 
-        selection = tree_from.selection()
+        self.is_syncing = True
+        logger.debug(f"Syncing selection from {tree_from} to {tree_to}. Selection: {selection}")
         tree_to.selection_set(selection)
         if selection:
             tree_to.focus(selection[0])
-
         self.is_syncing = False
 
     def create_data_viewer(self):
@@ -483,18 +488,22 @@ class App(ctk.CTk):
             order_number = self.frozen_tree.item(item_id, 'values')[0]
             order_rows_indices = self.analysis_results_df[self.analysis_results_df['Order_Number'] == order_number].index
 
+            # Ensure the Status_Note column exists
+            if 'Status_Note' not in self.analysis_results_df.columns:
+                self.analysis_results_df['Status_Note'] = ''
+
             for index in order_rows_indices:
-                current_tags = self.analysis_results_df.loc[index, 'Tags']
-                if pd.isna(current_tags) or current_tags == '':
-                    new_tags = tag_to_add
-                elif tag_to_add not in current_tags.split(','):
-                    new_tags = f"{current_tags},{tag_to_add}"
+                current_notes = self.analysis_results_df.loc[index, 'Status_Note']
+                if pd.isna(current_notes) or current_notes == '':
+                    new_notes = tag_to_add
+                elif tag_to_add not in current_notes.split(','):
+                    new_notes = f"{current_notes}, {tag_to_add}"
                 else:
-                    new_tags = current_tags
-                self.analysis_results_df.loc[index, 'Tags'] = new_tags
+                    new_notes = current_notes
+                self.analysis_results_df.loc[index, 'Status_Note'] = new_notes
 
             self.update_data_viewer(self.analysis_results_df)
-            self.log_activity("Manual Tag", f"Added tag '{tag_to_add}' to order {order_number}.")
+            self.log_activity("Manual Tag", f"Added note '{tag_to_add}' to order {order_number}.")
 
     def _remove_item_from_order(self, item_id, order_number, sku):
         if not messagebox.askyesno("Confirm", f"Are you sure you want to remove item {sku} from order {order_number}?\nThis cannot be undone.", parent=self):
