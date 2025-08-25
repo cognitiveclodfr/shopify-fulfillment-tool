@@ -2,6 +2,7 @@ import os
 import logging
 import pandas as pd
 from datetime import datetime
+from . import analysis, packing_lists, stock_export
 from .rules import RuleEngine
 import numpy as np
 
@@ -63,7 +64,6 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
     """
     Orchestrates the entire fulfillment analysis process.
     """
-    from .analysis import run_analysis
     logger.info("--- Starting Full Analysis Process ---")
     # 1. Load data
     logger.info("Step 1: Loading data files...")
@@ -97,7 +97,7 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
 
     # 2. Run analysis (computation only)
     logger.info("Step 2: Running fulfillment simulation...")
-    final_df, summary_present_df, summary_missing_df, stats = run_analysis(
+    final_df, summary_present_df, summary_missing_df, stats = analysis.run_analysis(
         stock_df, orders_df, history_df
     )
     logger.info("Analysis computation complete.")
@@ -166,13 +166,12 @@ def create_packing_list_report(analysis_df, report_config):
     """
     Generates a single packing list report based on a report configuration.
     """
-    from .packing_lists import create_packing_list
     report_name = report_config.get('name', 'Unknown Report')
     try:
         output_file = report_config['output_filename']
         os.makedirs(os.path.dirname(output_file), exist_ok=True)
         
-        create_packing_list(
+        packing_lists.create_packing_list(
             analysis_df=analysis_df,
             output_file=output_file,
             report_name=report_name,
@@ -190,7 +189,6 @@ def create_stock_export_report(analysis_df, report_config, templates_path, outpu
     """
     Generates a single stock export report based on a template and report configuration.
     """
-    from .stock_export import create_stock_export
     report_name = report_config.get('name', 'Unknown Report')
     try:
         template_name = report_config['template']
@@ -203,7 +201,7 @@ def create_stock_export_report(analysis_df, report_config, templates_path, outpu
         os.makedirs(output_path, exist_ok=True)
         output_full_path = os.path.join(output_path, output_filename)
 
-        create_stock_export(
+        stock_export.create_stock_export(
             analysis_df=analysis_df,
             template_file=template_full_path,
             output_file=output_full_path,
