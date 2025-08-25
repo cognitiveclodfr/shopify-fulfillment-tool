@@ -2,8 +2,8 @@ import os
 import logging
 import pandas as pd
 from datetime import datetime
-from shopify_tool import analysis, packing_lists, stock_export
-from shopify_tool.rules import RuleEngine
+# Imports moved into functions to prevent circular dependencies with PyInstaller
+from .rules import RuleEngine
 import numpy as np
 
 logger = logging.getLogger('ShopifyToolLogger')
@@ -82,6 +82,7 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
             - pd.DataFrame or None: The final analysis DataFrame.
             - dict or None: A dictionary of calculated statistics.
     """
+    from . import analysis
     logger.info("--- Starting Full Analysis Process ---")
     # 1. Load data
     logger.info("Step 1: Loading data files...")
@@ -194,6 +195,7 @@ def create_packing_list_report(analysis_df, report_config):
             - bool: True for success, False for failure.
             - str: A message indicating the result.
     """
+    from . import packing_lists
     report_name = report_config.get('name', 'Unknown Report')
     try:
         output_file = report_config['output_filename']
@@ -228,6 +230,7 @@ def create_stock_export_report(analysis_df, report_config, templates_path, outpu
             - bool: True for success, False for failure.
             - str: A message indicating the result.
     """
+    from . import stock_export
     report_name = report_config.get('name', 'Unknown Report')
     try:
         template_name = report_config['template']
