@@ -5,6 +5,32 @@ from datetime import datetime
 
 logger = logging.getLogger('ShopifyToolLogger')
 
+def _apply_filters(df, filters):
+    """Applies a list of filter rules to a DataFrame and returns the filtered DataFrame."""
+    query_parts = ["Order_Fulfillment_Status == 'Fulfillable'"]
+    if filters:
+        for f in filters:
+            field, op, value = f.get('field'), f.get('operator'), f.get('value')
+            if not all([field, op, value is not None]):
+                logger.warning(f"Skipping invalid filter rule: {f}")
+                continue
+
+            # Format value for query string, escaping quotes in strings
+            if isinstance(value, str):
+                value_formatted = f"'{value.replace('\'', '\\\'')}'"
+            # For list, pandas expects a tuple string representation
+            elif isinstance(value, list):
+                value_formatted = f"{tuple(value)}"
+            # For numbers or other types
+            else:
+                value_formatted = value
+
+            query_parts.append(f"`{field}` {op} {value_formatted}")
+
+    full_query = " & ".join(query_parts)
+    logger.info(f"Applying query: {full_query}")
+    return df.query(full_query).copy()
+
 def create_packing_list(analysis_df, output_file, report_name="Packing List", filters=None, exclude_skus=None):
     """
     Creates a versatile packing list in .xlsx format with advanced formatting.
@@ -12,18 +38,7 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
     try:
         logger.info(f"--- Creating report: '{report_name}' ---")
 
-        # Build the query string to filter the DataFrame
-        query_parts = ["Order_Fulfillment_Status == 'Fulfillable'"]
-        if filters:
-            for key, value in filters.items():
-                # Handle both single value and list of values for filters
-                if isinstance(value, list):
-                    query_parts.append(f"`{key}` in {value}")
-                else:
-                    query_parts.append(f"`{key}` == '{value}'")
-        
-        full_query = " & ".join(query_parts)
-        filtered_orders = analysis_df.query(full_query).copy()
+        filtered_orders = _apply_filters(analysis_df, filters)
 
         # Exclude specified SKUs if any are provided
         if exclude_skus and not filtered_orders.empty:
