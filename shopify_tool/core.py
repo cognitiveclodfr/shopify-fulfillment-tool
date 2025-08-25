@@ -2,7 +2,6 @@ import os
 import logging
 import pandas as pd
 from datetime import datetime
-# Imports moved into functions to prevent circular dependencies with PyInstaller
 from .rules import RuleEngine
 import numpy as np
 
@@ -63,26 +62,8 @@ def validate_csv_headers(file_path, required_columns, delimiter=','):
 def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_delimiter, config):
     """
     Orchestrates the entire fulfillment analysis process.
-
-    This function loads data from CSV files, runs the fulfillment simulation,
-    applies business rules (e.g., stock alerts, tagging), saves the
-    main analysis report to an Excel file, and updates the fulfillment history.
-
-    Args:
-        stock_file_path (str): Path to the stock data CSV file.
-        orders_file_path (str): Path to the Shopify orders export CSV file.
-        output_dir_path (str): Path to the directory where the output report will be saved.
-        stock_delimiter (str): The delimiter used in the stock CSV file.
-        config (dict): The application configuration dictionary.
-
-    Returns:
-        tuple: A tuple containing:
-            - bool: True for success, False for failure.
-            - str or None: A message indicating the result or the path to the output file.
-            - pd.DataFrame or None: The final analysis DataFrame.
-            - dict or None: A dictionary of calculated statistics.
     """
-    from . import analysis
+    from .analysis import run_analysis
     logger.info("--- Starting Full Analysis Process ---")
     # 1. Load data
     logger.info("Step 1: Loading data files...")
@@ -116,7 +97,7 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
 
     # 2. Run analysis (computation only)
     logger.info("Step 2: Running fulfillment simulation...")
-    final_df, summary_present_df, summary_missing_df, stats = analysis.run_analysis(
+    final_df, summary_present_df, summary_missing_df, stats = run_analysis(
         stock_df, orders_df, history_df
     )
     logger.info("Analysis computation complete.")
@@ -184,29 +165,19 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
 def create_packing_list_report(analysis_df, report_config):
     """
     Generates a single packing list report based on a report configuration.
-
-    Args:
-        analysis_df (pd.DataFrame): The main analysis DataFrame containing fulfillment data.
-        report_config (dict): A dictionary from the main config file that defines
-                              the filters, output filename, and other settings for this report.
-
-    Returns:
-        tuple: A tuple containing:
-            - bool: True for success, False for failure.
-            - str: A message indicating the result.
     """
-    from . import packing_lists
+    from .packing_lists import create_packing_list
     report_name = report_config.get('name', 'Unknown Report')
     try:
         output_file = report_config['output_filename']
         os.makedirs(os.path.dirname(output_file), exist_ok=True)
         
-        packing_lists.create_packing_list(
+        create_packing_list(
             analysis_df=analysis_df,
             output_file=output_file,
             report_name=report_name,
             filters=report_config.get('filters'),
-            exclude_skus=report_config.get('exclude_skus') # Pass the new parameter
+            exclude_skus=report_config.get('exclude_skus')
         )
         success_message = f"Report '{report_name}' created successfully at '{output_file}'."
         return True, success_message
@@ -218,19 +189,8 @@ def create_packing_list_report(analysis_df, report_config):
 def create_stock_export_report(analysis_df, report_config, templates_path, output_path):
     """
     Generates a single stock export report based on a template and report configuration.
-
-    Args:
-        analysis_df (pd.DataFrame): The main analysis DataFrame.
-        report_config (dict): A dictionary from the main config defining the report.
-        templates_path (str): The path to the directory containing template files.
-        output_path (str): The path to the directory where the export file will be saved.
-
-    Returns:
-        tuple: A tuple containing:
-            - bool: True for success, False for failure.
-            - str: A message indicating the result.
     """
-    from . import stock_export
+    from .stock_export import create_stock_export
     report_name = report_config.get('name', 'Unknown Report')
     try:
         template_name = report_config['template']
@@ -243,7 +203,7 @@ def create_stock_export_report(analysis_df, report_config, templates_path, outpu
         os.makedirs(output_path, exist_ok=True)
         output_full_path = os.path.join(output_path, output_filename)
 
-        stock_export.create_stock_export(
+        create_stock_export(
             analysis_df=analysis_df,
             template_file=template_full_path,
             output_file=output_full_path,
