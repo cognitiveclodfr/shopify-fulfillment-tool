@@ -28,7 +28,7 @@ jobs:
         pip install -r requirements.txt
 
     - name: Build executable with PyInstaller
-      run: pyinstaller --onefile --windowed --add-data "config.json;." --add-data "data/templates;data/templates" gui_main.py
+      run: pyinstaller --onefile --windowed --add-data "config.json;." --add-data "data/templates;data/templates" --hidden-import=shopify_tool.analysis --hidden-import=shopify_tool.packing_lists --hidden-import=shopify_tool.stock_export gui_main.py
 
     - name: Upload Release Asset
       uses: actions/upload-release-asset@v1
