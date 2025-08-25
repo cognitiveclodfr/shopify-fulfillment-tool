@@ -6,6 +6,32 @@ from xlutils.copy import copy
 
 logger = logging.getLogger('ShopifyToolLogger')
 
+def _apply_filters(df, filters):
+    """Applies a list of filter rules to a DataFrame and returns the filtered DataFrame."""
+    query_parts = ["Order_Fulfillment_Status == 'Fulfillable'"]
+    if filters:
+        for f in filters:
+            field, op, value = f.get('field'), f.get('operator'), f.get('value')
+            if not all([field, op, value is not None]):
+                logger.warning(f"Skipping invalid filter rule: {f}")
+                continue
+
+            # Format value for query string, escaping quotes in strings
+            if isinstance(value, str):
+                value_formatted = f"'{value.replace('\'', '\\\'')}'"
+            # For list, pandas expects a tuple string representation
+            elif isinstance(value, list):
+                value_formatted = f"{tuple(value)}"
+            # For numbers or other types
+            else:
+                value_formatted = value
+
+            query_parts.append(f"`{field}` {op} {value_formatted}")
+
+    full_query = " & ".join(query_parts)
+    logger.info(f"Applying query for stock export: {full_query}")
+    return df.query(full_query).copy()
+
 def create_stock_export(analysis_df, template_file, output_file, report_name="Stock Export", filters=None):
     """
     Creates a stock export file by writing data into an existing .xls template file.
@@ -17,17 +43,7 @@ def create_stock_export(analysis_df, template_file, output_file, report_name="St
             logger.error(f"Template file '{template_file}' not found or is empty.")
             return
 
-        # Build the query string to filter the DataFrame
-        query_parts = ["Order_Fulfillment_Status == 'Fulfillable'"]
-        if filters:
-            for key, value in filters.items():
-                if isinstance(value, list):
-                    query_parts.append(f"`{key}` in {value}")
-                else:
-                    query_parts.append(f"`{key}` == '{value}'")
-        
-        full_query = " & ".join(query_parts)
-        filtered_items = analysis_df.query(full_query).copy()
+        filtered_items = _apply_filters(analysis_df, filters)
 
         if filtered_items.empty:
             logger.warning(f"Report '{report_name}': No items found matching the criteria.")

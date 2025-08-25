@@ -296,18 +296,15 @@ class SettingsWindow(ctk.CTkToplevel):
             new_packing_lists = []
             for widgets in getattr(self, 'packing_list_widgets', []):
                 try:
-                    # Build the filters dictionary from the dynamic UI
-                    filters = {}
+                    # Build the filters list from the dynamic UI
+                    new_filters = []
                     for row in widgets['filter_rows']:
                         col = row['col_var'].get()
                         op = row['op_var'].get()
-                        val = row['val_var'].get()
-                        if val: # Only add filter if a value is provided
-                            # For 'in'/'not in', the value should be a list
-                            if op in ['in', 'not in']:
-                                filters[col] = [v.strip() for v in val.split(',')]
-                            else:
-                                filters[col] = val
+                        val_str = row['val_var'].get()
+                        if val_str:
+                            val = [v.strip() for v in val_str.split(',')] if op in ['in', 'not in'] else val_str
+                            new_filters.append({"field": col, "operator": op, "value": val})
 
                     exclude_skus_str = widgets['exclude_skus_var'].get()
                     exclude_skus = [sku.strip() for sku in exclude_skus_str.split(',') if sku.strip()]
@@ -315,11 +312,11 @@ class SettingsWindow(ctk.CTkToplevel):
                     new_packing_lists.append({
                         "name": widgets['name_var'].get(),
                         "output_filename": widgets['filename_var'].get(),
-                        "filters": filters,
+                        "filters": new_filters,
                         "exclude_skus": exclude_skus
                     })
-                except json.JSONDecodeError:
-                    messagebox.showerror("Validation Error", "Invalid JSON format in Packing List filters.", parent=self)
+                except Exception as e:
+                    messagebox.showerror("Save Error", f"Could not save Packing List '{widgets['name_var'].get()}'.\nError: {e}", parent=self)
                     return
             self.config_data['packing_lists'] = new_packing_lists
 
@@ -327,22 +324,20 @@ class SettingsWindow(ctk.CTkToplevel):
             new_stock_exports = []
             for widgets in getattr(self, 'stock_export_widgets', []):
                 try:
-                    # Build the filters dictionary from the dynamic UI
-                    filters = {}
+                    # Build the filters list from the dynamic UI
+                    new_filters = []
                     for row in widgets['filter_rows']:
                         col = row['col_var'].get()
                         op = row['op_var'].get()
-                        val = row['val_var'].get()
-                        if val: # Only add filter if a value is provided
-                            if op in ['in', 'not in']:
-                                filters[col] = [v.strip() for v in val.split(',')]
-                            else:
-                                filters[col] = val
+                        val_str = row['val_var'].get()
+                        if val_str:
+                            val = [v.strip() for v in val_str.split(',')] if op in ['in', 'not in'] else val_str
+                            new_filters.append({"field": col, "operator": op, "value": val})
 
                     new_stock_exports.append({
                         "name": widgets['name_var'].get(),
                         "template": widgets['template_var'].get(),
-                        "filters": filters
+                        "filters": new_filters
                     })
                 except Exception as e:
                     messagebox.showerror("Save Error", f"Could not save Stock Export '{widgets['name_var'].get()}'.\nError: {e}", parent=self)
@@ -458,12 +453,18 @@ class SettingsWindow(ctk.CTkToplevel):
 
         self.packing_list_widgets.append(widget_refs)
 
-        # Populate existing filters
-        existing_filters = config.get('filters', {})
-        for col, val in existing_filters.items():
-            op = 'in' if isinstance(val, list) else '=='
-            val_str = ', '.join(val) if isinstance(val, list) else val
-            self._add_filter_rule_row(filters_frame, widget_refs['filter_rows'], col, op, val_str)
+        # Populate existing filters from the new list-based structure
+        existing_filters = config.get('filters', [])
+        for f in existing_filters:
+            val = f.get('value')
+            val_str = ', '.join(map(str, val)) if isinstance(val, list) else str(val)
+            self._add_filter_rule_row(
+                parent_frame=filters_frame,
+                rows_list=widget_refs['filter_rows'],
+                col=f.get('field', ''),
+                op=f.get('operator', '=='),
+                val=val_str
+            )
 
     def delete_packing_list_entry(self, frame_to_delete):
         """Removes a packing list entry from the UI."""
@@ -609,12 +610,18 @@ class SettingsWindow(ctk.CTkToplevel):
 
         self.stock_export_widgets.append(widget_refs)
 
-        # Populate existing filters
-        existing_filters = config.get('filters', {})
-        for col, val in existing_filters.items():
-            op = 'in' if isinstance(val, list) else '=='
-            val_str = ', '.join(val) if isinstance(val, list) else val
-            self._add_filter_rule_row(filters_frame, widget_refs['filter_rows'], col, op, val_str)
+        # Populate existing filters from the new list-based structure
+        existing_filters = config.get('filters', [])
+        for f in existing_filters:
+            val = f.get('value')
+            val_str = ', '.join(map(str, val)) if isinstance(val, list) else str(val)
+            self._add_filter_rule_row(
+                parent_frame=filters_frame,
+                rows_list=widget_refs['filter_rows'],
+                col=f.get('field', ''),
+                op=f.get('operator', '=='),
+                val=val_str
+            )
 
     def delete_stock_export_entry(self, frame_to_delete):
         """Removes a stock export entry from the UI."""
