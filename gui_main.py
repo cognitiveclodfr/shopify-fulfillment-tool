@@ -114,8 +114,27 @@ class App(ctk.CTk):
         self.visible_columns = []
         self.analysis_stats = None # To store the stats dictionary
         self.session_path = None
-        self.config_path = resource_path('config.json')
+
+        # --- Configuration Handling ---
+        # The default config is a resource. The user's config is persistent.
+        default_config_path = resource_path('config.json')
+        user_config_path = get_persistent_data_path('config.json')
+
+        # If the user config doesn't exist, create it from the default.
+        if not os.path.exists(user_config_path):
+            logger.info(f"User config not found. Copying default config to {user_config_path}")
+            try:
+                import shutil
+                shutil.copy(default_config_path, user_config_path)
+            except Exception as e:
+                logger.error(f"Failed to copy default config: {e}")
+                messagebox.showerror("Fatal Error", f"Could not create user configuration file: {e}")
+                self.after(100, self.destroy)
+
+        # The application will now use the persistent user config file.
+        self.config_path = user_config_path
         self.config = self.load_config()
+
         # Use persistent path for log file and session file
         self.log_file_path = get_persistent_data_path('app_history.log')
         self.session_file = get_persistent_data_path('session_data.pkl')
