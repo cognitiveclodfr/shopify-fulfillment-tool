@@ -902,31 +902,36 @@ class App(ctk.CTk):
             self.after(0, messagebox.showerror, "Session Error", "Please create a new session before generating reports.")
             return
 
-        if report_type == "packing_lists":
-            # The filename from config is now relative to the session path
-            relative_path = report_config.get('output_filename', 'default_packing_list.xlsx')
-            output_file = os.path.join(self.session_path, os.path.basename(relative_path))
+        try:
+            if report_type == "packing_lists":
+                # The filename from config is now relative to the session path
+                relative_path = report_config.get('output_filename', 'default_packing_list.xlsx')
+                output_file = os.path.join(self.session_path, os.path.basename(relative_path))
 
-            # Update the report_config with the new full path for the core function
-            report_config_copy = report_config.copy()
-            report_config_copy['output_filename'] = output_file
+                # Update the report_config with the new full path for the core function
+                report_config_copy = report_config.copy()
+                report_config_copy['output_filename'] = output_file
 
-            success, message = core.create_packing_list_report(
-                analysis_df=self.analysis_results_df,
-                report_config=report_config_copy
-            )
-        elif report_type == "stock_exports":
-            templates_path = resource_path(self.config['paths']['templates'])
-            # The output_path is now the session path, not the one from config
-            success, message = core.create_stock_export_report(
-                analysis_df=self.analysis_results_df,
-                report_config=report_config,
-                templates_path=templates_path,
-                output_path=self.session_path
-            )
-        else:
+                success, message = core.create_packing_list_report(
+                    analysis_df=self.analysis_results_df,
+                    report_config=report_config_copy
+                )
+            elif report_type == "stock_exports":
+                templates_path = resource_path(self.config['paths']['templates'])
+                # The output_path is now the session path, not the one from config
+                success, message = core.create_stock_export_report(
+                    analysis_df=self.analysis_results_df,
+                    report_config=report_config,
+                    templates_path=templates_path,
+                    output_path=self.session_path
+                )
+            else:
+                success = False
+                message = "Unknown report type."
+        except Exception as e:
+            logger.error(f"Error during report generation thread: {e}", exc_info=True)
             success = False
-            message = "Unknown report type."
+            message = f"A critical error occurred during report generation:\n\n{e}\n\nPlease check the logs for more details."
 
         if success:
             self.after(0, self.log_activity, "Report Generation", message)
