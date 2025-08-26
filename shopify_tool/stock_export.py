@@ -20,11 +20,23 @@ def create_stock_export(analysis_df, template_file, output_file, report_name="St
         # Build the query string to filter the DataFrame
         query_parts = ["Order_Fulfillment_Status == 'Fulfillable'"]
         if filters:
-            for key, value in filters.items():
-                if isinstance(value, list):
-                    query_parts.append(f"`{key}` in {value}")
+            for f in filters:
+                field = f.get("field")
+                operator = f.get("operator")
+                value = f.get("value")
+
+                if not all([field, operator, value is not None]):
+                    logger.warning(f"Skipping invalid filter: {f}")
+                    continue
+
+                # Correctly quote string values for the query
+                if isinstance(value, str):
+                    formatted_value = repr(value)
                 else:
-                    query_parts.append(f"`{key}` == '{value}'")
+                    # For lists (for 'in'/'not in') and numbers, no extra quotes are needed.
+                    formatted_value = value
+
+                query_parts.append(f"`{field}` {operator} {formatted_value}")
 
         full_query = " & ".join(query_parts)
         filtered_items = analysis_df.query(full_query).copy()
