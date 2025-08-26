@@ -464,7 +464,7 @@ class SettingsWindow(ctk.CTkToplevel):
             'filter_rows': [] # List to hold widgets for each filter rule
         }
 
-        add_filter_button.configure(command=lambda: self._add_filter_rule_row(filters_frame, widget_refs['filter_rows']))
+        add_filter_button.configure(command=lambda: self._add_filter_rule_row(widget_refs['filters_frame'], widget_refs['filter_rows']))
 
         self.packing_list_widgets.append(widget_refs)
 
@@ -479,16 +479,25 @@ class SettingsWindow(ctk.CTkToplevel):
                 widget_refs['filter_rows'],
                 col=f.get('field', ''),
                 op=f.get('operator', ''),
-                val=val
+                val=val,
+                is_initial_load=True
             )
+
+        self._update_no_filters_label(filters_frame, widget_refs['filter_rows'])
 
     def delete_packing_list_entry(self, frame_to_delete):
         """Removes a packing list entry from the UI."""
         frame_to_delete.destroy()
         self.packing_list_widgets = [w for w in self.packing_list_widgets if w['frame'] is not frame_to_delete]
 
-    def _add_filter_rule_row(self, parent_frame, rows_list, col="", op="", val=""):
+    def _add_filter_rule_row(self, parent_frame, rows_list, col="", op="", val="", is_initial_load=False):
         """Dynamically adds a new row of widgets for creating a filter rule."""
+        # When adding the first filter, remove the 'no filters' placeholder if it exists
+        if not is_initial_load:
+            for widget in parent_frame.winfo_children():
+                if isinstance(widget, ctk.CTkLabel) and "No filters" in widget.cget("text"):
+                    widget.destroy()
+
         row_frame = ctk.CTkFrame(parent_frame)
         row_frame.grid(sticky="ew", pady=2)
         row_frame.grid_columnconfigure(2, weight=1) # Allow the value entry to expand
@@ -519,15 +528,28 @@ class SettingsWindow(ctk.CTkToplevel):
         op_combo.configure(command=lambda choice, rw=row_widgets: self._on_filter_criteria_changed(rw))
 
         delete_button = ctk.CTkButton(row_frame, text="X", fg_color="red", width=30,
-                                      command=lambda: self._delete_filter_rule_row(row_widgets, rows_list))
+                                      command=lambda rw=row_widgets, rl=rows_list, pf=parent_frame: self._delete_filter_rule_row(rw, rl, pf))
         delete_button.grid(row=0, column=3, padx=5, pady=5)
 
         rows_list.append(row_widgets)
 
-    def _delete_filter_rule_row(self, row_widgets, rows_list):
+    def _delete_filter_rule_row(self, row_widgets, rows_list, parent_frame):
         """Destroys the widgets in a filter rule row and removes it from the list."""
         row_widgets['frame'].destroy()
         rows_list.remove(row_widgets)
+        self._update_no_filters_label(parent_frame, rows_list)
+
+    def _update_no_filters_label(self, parent_frame, rows_list):
+        """Shows or hides the 'No filters' placeholder label."""
+        # Remove existing label first
+        for widget in parent_frame.winfo_children():
+            if isinstance(widget, ctk.CTkLabel) and "No filters" in widget.cget("text"):
+                widget.destroy()
+
+        # If no filter rows are left, add the placeholder
+        if not rows_list:
+            no_filter_label = ctk.CTkLabel(parent_frame, text="No filters configured.", text_color="gray")
+            no_filter_label.grid(padx=5, pady=5)
 
     def _on_filter_criteria_changed(self, row_widgets):
         """
@@ -638,8 +660,11 @@ class SettingsWindow(ctk.CTkToplevel):
                 widget_refs['filter_rows'],
                 col=f.get('field', ''),
                 op=f.get('operator', ''),
-                val=val
+                val=val,
+                is_initial_load=True
             )
+
+        self._update_no_filters_label(filters_frame, widget_refs['filter_rows'])
 
     def delete_stock_export_entry(self, frame_to_delete):
         """Removes a stock export entry from the UI."""
