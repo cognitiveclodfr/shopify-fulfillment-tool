@@ -114,27 +114,8 @@ class App(ctk.CTk):
         self.visible_columns = []
         self.analysis_stats = None # To store the stats dictionary
         self.session_path = None
-
-        # --- Configuration Handling ---
-        # The default config is a resource. The user's config is persistent.
-        default_config_path = resource_path('config.json')
-        user_config_path = get_persistent_data_path('config.json')
-
-        # If the user config doesn't exist, create it from the default.
-        if not os.path.exists(user_config_path):
-            logger.info(f"User config not found. Copying default config to {user_config_path}")
-            try:
-                import shutil
-                shutil.copy(default_config_path, user_config_path)
-            except Exception as e:
-                logger.error(f"Failed to copy default config: {e}")
-                messagebox.showerror("Fatal Error", f"Could not create user configuration file: {e}")
-                self.after(100, self.destroy)
-
-        # The application will now use the persistent user config file.
-        self.config_path = user_config_path
+        self.config_path = resource_path('config.json')
         self.config = self.load_config()
-
         # Use persistent path for log file and session file
         self.log_file_path = get_persistent_data_path('app_history.log')
         self.session_file = get_persistent_data_path('session_data.pkl')
@@ -902,36 +883,31 @@ class App(ctk.CTk):
             self.after(0, messagebox.showerror, "Session Error", "Please create a new session before generating reports.")
             return
 
-        try:
-            if report_type == "packing_lists":
-                # The filename from config is now relative to the session path
-                relative_path = report_config.get('output_filename', 'default_packing_list.xlsx')
-                output_file = os.path.join(self.session_path, os.path.basename(relative_path))
+        if report_type == "packing_lists":
+            # The filename from config is now relative to the session path
+            relative_path = report_config.get('output_filename', 'default_packing_list.xlsx')
+            output_file = os.path.join(self.session_path, os.path.basename(relative_path))
 
-                # Update the report_config with the new full path for the core function
-                report_config_copy = report_config.copy()
-                report_config_copy['output_filename'] = output_file
+            # Update the report_config with the new full path for the core function
+            report_config_copy = report_config.copy()
+            report_config_copy['output_filename'] = output_file
 
-                success, message = core.create_packing_list_report(
-                    analysis_df=self.analysis_results_df,
-                    report_config=report_config_copy
-                )
-            elif report_type == "stock_exports":
-                templates_path = resource_path(self.config['paths']['templates'])
-                # The output_path is now the session path, not the one from config
-                success, message = core.create_stock_export_report(
-                    analysis_df=self.analysis_results_df,
-                    report_config=report_config,
-                    templates_path=templates_path,
-                    output_path=self.session_path
-                )
-            else:
-                success = False
-                message = "Unknown report type."
-        except Exception as e:
-            logger.error(f"Error during report generation thread: {e}", exc_info=True)
+            success, message = core.create_packing_list_report(
+                analysis_df=self.analysis_results_df,
+                report_config=report_config_copy
+            )
+        elif report_type == "stock_exports":
+            templates_path = resource_path(self.config['paths']['templates'])
+            # The output_path is now the session path, not the one from config
+            success, message = core.create_stock_export_report(
+                analysis_df=self.analysis_results_df,
+                report_config=report_config,
+                templates_path=templates_path,
+                output_path=self.session_path
+            )
+        else:
             success = False
-            message = f"A critical error occurred during report generation:\n\n{e}\n\nPlease check the logs for more details."
+            message = "Unknown report type."
 
         if success:
             self.after(0, self.log_activity, "Report Generation", message)
