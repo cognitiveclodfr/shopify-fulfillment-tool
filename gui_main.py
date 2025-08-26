@@ -751,6 +751,7 @@ class App(ctk.CTk):
             )
         except Exception as e:
             # Forward exception to GUI thread handler
+            logger.error(f"An exception occurred in the analysis thread: {e}", exc_info=True)
             self.after(0, self.on_analysis_complete, False, str(e), None, None)
             return
 
