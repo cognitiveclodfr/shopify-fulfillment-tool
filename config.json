@@ -30,61 +30,61 @@
     {
       "name": "All Fulfillable Orders",
       "output_filename": "data/output/packing_list_ALL.xlsx",
-      "filters": [],
+      "filters": {},
       "exclude_skus": ["07", "Shipping protection"]
     },
     {
       "name": "Single-Item Orders Only",
       "output_filename": "data/output/packing_list_SINGLE.xlsx",
-      "filters": [
-        { "field": "Order_Type", "operator": "==", "value": "Single" }
-      ]
+      "filters": {
+        "Order_Type": "Single"
+      }
     },
     {
       "name": "Multi-Item Orders (DHL)",
       "output_filename": "data/output/packing_list_MULTI_DHL.xlsx",
-      "filters": [
-        { "field": "Order_Type", "operator": "==", "value": "Multi" },
-        { "field": "Shipping_Provider", "operator": "==", "value": "DHL" }
-      ]
+      "filters": {
+        "Order_Type": "Multi",
+        "Shipping_Provider": "DHL"
+      }
     },
     {
       "name": "Multi-Item Orders (PostOne & DPD)",
       "output_filename": "data/output/packing_list_MULTI_POST_DPD.xlsx",
-      "filters": [
-        { "field": "Order_Type", "operator": "==", "value": "Multi" },
-        { "field": "Shipping_Provider", "operator": "in", "value": ["PostOne", "DPD"] }
-      ]
+      "filters": {
+        "Order_Type": "Multi",
+        "Shipping_Provider": ["PostOne", "DPD"]
+      }
     }
   ],
   "stock_exports": [
     {
       "name": "Stock Export (ALL)",
       "template": "dropALL.xls",
-      "filters": []
+      "filters": {}
     },
     {
       "name": "Stock Export (Single-Item Only)",
       "template": "dropSingle.xls",
-      "filters": [
-        { "field": "Order_Type", "operator": "==", "value": "Single" }
-      ]
+      "filters": {
+        "Order_Type": "Single"
+      }
     },
     {
       "name": "Stock Export (Multi, DHL)",
       "template": "dropDHLMulti.xls",
-      "filters": [
-        { "field": "Order_Type", "operator": "==", "value": "Multi" },
-        { "field": "Shipping_Provider", "operator": "==", "value": "DHL" }
-      ]
+      "filters": {
+        "Order_Type": "Multi",
+        "Shipping_Provider": "DHL"
+      }
     },
     {
       "name": "Stock Export (Multi, PostOne & DPD)",
       "template": "dropPostOneMulti.xls",
-      "filters": [
-        { "field": "Order_Type", "operator": "==", "value": "Multi" },
-        { "field": "Shipping_Provider", "operator": "in", "value": ["PostOne", "DPD"] }
-      ]
+      "filters": {
+        "Order_Type": "Multi",
+        "Shipping_Provider": ["PostOne", "DPD"]
+      }
     }
   ]
 }
