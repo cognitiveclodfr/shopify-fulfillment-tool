@@ -8,6 +8,12 @@ import numpy as np
 
 logger = logging.getLogger('ShopifyToolLogger')
 
+def _normalize_unc_path(path):
+    """Normalizes a UNC path by replacing forward slashes with backslashes."""
+    if path and path.startswith('//'):
+        return path.replace('/', '\\')
+    return path
+
 def _validate_dataframes(orders_df, stock_df, config):
     """
     Validates that the required columns are present in the dataframes.
@@ -86,6 +92,10 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
     # 1. Load data
     logger.info("Step 1: Loading data files...")
     if stock_file_path is not None and orders_file_path is not None:
+        # Normalize paths to handle UNC paths from network shares correctly
+        stock_file_path = _normalize_unc_path(stock_file_path)
+        orders_file_path = _normalize_unc_path(orders_file_path)
+
         if not os.path.exists(stock_file_path) or not os.path.exists(orders_file_path):
             return False, "One or both input files were not found.", None, None
         stock_df = pd.read_csv(stock_file_path, delimiter=stock_delimiter)
