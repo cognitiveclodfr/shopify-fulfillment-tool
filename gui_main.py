@@ -65,7 +65,7 @@ class App(ctk.CTk):
         super().__init__()
 
         self.is_syncing = False
-        self.title("Shopify Fulfillment Tool v8.0")
+        self.title("Shopify Fulfillment Tool v8.0.0")
         self.geometry("950x800")
         ctk.set_appearance_mode("Dark")
         self.configure(fg_color="#111827") # Set main background color
