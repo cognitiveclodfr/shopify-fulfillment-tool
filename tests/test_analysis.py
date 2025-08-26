@@ -106,3 +106,62 @@ def test_summary_missing_report():
     assert len(summary_missing_df) == 1
     assert summary_missing_df.iloc[0]['SKU'] == 'SKU-1'
     assert summary_missing_df.iloc[0]['Total Quantity'] == 10
+
+
+from shopify_tool.analysis import toggle_order_fulfillment
+
+@pytest.fixture
+def sample_analysis_df():
+    """Provides a sample analysis_df for testing toggle logic."""
+    df = pd.DataFrame({
+        'Order_Number': ['1001', '1001', '1002'],
+        'SKU':          ['SKU-A', 'SKU-B', 'SKU-A'],
+        'Quantity':     [1, 2, 3],
+        'Stock':        [10, 10, 10],
+        'Final_Stock':  [6, 8, 6], # Note: Both SKU-A rows have the same final stock initially
+        'Order_Fulfillment_Status': ['Fulfillable', 'Fulfillable', 'Not Fulfillable']
+    })
+    # Ensure all rows for a given SKU start with the same Final_Stock
+    df['Final_Stock'] = df.groupby('SKU')['Final_Stock'].transform('first')
+    return df
+
+class TestToggleOrderFulfillment:
+    def test_toggle_fulfillable_to_not_fulfillable(self, sample_analysis_df):
+        """Tests that un-fulfilling an order correctly returns stock."""
+        df = sample_analysis_df.copy()
+
+        # Un-fulfill order 1001 (contains SKU-A:1, SKU-B:2)
+        success, _, updated_df = toggle_order_fulfillment(df, '1001')
+
+        assert success
+        # Stock for SKU-A (6) should increase by 1 -> 7. This affects all SKU-A rows.
+        # Stock for SKU-B (8) should increase by 2 -> 10.
+        assert all(updated_df[updated_df['SKU'] == 'SKU-A']['Final_Stock'] == 7)
+        assert all(updated_df[updated_df['SKU'] == 'SKU-B']['Final_Stock'] == 10)
+        assert all(updated_df[updated_df['Order_Number'] == '1001']['Order_Fulfillment_Status'] == 'Not Fulfillable')
+
+    def test_toggle_not_fulfillable_to_fulfillable_success(self, sample_analysis_df):
+        """Tests that force-fulfilling an order correctly deducts stock."""
+        df = sample_analysis_df.copy()
+        # Stock for SKU-A is 6. Order 1002 needs 3. This should succeed.
+
+        success, _, updated_df = toggle_order_fulfillment(df, '1002')
+
+        assert success
+        # Stock for SKU-A (6) should decrease by 3 -> 3. This affects all SKU-A rows.
+        assert all(updated_df[updated_df['SKU'] == 'SKU-A']['Final_Stock'] == 3)
+        assert all(updated_df[updated_df['Order_Number'] == '1002']['Order_Fulfillment_Status'] == 'Fulfillable')
+
+    def test_toggle_not_fulfillable_to_fulfillable_fail_no_stock(self, sample_analysis_df):
+        """Tests that force-fulfilling fails if there is not enough stock."""
+        df = sample_analysis_df.copy()
+        # Order 1002 needs 3 of SKU-A, but let's set the stock to 2
+        df.loc[df['SKU'] == 'SKU-A', 'Final_Stock'] = 2
+
+        success, error_msg, updated_df = toggle_order_fulfillment(df, '1002')
+
+        assert not success
+        assert "Insufficient stock" in error_msg
+        # The dataframe should not have been changed
+        assert all(updated_df[updated_df['SKU'] == 'SKU-A']['Final_Stock'] == 2)
+        assert all(updated_df[updated_df['Order_Number'] == '1002']['Order_Fulfillment_Status'] == 'Not Fulfillable')
