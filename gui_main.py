@@ -8,6 +8,7 @@ import pandas as pd
 import json
 import logging
 import pickle
+import shutil
 from shopify_tool.logger_config import setup_logging
 from datetime import datetime
 
@@ -114,8 +115,12 @@ class App(ctk.CTk):
         self.visible_columns = []
         self.analysis_stats = None # To store the stats dictionary
         self.session_path = None
-        self.config_path = resource_path('config.json')
-        self.config = self.load_config()
+
+        # Initialize and load configuration
+        self.config = None
+        self.config_path = None # Will be set by _init_and_load_config
+        self._init_and_load_config()
+
         # Use persistent path for log file and session file
         self.log_file_path = get_persistent_data_path('app_history.log')
         self.session_file = get_persistent_data_path('session_data.pkl')
@@ -179,15 +184,33 @@ class App(ctk.CTk):
         else:
             logger.info("No session file found.")
 
-    def load_config(self):
-        """ Loads the main configuration file. """
+    def _init_and_load_config(self):
+        """
+        Initializes the configuration by ensuring a user-specific config file exists,
+        copying a default if it doesn't, and then loading it.
+        """
+        persistent_config_path = get_persistent_data_path('config.json')
+        default_config_path = resource_path('config.json')
+
+        # If a user config doesn't exist, create one from the default.
+        if not os.path.exists(persistent_config_path):
+            logger.info(f"User config not found at {persistent_config_path}. Copying default config.")
+            try:
+                shutil.copy(default_config_path, persistent_config_path)
+            except Exception as e:
+                messagebox.showerror("Fatal Error", f"Could not create user configuration file: {e}")
+                self.after(100, self.destroy)
+                return
+
+        # Now, use the persistent path for all operations.
+        self.config_path = persistent_config_path
+
         try:
             with open(self.config_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                self.config = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError) as e:
             messagebox.showerror("Configuration Error", f"Failed to load config.json: {e}")
             self.after(100, self.destroy)
-        return None
 
     def create_widgets(self):
         """ Creates all the widgets for the main application window. """
