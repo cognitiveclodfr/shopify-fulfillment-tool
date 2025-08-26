@@ -106,6 +106,7 @@ class App(ctk.CTk):
             "color_success": "#10B981",     # Emerald 500
             "color_warning": "#F59E0B",     # Amber 500
             "color_gray": "#6B7280",        # Gray 500
+            "color_border": "#4B5563",      # Gray 600
             "padding_outer": 10,
             "padding_inner": 5
         }
@@ -256,27 +257,38 @@ class App(ctk.CTk):
 
         actions_frame = ctk.CTkFrame(self)
         actions_frame.grid(row=2, column=0, padx=self.STYLE['padding_outer'], pady=0, sticky="ew")
-        # Give equal weight to all columns that contain expanding buttons
-        actions_frame.grid_columnconfigure((0, 1, 2), weight=1)
+        actions_frame.grid_columnconfigure(1, weight=3) # Give the main action column more weight
+        actions_frame.grid_columnconfigure(0, weight=1)
 
-        self.run_analysis_button = ctk.CTkButton(actions_frame, text="Run Analysis", state="disabled", command=self.start_analysis_thread, fg_color=self.STYLE['color_accent'], height=40)
-        self.run_analysis_button.grid(row=0, column=0, columnspan=2, padx=self.STYLE['padding_inner'], pady=self.STYLE['padding_inner'], sticky="ew")
-        ToolTip(self.run_analysis_button, "Start the fulfillment analysis based on the loaded files.")
+        # --- Reports Frame (Left Column) ---
+        reports_frame = ctk.CTkFrame(actions_frame)
+        reports_frame.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=self.STYLE['padding_inner'], pady=self.STYLE['padding_inner'])
+        reports_frame.grid_columnconfigure(0, weight=1)
 
-        self.packing_list_button = ctk.CTkButton(actions_frame, text="Create Packing List", state="disabled", command=self.open_packing_list_window)
-        self.packing_list_button.grid(row=1, column=0, padx=self.STYLE['padding_inner'], pady=self.STYLE['padding_inner'], sticky="ew")
+        self.packing_list_button = ctk.CTkButton(reports_frame, text="Create Packing List", state="disabled", command=self.open_packing_list_window)
+        self.packing_list_button.grid(row=0, column=0, padx=self.STYLE['padding_inner'], pady=(self.STYLE['padding_inner'], 2), sticky="ew")
         ToolTip(self.packing_list_button, "Generate packing lists based on pre-defined filters.")
 
-        self.stock_export_button = ctk.CTkButton(actions_frame, text="Create Stock Export", state="disabled", command=self.open_stock_export_window)
-        self.stock_export_button.grid(row=1, column=1, padx=self.STYLE['padding_inner'], pady=self.STYLE['padding_inner'], sticky="ew")
+        self.stock_export_button = ctk.CTkButton(reports_frame, text="Create Stock Export", state="disabled", command=self.open_stock_export_window)
+        self.stock_export_button.grid(row=1, column=0, padx=self.STYLE['padding_inner'], pady=2, sticky="ew")
         ToolTip(self.stock_export_button, "Generate stock export files for couriers.")
 
-        self.report_builder_button = ctk.CTkButton(actions_frame, text="Report Builder", state="disabled", command=self.open_report_builder_window)
-        self.report_builder_button.grid(row=1, column=2, padx=self.STYLE['padding_inner'], pady=self.STYLE['padding_inner'], sticky="ew")
+        self.report_builder_button = ctk.CTkButton(reports_frame, text="Report Builder", state="disabled", command=self.open_report_builder_window)
+        self.report_builder_button.grid(row=2, column=0, padx=self.STYLE['padding_inner'], pady=(2, self.STYLE['padding_inner']), sticky="ew")
         ToolTip(self.report_builder_button, "Create a custom report with your own filters and columns.")
+
+        # --- Main Actions (Right Column) ---
+        main_actions_frame = ctk.CTkFrame(actions_frame, fg_color="transparent")
+        main_actions_frame.grid(row=0, column=1, rowspan=2, sticky="nsew")
+        main_actions_frame.grid_columnconfigure(0, weight=1)
+        main_actions_frame.grid_rowconfigure(0, weight=1)
+
+        self.run_analysis_button = ctk.CTkButton(main_actions_frame, text="Run Analysis", state="disabled", command=self.start_analysis_thread, fg_color=self.STYLE['color_accent'], height=80)
+        self.run_analysis_button.grid(row=0, column=0, padx=self.STYLE['padding_inner'], pady=self.STYLE['padding_inner'], sticky="nsew")
+        ToolTip(self.run_analysis_button, "Start the fulfillment analysis based on the loaded files.")
         
-        self.settings_button = ctk.CTkButton(actions_frame, text="Settings", command=self.open_settings_window, fg_color=self.STYLE['color_gray'])
-        self.settings_button.grid(row=0, column=2, padx=self.STYLE['padding_inner'], pady=self.STYLE['padding_inner'], sticky="e")
+        self.settings_button = ctk.CTkButton(main_actions_frame, text="⚙️", command=self.open_settings_window, fg_color=self.STYLE['color_gray'], width=40, height=40)
+        self.settings_button.grid(row=1, column=0, padx=self.STYLE['padding_inner'], pady=(0, self.STYLE['padding_inner']), sticky="se")
         ToolTip(self.settings_button, "Open the application settings window.")
 
         self.tab_view = ctk.CTkTabview(self)
@@ -288,19 +300,22 @@ class App(ctk.CTk):
 
         # --- Setup Tabs ---
         log_viewer_frame = self.tab_view.tab("Execution Log")
-        self.log_viewer = LogViewer(log_viewer_frame)
+        # The LogViewer is a complex widget, we add a containing frame for the border
+        log_container = ctk.CTkFrame(log_viewer_frame, border_width=1, border_color=self.STYLE['color_border'])
+        log_container.pack(fill="both", expand=True, padx=self.STYLE['padding_inner'], pady=self.STYLE['padding_inner'])
+        self.log_viewer = LogViewer(log_container)
         self.log_viewer.pack(fill="both", expand=True)
             
-        self.activity_log_frame = ctk.CTkFrame(self.tab_view.tab("Activity Log"))
-        self.activity_log_frame.pack(fill="both", expand=True)
+        self.activity_log_frame = ctk.CTkFrame(self.tab_view.tab("Activity Log"), border_width=1, border_color=self.STYLE['color_border'])
+        self.activity_log_frame.pack(fill="both", expand=True, padx=self.STYLE['padding_inner'], pady=self.STYLE['padding_inner'])
         self.create_activity_log()
 
-        self.stats_frame = ctk.CTkFrame(self.tab_view.tab("Statistics"))
-        self.stats_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        self.stats_frame = ctk.CTkFrame(self.tab_view.tab("Statistics"), border_width=1, border_color=self.STYLE['color_border'])
+        self.stats_frame.pack(fill="both", expand=True, padx=self.STYLE['padding_inner'], pady=self.STYLE['padding_inner'])
         self.create_statistics_tab()
 
-        self.data_viewer_frame = ctk.CTkFrame(self.tab_view.tab("Analysis Data"))
-        self.data_viewer_frame.pack(fill="both", expand=True)
+        self.data_viewer_frame = ctk.CTkFrame(self.tab_view.tab("Analysis Data"), border_width=1, border_color=self.STYLE['color_border'])
+        self.data_viewer_frame.pack(fill="both", expand=True, padx=self.STYLE['padding_inner'], pady=self.STYLE['padding_inner'])
         self.create_data_viewer()
 
     def create_statistics_tab(self):
