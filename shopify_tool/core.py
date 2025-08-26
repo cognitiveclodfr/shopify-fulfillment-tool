@@ -9,10 +9,11 @@ import numpy as np
 logger = logging.getLogger('ShopifyToolLogger')
 
 def _normalize_unc_path(path):
-    """Normalizes a UNC path by replacing forward slashes with backslashes."""
-    if path and path.startswith('//'):
-        return path.replace('/', '\\')
-    return path
+    """Normalizes a path, which is especially useful for UNC paths on Windows."""
+    if not path:
+        return path
+    # os.path.normpath will convert / to \ on Windows and handle other inconsistencies
+    return os.path.normpath(path)
 
 def _validate_dataframes(orders_df, stock_df, config):
     """
@@ -98,7 +99,10 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
 
         if not os.path.exists(stock_file_path) or not os.path.exists(orders_file_path):
             return False, "One or both input files were not found.", None, None
+
+        logger.info(f"Reading stock file from normalized path: {stock_file_path}")
         stock_df = pd.read_csv(stock_file_path, delimiter=stock_delimiter)
+        logger.info(f"Reading orders file from normalized path: {orders_file_path}")
         orders_df = pd.read_csv(orders_file_path)
     else:
         # For testing: allow passing DataFrames directly
