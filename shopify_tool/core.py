@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import datetime
 from . import analysis, packing_lists, stock_export
 from .rules import RuleEngine
+from .utils import get_persistent_data_path
 import numpy as np
 
 logger = logging.getLogger('ShopifyToolLogger')
@@ -118,7 +119,8 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
         logger.error(f"Validation Error: {error_message}")
         return False, error_message, None, None
 
-    history_path = 'fulfillment_history.csv'
+    # Use a persistent path for the history file to avoid permission errors on network drives
+    history_path = get_persistent_data_path('fulfillment_history.csv')
     if stock_file_path is not None and orders_file_path is not None:
         try:
             history_df = pd.read_csv(history_path)
