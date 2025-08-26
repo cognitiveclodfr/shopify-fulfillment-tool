@@ -296,18 +296,22 @@ class SettingsWindow(ctk.CTkToplevel):
             new_packing_lists = []
             for widgets in getattr(self, 'packing_list_widgets', []):
                 try:
-                    # Build the filters dictionary from the dynamic UI
-                    filters = {}
+                    # Build the filters list from the dynamic UI
+                    filters = []
                     for row in widgets['filter_rows']:
-                        col = row['col_var'].get()
-                        op = row['op_var'].get()
                         val = row['val_var'].get()
-                        if val: # Only add filter if a value is provided
-                            # For 'in'/'not in', the value should be a list
+                        if val:  # Only add filter if a value is provided
+                            op = row['op_var'].get()
+                            value_to_save = val
+                            # For 'in'/'not in', the value should be a list of strings
                             if op in ['in', 'not in']:
-                                filters[col] = [v.strip() for v in val.split(',')]
-                            else:
-                                filters[col] = val
+                                value_to_save = [v.strip() for v in val.split(',')]
+
+                            filters.append({
+                                "field": row['col_var'].get(),
+                                "operator": op,
+                                "value": value_to_save
+                            })
 
                     exclude_skus_str = widgets['exclude_skus_var'].get()
                     exclude_skus = [sku.strip() for sku in exclude_skus_str.split(',') if sku.strip()]
@@ -318,8 +322,8 @@ class SettingsWindow(ctk.CTkToplevel):
                         "filters": filters,
                         "exclude_skus": exclude_skus
                     })
-                except json.JSONDecodeError:
-                    messagebox.showerror("Validation Error", "Invalid JSON format in Packing List filters.", parent=self)
+                except Exception as e:
+                    messagebox.showerror("Save Error", f"Could not save Packing List '{widgets['name_var'].get()}'.\nError: {e}", parent=self)
                     return
             self.config_data['packing_lists'] = new_packing_lists
 
@@ -327,17 +331,22 @@ class SettingsWindow(ctk.CTkToplevel):
             new_stock_exports = []
             for widgets in getattr(self, 'stock_export_widgets', []):
                 try:
-                    # Build the filters dictionary from the dynamic UI
-                    filters = {}
+                    # Build the filters list from the dynamic UI
+                    filters = []
                     for row in widgets['filter_rows']:
-                        col = row['col_var'].get()
-                        op = row['op_var'].get()
                         val = row['val_var'].get()
-                        if val: # Only add filter if a value is provided
+                        if val:  # Only add filter if a value is provided
+                            op = row['op_var'].get()
+                            value_to_save = val
+                            # For 'in'/'not in', the value should be a list of strings
                             if op in ['in', 'not in']:
-                                filters[col] = [v.strip() for v in val.split(',')]
-                            else:
-                                filters[col] = val
+                                value_to_save = [v.strip() for v in val.split(',')]
+
+                            filters.append({
+                                "field": row['col_var'].get(),
+                                "operator": op,
+                                "value": value_to_save
+                            })
 
                     new_stock_exports.append({
                         "name": widgets['name_var'].get(),
@@ -459,11 +468,18 @@ class SettingsWindow(ctk.CTkToplevel):
         self.packing_list_widgets.append(widget_refs)
 
         # Populate existing filters
-        existing_filters = config.get('filters', {})
-        for col, val in existing_filters.items():
-            op = 'in' if isinstance(val, list) else '=='
-            val_str = ', '.join(val) if isinstance(val, list) else val
-            self._add_filter_rule_row(filters_frame, widget_refs['filter_rows'], col, op, val_str)
+        for f in config.get('filters', []):
+            val = f.get('value', '')
+            # If the value is a list (for 'in'/'not in'), join it into a string for the UI
+            if isinstance(val, list):
+                val = ', '.join(val)
+            self._add_filter_rule_row(
+                filters_frame,
+                widget_refs['filter_rows'],
+                col=f.get('field', ''),
+                op=f.get('operator', ''),
+                val=val
+            )
 
     def delete_packing_list_entry(self, frame_to_delete):
         """Removes a packing list entry from the UI."""
@@ -610,11 +626,18 @@ class SettingsWindow(ctk.CTkToplevel):
         self.stock_export_widgets.append(widget_refs)
 
         # Populate existing filters
-        existing_filters = config.get('filters', {})
-        for col, val in existing_filters.items():
-            op = 'in' if isinstance(val, list) else '=='
-            val_str = ', '.join(val) if isinstance(val, list) else val
-            self._add_filter_rule_row(filters_frame, widget_refs['filter_rows'], col, op, val_str)
+        for f in config.get('filters', []):
+            val = f.get('value', '')
+            # If the value is a list (for 'in'/'not in'), join it into a string for the UI
+            if isinstance(val, list):
+                val = ', '.join(val)
+            self._add_filter_rule_row(
+                filters_frame,
+                widget_refs['filter_rows'],
+                col=f.get('field', ''),
+                op=f.get('operator', ''),
+                val=val
+            )
 
     def delete_stock_export_entry(self, frame_to_delete):
         """Removes a stock export entry from the UI."""
