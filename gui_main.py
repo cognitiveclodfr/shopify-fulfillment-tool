@@ -101,11 +101,11 @@ class App(ctk.CTk):
             "font_bold": (("Segoe UI", 12, "bold")),
             "font_h1": (("Segoe UI", 18, "bold")),
             "font_h2": (("Segoe UI", 14, "bold")),
-            "color_accent": "#3B82F6",
-            "color_destructive": "#EF4444",
-            "color_success": "#22C55E",
-            "color_warning": "#F97316",
-            "color_gray": "gray",
+            "color_accent": "#6366F1",      # Indigo 500
+            "color_destructive": "#DC2626", # Red 600
+            "color_success": "#10B981",     # Emerald 500
+            "color_warning": "#F59E0B",     # Amber 500
+            "color_gray": "#6B7280",        # Gray 500
             "padding_outer": 10,
             "padding_inner": 5
         }
@@ -256,7 +256,8 @@ class App(ctk.CTk):
 
         actions_frame = ctk.CTkFrame(self)
         actions_frame.grid(row=2, column=0, padx=self.STYLE['padding_outer'], pady=0, sticky="ew")
-        actions_frame.grid_columnconfigure(1, weight=1)
+        # Give equal weight to all columns that contain expanding buttons
+        actions_frame.grid_columnconfigure((0, 1, 2), weight=1)
 
         self.run_analysis_button = ctk.CTkButton(actions_frame, text="Run Analysis", state="disabled", command=self.start_analysis_thread, fg_color=self.STYLE['color_accent'], height=40)
         self.run_analysis_button.grid(row=0, column=0, columnspan=2, padx=self.STYLE['padding_inner'], pady=self.STYLE['padding_inner'], sticky="ew")
