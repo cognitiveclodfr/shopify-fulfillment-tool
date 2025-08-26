@@ -399,6 +399,7 @@ class SettingsWindow(ctk.CTkToplevel):
         """Creates widgets for the 'Packing Lists' tab."""
         tab = self.tab_view.tab("Packing Lists")
         tab.grid_columnconfigure(0, weight=1)
+        tab.grid_rowconfigure(0, weight=1) # Allow the scrollable frame to expand vertically
 
         self.packing_lists_frame = ctk.CTkScrollableFrame(tab, label_text="Configured Packing Lists")
         self.packing_lists_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
@@ -563,6 +564,7 @@ class SettingsWindow(ctk.CTkToplevel):
         """Creates widgets for the 'Stock Exports' tab."""
         tab = self.tab_view.tab("Stock Exports")
         tab.grid_columnconfigure(0, weight=1)
+        tab.grid_rowconfigure(0, weight=1) # Allow the scrollable frame to expand vertically
 
         self.stock_exports_frame = ctk.CTkScrollableFrame(tab, label_text="Configured Stock Exports")
         self.stock_exports_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
