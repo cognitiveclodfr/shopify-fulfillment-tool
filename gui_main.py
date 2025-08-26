@@ -93,6 +93,7 @@ class App(ctk.CTk):
         self.title("Shopify Fulfillment Tool v8.0")
         self.geometry("950x800")
         ctk.set_appearance_mode("Dark")
+        self.configure(fg_color="#111827") # Set main background color
 
         # --- Style Configuration ---
         self.STYLE = {
@@ -101,12 +102,16 @@ class App(ctk.CTk):
             "font_bold": (("Segoe UI", 12, "bold")),
             "font_h1": (("Segoe UI", 18, "bold")),
             "font_h2": (("Segoe UI", 14, "bold")),
-            "color_accent": "#6366F1",      # Indigo 500
-            "color_destructive": "#DC2626", # Red 600
-            "color_success": "#10B981",     # Emerald 500
-            "color_warning": "#F59E0B",     # Amber 500
-            "color_gray": "#6B7280",        # Gray 500
-            "color_border": "#4B5563",      # Gray 600
+            "color_accent": "#4b36e3",
+            "color_destructive": "#c93a3a",
+            "color_success": "#10B981",
+            "color_warning": "#F59E0B",
+            "color_gray": "#6B7280",
+            "color_border": "#374151",      # Gray-700
+            "color_bg_main": "#111827",     # Gray-900
+            "color_bg_frame": "#1F2937",    # Gray-800
+            "color_text": "#D1D5DB",        # Gray-300
+            "corner_radius": 8,
             "padding_outer": 10,
             "padding_inner": 5
         }
@@ -265,15 +270,15 @@ class App(ctk.CTk):
         reports_frame.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=self.STYLE['padding_inner'], pady=self.STYLE['padding_inner'])
         reports_frame.grid_columnconfigure(0, weight=1)
 
-        self.packing_list_button = ctk.CTkButton(reports_frame, text="Create Packing List", state="disabled", command=self.open_packing_list_window)
+        self.packing_list_button = ctk.CTkButton(reports_frame, text="Create Packing List", state="disabled", command=self.open_packing_list_window, corner_radius=self.STYLE['corner_radius'])
         self.packing_list_button.grid(row=0, column=0, padx=self.STYLE['padding_inner'], pady=(self.STYLE['padding_inner'], 2), sticky="ew")
         ToolTip(self.packing_list_button, "Generate packing lists based on pre-defined filters.")
 
-        self.stock_export_button = ctk.CTkButton(reports_frame, text="Create Stock Export", state="disabled", command=self.open_stock_export_window)
+        self.stock_export_button = ctk.CTkButton(reports_frame, text="Create Stock Export", state="disabled", command=self.open_stock_export_window, corner_radius=self.STYLE['corner_radius'])
         self.stock_export_button.grid(row=1, column=0, padx=self.STYLE['padding_inner'], pady=2, sticky="ew")
         ToolTip(self.stock_export_button, "Generate stock export files for couriers.")
 
-        self.report_builder_button = ctk.CTkButton(reports_frame, text="Report Builder", state="disabled", command=self.open_report_builder_window)
+        self.report_builder_button = ctk.CTkButton(reports_frame, text="Report Builder", state="disabled", command=self.open_report_builder_window, corner_radius=self.STYLE['corner_radius'])
         self.report_builder_button.grid(row=2, column=0, padx=self.STYLE['padding_inner'], pady=(2, self.STYLE['padding_inner']), sticky="ew")
         ToolTip(self.report_builder_button, "Create a custom report with your own filters and columns.")
 
@@ -283,11 +288,11 @@ class App(ctk.CTk):
         main_actions_frame.grid_columnconfigure(0, weight=1)
         main_actions_frame.grid_rowconfigure(0, weight=1)
 
-        self.run_analysis_button = ctk.CTkButton(main_actions_frame, text="Run Analysis", state="disabled", command=self.start_analysis_thread, fg_color=self.STYLE['color_accent'], height=80)
+        self.run_analysis_button = ctk.CTkButton(main_actions_frame, text="Run Analysis", state="disabled", command=self.start_analysis_thread, fg_color=self.STYLE['color_accent'], height=60, corner_radius=self.STYLE['corner_radius'])
         self.run_analysis_button.grid(row=0, column=0, padx=self.STYLE['padding_inner'], pady=self.STYLE['padding_inner'], sticky="nsew")
         ToolTip(self.run_analysis_button, "Start the fulfillment analysis based on the loaded files.")
         
-        self.settings_button = ctk.CTkButton(main_actions_frame, text="⚙️", command=self.open_settings_window, fg_color=self.STYLE['color_gray'], width=40, height=40)
+        self.settings_button = ctk.CTkButton(main_actions_frame, text="⚙️", command=self.open_settings_window, fg_color=self.STYLE['color_gray'], width=40, height=40, corner_radius=self.STYLE['corner_radius'])
         self.settings_button.grid(row=1, column=0, padx=self.STYLE['padding_inner'], pady=(0, self.STYLE['padding_inner']), sticky="se")
         ToolTip(self.settings_button, "Open the application settings window.")
 
@@ -650,23 +655,33 @@ class App(ctk.CTk):
 
         # Common tag configurations
         for tree in [self.frozen_tree, self.main_tree]:
-            tree.tag_configure("Fulfillable", background="#2E4B2E", foreground="lightgreen")
-            tree.tag_configure("NotFulfillable", background="#5A2E2E", foreground="#FFB0B0")
+            tree.tag_configure("Fulfillable", background="#166534", foreground="#A7F3D0")
+            tree.tag_configure("NotFulfillable", background="#991B1B", foreground="#FECACA")
+            tree.tag_configure("oddrow", background=self.STYLE['color_bg_frame'])
+            tree.tag_configure("evenrow", background="#273242") # Slightly lighter than frame bg
 
         # Inserting data
         for index, row in df.iterrows():
+            tags = []
             status = row.get("Order_Fulfillment_Status", "")
-            tag = ""
-            if status == "Fulfillable": tag = "Fulfillable"
-            elif status == "Not Fulfillable": tag = "NotFulfillable"
+            if status == "Fulfillable":
+                tags.append("Fulfillable")
+            elif status == "Not Fulfillable":
+                tags.append("NotFulfillable")
+
+            # Add alternating row tag
+            if index % 2 == 0:
+                tags.append("evenrow")
+            else:
+                tags.append("oddrow")
 
             # Insert into frozen tree
             order_number_val = (row['Order_Number'],)
-            frozen_iid = self.frozen_tree.insert("", "end", values=order_number_val, tags=(tag,))
+            frozen_iid = self.frozen_tree.insert("", "end", values=order_number_val, tags=tuple(tags))
 
             # Insert into main tree with the same iid
             main_values = list(row.drop('Order_Number'))
-            self.main_tree.insert("", "end", iid=frozen_iid, values=main_values, tags=(tag,))
+            self.main_tree.insert("", "end", iid=frozen_iid, values=main_values, tags=tuple(tags))
 
         self.column_manager_button.configure(state="normal")
 
