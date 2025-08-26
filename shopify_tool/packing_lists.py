@@ -14,15 +14,26 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
 
         # Build the query string to filter the DataFrame
         query_parts = ["Order_Fulfillment_Status == 'Fulfillable'"]
-        if filters:
-            for key, value in filters.items():
-                # Handle both single value and list of values for filters
-                if isinstance(value, list):
-                    query_parts.append(f"`{key}` in {value}")
+        if filters: # In this version, filters is a LIST of objects
+            for f in filters:
+                field, op, value = f.get('field'), f.get('operator'), f.get('value')
+                if not all([field, op, value is not None]):
+                    logger.warning(f"Skipping invalid filter rule: {f}")
+                    continue
+
+                # Format value for query string, escaping quotes in strings
+                if op in ['in', 'not in']:
+                    value_formatted = f"{tuple(value)}"
                 else:
-                    query_parts.append(f"`{key}` == '{value}'")
+                    if isinstance(value, str):
+                        value_formatted = f"'{value.replace('\'', '\\\'')}'"
+                    else:
+                        value_formatted = value
+
+                query_parts.append(f"`{field}` {op} {value_formatted}")
 
         full_query = " & ".join(query_parts)
+        logger.info(f"Applying query: {full_query}")
         filtered_orders = analysis_df.query(full_query).copy()
 
         # Exclude specified SKUs if any are provided
