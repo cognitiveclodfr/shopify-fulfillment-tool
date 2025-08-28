@@ -43,12 +43,12 @@ def test_summary_missing_and_stats():
     assert 'couriers_stats' in stats
 
 
-def test_repeat_status_note():
+def test_repeat_system_note():
     stock_df = make_stock_df()
     orders_df = make_orders_df()
     history_df = pd.DataFrame({'Order_Number': ['O3']})
 
     final_df, _, _, _ = run_analysis(stock_df, orders_df, history_df)
-    # Rows from order O3 should have Status_Note == 'Repeat'
-    notes = final_df[final_df['Order_Number'] == 'O3']['Status_Note'].unique()
+    # Rows from order O3 should have System_note == 'Repeat'
+    notes = final_df[final_df['Order_Number'] == 'O3']['System_note'].unique()
     assert any(n == 'Repeat' for n in notes)
