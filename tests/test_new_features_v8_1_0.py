@@ -177,3 +177,56 @@ def test_stock_export_filter_by_order_number(tmp_path):
     # Check row 2 (index 1)
     assert sheet.cell_value(1, 0) == 'SKU-A'
     assert sheet.cell_value(1, 1) == 3
+
+def test_table_coloring_and_styling_logic(mocker):
+    """
+    Tests the complex tagging logic in update_data_viewer without a live GUI.
+    This test ensures the correct tags (and thus, styles) are applied for
+    various row types, including separators.
+    """
+    # 1. Setup the test data to cover all cases
+    debug_df = pd.DataFrame({
+        'Order_Number': ['1001', '1002', '1002', '1003', '1004', '1005', '1005'],
+        'SKU': ['A', 'B', 'C', 'D', 'E', 'F', 'G'],
+        'Order_Fulfillment_Status': ['Fulfillable', 'Not Fulfillable', 'Not Fulfillable', 'Fulfillable', '', 'Fulfillable', 'Fulfillable'],
+        'System_note': ['', '', '', 'Repeat', '', '', ''],
+        # Add other necessary columns with dummy data
+        'Order_Type': ['S', 'M', 'M', 'S', 'S', 'M', 'M'], 'Product_Name': ['P']*7, 'Quantity': [1]*7,
+        'Stock': [10]*7, 'Final_Stock': [9]*7, 'Stock_Alert': ['']*7, 'Shipping_Provider': ['DHL']*7,
+        'Destination_Country': ['US']*7, 'Shipping Method': ['dhl']*7, 'Tags': ['']*7, 'Notes': ['']*7, 'Total Price': [100]*7,
+    })
+
+    # 2. Mock the App and its components
+    mock_app = mocker.MagicMock()
+    mock_app.main_tree = mocker.MagicMock()
+    mock_app.frozen_tree = mocker.MagicMock()
+    mock_app.STYLE = {
+        'color_success': 'green', 'color_destructive': 'red', 'color_warning': 'yellow',
+        'color_border': 'grey', 'color_text': 'white', 'color_bg_main': 'black', 'color_bg_frame': 'darkgrey'
+    }
+
+    # 3. Call the method under test
+    from gui_main import App
+    App.update_data_viewer(mock_app, debug_df)
+
+    # 4. Assert the results
+    frozen_calls = mock_app.frozen_tree.insert.call_args_list
+    assert len(frozen_calls) == 7
+
+    # Define expected tags for each row based on the corrected logic
+    expected_tags = [
+        ('Fulfillable', 'order_separator'), # Row 0: Order 1001, Fulfillable, single item (is a separator)
+        ('NotFulfillable',),                # Row 1: Order 1002, Not Fulfillable
+        ('NotFulfillable', 'order_separator'), # Row 2: Order 1002, Not Fulfillable, last item
+        ('SystemNoteHighlight', 'order_separator'),# Row 3: Order 1003, System Note, single item
+        ('order_separator',),                # Row 4: Order 1004, No status, single item
+        ('Fulfillable',),                    # Row 5: Order 1005, Fulfillable
+        ('Fulfillable', 'order_separator'), # Row 6: Order 1005, Fulfillable, last item
+    ]
+
+    # Check the tags for each call
+    for i, call in enumerate(frozen_calls):
+        applied_tags = call.kwargs['tags']
+        print(f"Row {i}: Applied Tags: {applied_tags}, Expected Tags: {expected_tags[i]}")
+        # Use set comparison to ignore order of tags
+        assert set(applied_tags) == set(expected_tags[i])
