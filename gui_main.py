@@ -666,23 +666,23 @@ class App(ctk.CTk):
         for index, row in df.iterrows():
             tags = []
 
-            # Apply background tags with a clear priority order.
-            # The separator line has the highest priority.
+            # First, determine the primary background color tag based on status.
+            system_note = row.get("System_note", "")
+            if pd.notna(system_note) and system_note != '':
+                tags.append("SystemNoteHighlight")
+            else:
+                status = row.get("Order_Fulfillment_Status", "")
+                if status == "Fulfillable":
+                    tags.append("Fulfillable")
+                elif status == "Not Fulfillable":
+                    tags.append("NotFulfillable")
+                # If no status, it will have the default background.
+
+            # Separately, if this is the last item of an order, add the separator tag.
+            # The Treeview will use the background from the last tag in the list,
+            # so this will override the status color for this specific row.
             if is_last_item[index]:
                 tags.append("order_separator")
-            else:
-                # System note highlight is next.
-                system_note = row.get("System_note", "")
-                if pd.notna(system_note) and system_note != '':
-                    tags.append("SystemNoteHighlight")
-                else:
-                    # Finally, fulfillment status.
-                    status = row.get("Order_Fulfillment_Status", "")
-                    if status == "Fulfillable":
-                        tags.append("Fulfillable")
-                    elif status == "Not Fulfillable":
-                        tags.append("NotFulfillable")
-                    # If none of the above, the default background will be used.
 
             # Insert into frozen tree
             order_number_val = (row['Order_Number'],)
