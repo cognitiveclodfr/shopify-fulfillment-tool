@@ -79,9 +79,9 @@ class App(ctk.CTk):
             "font_h1": (("Segoe UI", 18, "bold")),
             "font_h2": (("Segoe UI", 14, "bold")),
             "color_accent": "#4b36e3",
-            "color_destructive": "#8F2828",
-            "color_success": "#288F28",
-            "color_warning": "#D2D60D",
+            "color_destructive": "#5E2E2E",
+            "color_success": "#2A4B3A",
+            "color_warning": "#756B0D",
             "color_gray": "#6B7280",
             "color_border": "#374151",      # Gray-700
             "color_bg_main": "#111827",     # Gray-900
@@ -651,12 +651,10 @@ class App(ctk.CTk):
             tree.tag_configure("Fulfillable", background=self.STYLE['color_success'], foreground=self.STYLE['color_text'])
             tree.tag_configure("NotFulfillable", background=self.STYLE['color_destructive'], foreground=self.STYLE['color_text'])
 
-            # This creates the visual separation between rows, simulating a border/line.
-            tree.tag_configure("oddrow", background=self.STYLE['color_bg_frame'])
-            tree.tag_configure("evenrow", background=self.STYLE['color_bg_main'])
+            # Zebra-striping is being removed. The base background is set in the main "Treeview" style.
 
             # New tag for highlighting rows with system notes (e.g., 'Repeat')
-            tree.tag_configure("SystemNoteHighlight", background=self.STYLE['color_warning'], foreground=self.STYLE['color_bg_main']) # Dark text for contrast
+            tree.tag_configure("SystemNoteHighlight", background=self.STYLE['color_warning'], foreground=self.STYLE['color_text']) # Light text for contrast
 
             # New tag to create a visual separator line after an order
             tree.tag_configure("order_separator", background=self.STYLE['color_border'])
@@ -667,35 +665,24 @@ class App(ctk.CTk):
         # Inserting data
         for index, row in df.iterrows():
             tags = []
-            has_special_bg = False
 
-            # Determine the primary highlight tag. SystemNote has top priority.
-            system_note = row.get("System_note", "")
-            if pd.notna(system_note) and system_note != '':
-                tags.append("SystemNoteHighlight")
-                has_special_bg = True
-
-            # Separator line has second priority
-            elif is_last_item[index]:
+            # Apply background tags with a clear priority order.
+            # The separator line has the highest priority.
+            if is_last_item[index]:
                 tags.append("order_separator")
-                has_special_bg = True
-
             else:
-                # If no system note or separator, use fulfillment status for color
-                status = row.get("Order_Fulfillment_Status", "")
-                if status == "Fulfillable":
-                    tags.append("Fulfillable")
-                    has_special_bg = True
-                elif status == "Not Fulfillable":
-                    tags.append("NotFulfillable")
-                    has_special_bg = True
-
-            # Only apply zebra-striping if no other background color has been set.
-            if not has_special_bg:
-                if index % 2 == 0:
-                    tags.append("evenrow")
+                # System note highlight is next.
+                system_note = row.get("System_note", "")
+                if pd.notna(system_note) and system_note != '':
+                    tags.append("SystemNoteHighlight")
                 else:
-                    tags.append("oddrow")
+                    # Finally, fulfillment status.
+                    status = row.get("Order_Fulfillment_Status", "")
+                    if status == "Fulfillable":
+                        tags.append("Fulfillable")
+                    elif status == "Not Fulfillable":
+                        tags.append("NotFulfillable")
+                    # If none of the above, the default background will be used.
 
             # Insert into frozen tree
             order_number_val = (row['Order_Number'],)
