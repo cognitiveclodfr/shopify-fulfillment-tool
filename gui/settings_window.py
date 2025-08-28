@@ -453,7 +453,7 @@ class SettingsWindow(ctk.CTkToplevel):
         ctk.CTkEntry(entry_frame, textvariable=exclude_skus_var).grid(row=4, column=1, sticky="ew")
 
         # --- Delete Button ---
-        delete_button = ctk.CTkButton(entry_frame, text="Delete", fg_color="red", width=60,
+        delete_button = ctk.CTkButton(entry_frame, text="Delete", fg_color=self.parent.STYLE['color_destructive'], width=60,
                                       command=lambda f=entry_frame: self.delete_packing_list_entry(f))
         delete_button.grid(row=5, column=1, padx=5, pady=5, sticky="e")
 
@@ -529,7 +529,7 @@ class SettingsWindow(ctk.CTkToplevel):
         col_combo.configure(command=lambda choice, rw=row_widgets: self._on_filter_criteria_changed(rw))
         op_combo.configure(command=lambda choice, rw=row_widgets: self._on_filter_criteria_changed(rw))
 
-        delete_button = ctk.CTkButton(row_frame, text="X", fg_color="red", width=30,
+        delete_button = ctk.CTkButton(row_frame, text="X", fg_color=self.parent.STYLE['color_destructive'], width=30,
                                       command=lambda rw=row_widgets, rl=rows_list, pf=parent_frame: self._delete_filter_rule_row(rw, rl, pf))
         delete_button.grid(row=0, column=3, padx=5, pady=5)
 
@@ -635,7 +635,7 @@ class SettingsWindow(ctk.CTkToplevel):
         add_filter_button.grid(row=3, column=1, padx=5, pady=(0, 5), sticky="w")
 
         # --- Delete Button ---
-        delete_button = ctk.CTkButton(entry_frame, text="Delete", fg_color="red", width=60,
+        delete_button = ctk.CTkButton(entry_frame, text="Delete", fg_color=self.parent.STYLE['color_destructive'], width=60,
                                       command=lambda f=entry_frame: self.delete_stock_export_entry(f))
         delete_button.grid(row=4, column=1, padx=5, pady=5, sticky="e")
 
