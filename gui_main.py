@@ -433,13 +433,28 @@ class App(ctk.CTk):
 
         style = ttk.Style()
         style.theme_use("default")
-        style.configure("Treeview", background="#2B2B2B", foreground="white", fieldbackground="#2B2B2B", borderwidth=0, rowheight=25)
-        style.map('Treeview', background=[('selected', '#22559b')])
-        style.configure("Treeview.Heading", background="#565b5e", foreground="white", relief="flat", font=('Arial', 10, 'bold'))
-        style.map("Treeview.Heading", background=[('active', '#3484F0')])
         
-        style.configure("Fulfillable.Treeview", background="#166534", foreground="white") # Green-800
-        style.configure("NotFulfillable.Treeview", background="#991B1B", foreground="white") # Red-800
+        # --- Base Treeview Style ---
+        # Increased row height for better spacing and readability.
+        style.configure("Treeview",
+                        background=self.STYLE['color_bg_frame'],
+                        foreground=self.STYLE['color_text'],
+                        fieldbackground=self.STYLE['color_bg_frame'],
+                        borderwidth=0,
+                        rowheight=28) # Increased row height
+        style.map('Treeview', background=[('selected', self.STYLE['color_accent'])])
+
+        # --- Heading Style ---
+        # Using fonts and colors from the central STYLE dictionary.
+        style.configure("Treeview.Heading",
+                        background=self.STYLE['color_bg_main'],
+                        foreground=self.STYLE['color_text'],
+                        relief="flat",
+                        font=self.STYLE['font_bold'])
+        style.map("Treeview.Heading", background=[('active', self.STYLE['color_border'])])
+
+        # The Fulfillable/NotFulfillable styles are now defined by tags, not a separate Treeview style.
+        # This simplifies the logic in update_data_viewer.
 
         # --- Frozen Tree (for Order_Number) ---
         self.frozen_tree = ttk.Treeview(tree_frame, style="Treeview", show="headings")
@@ -505,6 +520,7 @@ class App(ctk.CTk):
 
         menu.add_command(label="Change Status", command=lambda: self.toggle_fulfillment_status(order_number))
         menu.add_command(label="Copy Order Number", command=lambda: self._copy_to_clipboard(order_number))
+        menu.add_command(label="Copy SKU", command=lambda: self._copy_to_clipboard(sku))
         menu.add_command(label="Add Tag Manually...", command=lambda: self._add_tag_manually(item_id))
         menu.add_separator()
         menu.add_command(label="Remove This Item from Order", command=lambda: self._remove_item_from_order(item_id, order_number, sku))
@@ -630,10 +646,16 @@ class App(ctk.CTk):
 
         # Common tag configurations
         for tree in [self.frozen_tree, self.main_tree]:
-            tree.tag_configure("Fulfillable", background="#166534", foreground="#A7F3D0")
-            tree.tag_configure("NotFulfillable", background="#991B1B", foreground="#FECACA")
+            # Configure tags for fulfillment status with colors from the STYLE dict
+            tree.tag_configure("Fulfillable", background=self.STYLE['color_success'], foreground=self.STYLE['color_text'])
+            tree.tag_configure("NotFulfillable", background=self.STYLE['color_destructive'], foreground=self.STYLE['color_text'])
+
+            # This creates the visual separation between rows, simulating a border/line.
             tree.tag_configure("oddrow", background=self.STYLE['color_bg_frame'])
-            tree.tag_configure("evenrow", background="#273242") # Slightly lighter than frame bg
+            tree.tag_configure("evenrow", background=self.STYLE['color_bg_main'])
+
+            # New tag for highlighting rows with system notes (e.g., 'Repeat')
+            tree.tag_configure("SystemNoteHighlight", background=self.STYLE['color_warning'], foreground=self.STYLE['color_bg_main']) # Dark text for contrast
 
         # Inserting data
         for index, row in df.iterrows():
@@ -644,11 +666,17 @@ class App(ctk.CTk):
             elif status == "Not Fulfillable":
                 tags.append("NotFulfillable")
 
-            # Add alternating row tag
+            # Add alternating row tag first
             if index % 2 == 0:
                 tags.append("evenrow")
             else:
                 tags.append("oddrow")
+
+            # Check for system notes and apply highlighting tag
+            # This tag's background color will override the alternating row color
+            system_note = row.get("System_note", "")
+            if pd.notna(system_note) and system_note != '':
+                tags.append("SystemNoteHighlight")
 
             # Insert into frozen tree
             order_number_val = (row['Order_Number'],)

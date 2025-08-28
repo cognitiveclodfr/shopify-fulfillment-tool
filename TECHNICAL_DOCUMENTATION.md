@@ -2,6 +2,25 @@
 
 This document provides a technical overview of the Shopify Fulfillment Tool, intended for developers and maintainers. It covers the application's architecture, core logic, GUI structure, and data flow.
 
+## Version 8.1.0 Changes
+
+This release focuses on improving the data model, enhancing the user interface, and expanding configuration options.
+
+-   **Data Model Changes (`analysis.py`):**
+    -   A new `System_note` column has been added to the main analysis DataFrame. It replaces the previous use of the `Status_Note` column for housing system-generated tags (e.g., `Repeat`). This change helps to separate machine-generated data from user notes.
+    -   A new `Total Price` column has been added, sourced from the `Total` field in the Shopify order export. This is handled during the initial data cleaning phase.
+
+-   **GUI Enhancements (`gui_main.py`):**
+    -   The main analysis table (`ttk.Treeview`) has been restyled for a more modern look, using the central `STYLE` dictionary for all fonts and colors, and an increased row height for better readability.
+    -   A new tag, `SystemNoteHighlight`, has been added to apply a yellow background to any row containing data in the `System_note` column.
+    -   The right-click context menu (`_show_context_menu`) now includes a "Copy SKU" command, which copies the SKU of the selected line item to the clipboard.
+
+-   **Configuration Enhancements (`gui/settings_window.py`):**
+    -   The `CONDITION_FIELDS` (for Rules) and `FILTERABLE_COLUMNS` (for Packing Lists and Stock Exports) constants have been updated and synchronized.
+    -   They now include `Order_Number`, `Total Price`, and `System_note`, making these fields available for creating automation rules and report filters.
+
+---
+
 ## 1. Architecture Overview
 
 The application is a desktop program built with Python, using `customtkinter` for the user interface and `pandas` for data manipulation. It is designed to be packaged into a single executable using PyInstaller.

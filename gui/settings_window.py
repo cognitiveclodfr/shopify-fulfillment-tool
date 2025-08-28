@@ -10,7 +10,7 @@ class RuleBuilderFrame(ctk.CTkScrollableFrame):
     CONDITION_FIELDS = [
         'Order_Number', 'Order_Type', 'SKU', 'Product_Name', 'Stock_Alert',
         'Order_Fulfillment_Status', 'Shipping_Provider', 'Destination_Country',
-        'Tags', 'Status_Note', 'Total_Price' # Added Total_Price from example
+        'Tags', 'System_note', 'Total Price'
     ]
     CONDITION_OPERATORS = [
         'equals', 'does not equal', 'contains', 'does not contain',
@@ -197,9 +197,11 @@ class SettingsWindow(ctk.CTkToplevel):
         self.geometry("800x800")
 
         # Define constants for the filter builder
+        # For consistency, this list is now aligned with the one in RuleBuilderFrame
         self.FILTERABLE_COLUMNS = [
-            'Order_Type', 'Shipping_Provider', 'Order_Fulfillment_Status',
-            'Tags', 'Status_Note', 'Destination_Country'
+            'Order_Number', 'Order_Type', 'SKU', 'Product_Name', 'Stock_Alert',
+            'Order_Fulfillment_Status', 'Shipping_Provider', 'Destination_Country',
+            'Tags', 'System_note', 'Total Price'
         ]
         self.OPERATORS = ['==', '!=', 'in', 'not in']
 

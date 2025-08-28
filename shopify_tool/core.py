@@ -7,6 +7,8 @@ from .rules import RuleEngine
 from .utils import get_persistent_data_path
 import numpy as np
 
+SYSTEM_TAGS = ['Repeat', 'Priority', 'Error']
+
 logger = logging.getLogger('ShopifyToolLogger')
 
 def _normalize_unc_path(path):
