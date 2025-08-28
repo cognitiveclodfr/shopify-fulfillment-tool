@@ -81,7 +81,7 @@ class App(ctk.CTk):
             "color_accent": "#4b36e3",
             "color_destructive": "#8F2828",
             "color_success": "#288F28",
-            "color_warning": "#28288F",
+            "color_warning": "#D2D60D",
             "color_gray": "#6B7280",
             "color_border": "#374151",      # Gray-700
             "color_bg_main": "#111827",     # Gray-900
@@ -667,28 +667,35 @@ class App(ctk.CTk):
         # Inserting data
         for index, row in df.iterrows():
             tags = []
+            has_special_bg = False
 
             # Determine the primary highlight tag. SystemNote has top priority.
             system_note = row.get("System_note", "")
             if pd.notna(system_note) and system_note != '':
                 tags.append("SystemNoteHighlight")
+                has_special_bg = True
+
+            # Separator line has second priority
+            elif is_last_item[index]:
+                tags.append("order_separator")
+                has_special_bg = True
+
             else:
-                # If no system note, use fulfillment status for color
+                # If no system note or separator, use fulfillment status for color
                 status = row.get("Order_Fulfillment_Status", "")
                 if status == "Fulfillable":
                     tags.append("Fulfillable")
+                    has_special_bg = True
                 elif status == "Not Fulfillable":
                     tags.append("NotFulfillable")
+                    has_special_bg = True
 
-            # Add alternating row tag, which acts as a base background
-            if index % 2 == 0:
-                tags.append("evenrow")
-            else:
-                tags.append("oddrow")
-
-            # Add the separator tag if it's the last row of an order
-            if is_last_item[index]:
-                tags.append("order_separator")
+            # Only apply zebra-striping if no other background color has been set.
+            if not has_special_bg:
+                if index % 2 == 0:
+                    tags.append("evenrow")
+                else:
+                    tags.append("oddrow")
 
             # Insert into frozen tree
             order_number_val = (row['Order_Number'],)
