@@ -75,12 +75,13 @@ class App(ctk.CTk):
             "font_family": ("Segoe UI",),
             "font_normal": (("Segoe UI", 12)),
             "font_bold": (("Segoe UI", 12, "bold")),
+            "font_table_header": (("Segoe UI", 10)),
             "font_h1": (("Segoe UI", 18, "bold")),
             "font_h2": (("Segoe UI", 14, "bold")),
             "color_accent": "#4b36e3",
-            "color_destructive": "#c93a3a",
-            "color_success": "#10B981",
-            "color_warning": "#F59E0B",
+            "color_destructive": "#8F2828",
+            "color_success": "#288F28",
+            "color_warning": "#28288F",
             "color_gray": "#6B7280",
             "color_border": "#374151",      # Gray-700
             "color_bg_main": "#111827",     # Gray-900
@@ -450,7 +451,7 @@ class App(ctk.CTk):
                         background=self.STYLE['color_bg_main'],
                         foreground=self.STYLE['color_text'],
                         relief="flat",
-                        font=self.STYLE['font_bold'])
+                        font=self.STYLE['font_table_header'])
         style.map("Treeview.Heading", background=[('active', self.STYLE['color_border'])])
 
         # The Fulfillable/NotFulfillable styles are now defined by tags, not a separate Treeview style.
@@ -657,26 +658,37 @@ class App(ctk.CTk):
             # New tag for highlighting rows with system notes (e.g., 'Repeat')
             tree.tag_configure("SystemNoteHighlight", background=self.STYLE['color_warning'], foreground=self.STYLE['color_bg_main']) # Dark text for contrast
 
+            # New tag to create a visual separator line after an order
+            tree.tag_configure("order_separator", background=self.STYLE['color_border'])
+
+        # Pre-calculate which rows are the last item of an order for the separator line
+        is_last_item = df['Order_Number'] != df['Order_Number'].shift(-1)
+
         # Inserting data
         for index, row in df.iterrows():
             tags = []
-            status = row.get("Order_Fulfillment_Status", "")
-            if status == "Fulfillable":
-                tags.append("Fulfillable")
-            elif status == "Not Fulfillable":
-                tags.append("NotFulfillable")
 
-            # Add alternating row tag first
+            # Determine the primary highlight tag. SystemNote has top priority.
+            system_note = row.get("System_note", "")
+            if pd.notna(system_note) and system_note != '':
+                tags.append("SystemNoteHighlight")
+            else:
+                # If no system note, use fulfillment status for color
+                status = row.get("Order_Fulfillment_Status", "")
+                if status == "Fulfillable":
+                    tags.append("Fulfillable")
+                elif status == "Not Fulfillable":
+                    tags.append("NotFulfillable")
+
+            # Add alternating row tag, which acts as a base background
             if index % 2 == 0:
                 tags.append("evenrow")
             else:
                 tags.append("oddrow")
 
-            # Check for system notes and apply highlighting tag
-            # This tag's background color will override the alternating row color
-            system_note = row.get("System_note", "")
-            if pd.notna(system_note) and system_note != '':
-                tags.append("SystemNoteHighlight")
+            # Add the separator tag if it's the last row of an order
+            if is_last_item[index]:
+                tags.append("order_separator")
 
             # Insert into frozen tree
             order_number_val = (row['Order_Number'],)

@@ -54,7 +54,7 @@ class RuleBuilderFrame(ctk.CTkScrollableFrame):
         rule_frame.grid_columnconfigure(1, weight=1)
 
         # --- Rule Header ---
-        header_frame = ctk.CTkFrame(rule_frame, fg_color="transparent")
+        header_frame = ctk.CTkFrame(rule_frame)
         header_frame.grid(row=0, column=0, columnspan=2, sticky="ew", padx=5, pady=5)
         header_frame.grid_columnconfigure(1, weight=1)
 
@@ -77,7 +77,7 @@ class RuleBuilderFrame(ctk.CTkScrollableFrame):
         match_menu.grid(row=0, column=1, padx=5, pady=5, sticky="w")
         ctk.CTkLabel(conditions_frame, text="of the following conditions are met:").grid(row=0, column=2, padx=5, pady=5, sticky="w")
 
-        conditions_list_frame = ctk.CTkFrame(conditions_frame, fg_color="transparent")
+        conditions_list_frame = ctk.CTkFrame(conditions_frame)
         conditions_list_frame.grid(row=1, column=0, columnspan=3, sticky="ew", padx=5)
 
         # --- Actions (THEN) ---
@@ -86,7 +86,7 @@ class RuleBuilderFrame(ctk.CTkScrollableFrame):
         actions_frame.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(actions_frame, text="Then, perform these actions:").grid(row=0, column=0, columnspan=2, sticky="w", padx=5, pady=5)
 
-        actions_list_frame = ctk.CTkFrame(actions_frame, fg_color="transparent")
+        actions_list_frame = ctk.CTkFrame(actions_frame)
         actions_list_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=5)
 
         widget_refs = {
@@ -117,7 +117,7 @@ class RuleBuilderFrame(ctk.CTkScrollableFrame):
     def add_condition_row(self, parent, conditions_list, config=None):
         """Adds a UI row for a single condition."""
         if config is None: config = {}
-        row_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        row_frame = ctk.CTkFrame(parent)
         row_frame.pack(fill="x", pady=2)
 
         field_var = tk.StringVar(value=config.get('field', self.CONDITION_FIELDS[0]))
@@ -136,7 +136,7 @@ class RuleBuilderFrame(ctk.CTkScrollableFrame):
     def add_action_row(self, parent, actions_list, config=None):
         """Adds a UI row for a single action."""
         if config is None: config = {}
-        row_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        row_frame = ctk.CTkFrame(parent)
         row_frame.pack(fill="x", pady=2)
 
         type_var = tk.StringVar(value=config.get('type', self.ACTION_TYPES[0]))
