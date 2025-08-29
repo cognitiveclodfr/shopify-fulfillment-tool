@@ -52,18 +52,10 @@ def run_analysis(stock_df, orders_df, history_df):
     orders_df['Name'] = orders_df['Name'].ffill()
     orders_df['Shipping Method'] = orders_df['Shipping Method'].ffill()
     orders_df['Shipping Country'] = orders_df['Shipping Country'].ffill()
-    if 'Total' in orders_df.columns:
-        orders_df['Total'] = orders_df['Total'].ffill()
     
-    columns_to_keep = ['Name', 'Lineitem sku', 'Lineitem quantity', 'Shipping Method', 'Shipping Country', 'Tags', 'Notes', 'Total']
-    # Filter for existing columns only to avoid errors if 'Total' is missing
-    columns_to_keep_existing = [col for col in columns_to_keep if col in orders_df.columns]
-    orders_clean_df = orders_df[columns_to_keep_existing].copy()
-
-    rename_map = {'Name': 'Order_Number', 'Lineitem sku': 'SKU', 'Lineitem quantity': 'Quantity'}
-    if 'Total' in orders_clean_df.columns:
-        rename_map['Total'] = 'Total Price'
-    orders_clean_df = orders_clean_df.rename(columns=rename_map)
+    columns_to_keep = ['Name', 'Lineitem sku', 'Lineitem quantity', 'Shipping Method', 'Shipping Country', 'Tags', 'Notes']
+    orders_clean_df = orders_df[columns_to_keep].copy()
+    orders_clean_df = orders_clean_df.rename(columns={'Name': 'Order_Number', 'Lineitem sku': 'SKU', 'Lineitem quantity': 'Quantity'})
     orders_clean_df = orders_clean_df.dropna(subset=['SKU'])
 
     stock_clean_df = stock_df[['Артикул', 'Име', 'Наличност']].copy()
@@ -110,19 +102,10 @@ def run_analysis(stock_df, orders_df, history_df):
     final_df['Shipping_Provider'] = final_df['Shipping Method'].apply(_generalize_shipping_method)
     final_df['Order_Fulfillment_Status'] = final_df['Order_Number'].map(fulfillment_results)
     final_df['Destination_Country'] = np.where(final_df['Shipping_Provider'] == 'DHL', final_df['Shipping Country'], '')
-    final_df['System_note'] = np.where(final_df['Order_Number'].isin(history_df['Order_Number']), 'Repeat', '')
+    final_df['Status_Note'] = np.where(final_df['Order_Number'].isin(history_df['Order_Number']), 'Repeat', '')
     final_df['Stock_Alert'] = '' # Initialize the column
-    final_df['Status_Note'] = '' # Initialize column for user-defined rule tags
-    output_columns = ['Order_Number', 'Order_Type', 'SKU', 'Product_Name', 'Quantity', 'Stock', 'Final_Stock', 'Stock_Alert', 'Order_Fulfillment_Status', 'Shipping_Provider', 'Destination_Country', 'Shipping Method', 'Tags', 'Notes', 'System_note', 'Status_Note']
-    if 'Total Price' in final_df.columns:
-        # Insert 'Total Price' into the list at a specific position for consistent column order.
-        # Placed after 'Quantity'.
-        output_columns.insert(5, 'Total Price')
-
-    # Filter the list to include only columns that actually exist in the DataFrame.
-    # This prevents errors if a column is unexpectedly missing.
-    final_output_columns = [col for col in output_columns if col in final_df.columns]
-    final_df = final_df[final_output_columns].copy() # Use .copy() to avoid SettingWithCopyWarning
+    output_columns = ['Order_Number', 'Order_Type', 'SKU', 'Product_Name', 'Quantity', 'Stock', 'Final_Stock', 'Stock_Alert', 'Order_Fulfillment_Status', 'Shipping_Provider', 'Destination_Country', 'Shipping Method', 'Tags', 'Notes', 'Status_Note']
+    final_df = final_df[output_columns].copy() # Use .copy() to avoid SettingWithCopyWarning
 
     # --- Summary Reports Generation ---
     present_df = final_df[final_df['Order_Fulfillment_Status'] == 'Fulfillable'].copy()
@@ -180,7 +163,7 @@ def recalculate_statistics(df):
             courier_data = {
                 'courier_id': provider,
                 'orders_assigned': int(group['Order_Number'].nunique()),
-                'repeated_orders_found': int(group[group['System_note'] == 'Repeat']['Order_Number'].nunique())
+                'repeated_orders_found': int(group[group['Status_Note'] == 'Repeat']['Order_Number'].nunique())
             }
             courier_stats.append(courier_data)
     # Per instructions, use null (None) if no stats are available
