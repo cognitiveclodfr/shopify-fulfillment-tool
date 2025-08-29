@@ -10,7 +10,7 @@ class RuleBuilderFrame(ctk.CTkScrollableFrame):
     CONDITION_FIELDS = [
         'Order_Number', 'Order_Type', 'SKU', 'Product_Name', 'Stock_Alert',
         'Order_Fulfillment_Status', 'Shipping_Provider', 'Destination_Country',
-        'Tags', 'Status_Note', 'Total_Price' # Added Total_Price from example
+        'Tags', 'System_note', 'Status_Note', 'Total Price'
     ]
     CONDITION_OPERATORS = [
         'equals', 'does not equal', 'contains', 'does not contain',
@@ -54,7 +54,7 @@ class RuleBuilderFrame(ctk.CTkScrollableFrame):
         rule_frame.grid_columnconfigure(1, weight=1)
 
         # --- Rule Header ---
-        header_frame = ctk.CTkFrame(rule_frame, fg_color="transparent")
+        header_frame = ctk.CTkFrame(rule_frame)
         header_frame.grid(row=0, column=0, columnspan=2, sticky="ew", padx=5, pady=5)
         header_frame.grid_columnconfigure(1, weight=1)
 
@@ -77,7 +77,7 @@ class RuleBuilderFrame(ctk.CTkScrollableFrame):
         match_menu.grid(row=0, column=1, padx=5, pady=5, sticky="w")
         ctk.CTkLabel(conditions_frame, text="of the following conditions are met:").grid(row=0, column=2, padx=5, pady=5, sticky="w")
 
-        conditions_list_frame = ctk.CTkFrame(conditions_frame, fg_color="transparent")
+        conditions_list_frame = ctk.CTkFrame(conditions_frame)
         conditions_list_frame.grid(row=1, column=0, columnspan=3, sticky="ew", padx=5)
 
         # --- Actions (THEN) ---
@@ -86,7 +86,7 @@ class RuleBuilderFrame(ctk.CTkScrollableFrame):
         actions_frame.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(actions_frame, text="Then, perform these actions:").grid(row=0, column=0, columnspan=2, sticky="w", padx=5, pady=5)
 
-        actions_list_frame = ctk.CTkFrame(actions_frame, fg_color="transparent")
+        actions_list_frame = ctk.CTkFrame(actions_frame)
         actions_list_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=5)
 
         widget_refs = {
@@ -117,7 +117,7 @@ class RuleBuilderFrame(ctk.CTkScrollableFrame):
     def add_condition_row(self, parent, conditions_list, config=None):
         """Adds a UI row for a single condition."""
         if config is None: config = {}
-        row_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        row_frame = ctk.CTkFrame(parent)
         row_frame.pack(fill="x", pady=2)
 
         field_var = tk.StringVar(value=config.get('field', self.CONDITION_FIELDS[0]))
@@ -136,7 +136,7 @@ class RuleBuilderFrame(ctk.CTkScrollableFrame):
     def add_action_row(self, parent, actions_list, config=None):
         """Adds a UI row for a single action."""
         if config is None: config = {}
-        row_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        row_frame = ctk.CTkFrame(parent)
         row_frame.pack(fill="x", pady=2)
 
         type_var = tk.StringVar(value=config.get('type', self.ACTION_TYPES[0]))
@@ -197,9 +197,11 @@ class SettingsWindow(ctk.CTkToplevel):
         self.geometry("800x800")
 
         # Define constants for the filter builder
+        # For consistency, this list is now aligned with the one in RuleBuilderFrame
         self.FILTERABLE_COLUMNS = [
-            'Order_Type', 'Shipping_Provider', 'Order_Fulfillment_Status',
-            'Tags', 'Status_Note', 'Destination_Country'
+            'Order_Number', 'Order_Type', 'SKU', 'Product_Name', 'Stock_Alert',
+            'Order_Fulfillment_Status', 'Shipping_Provider', 'Destination_Country',
+            'Tags', 'System_note', 'Status_Note', 'Total Price'
         ]
         self.OPERATORS = ['==', '!=', 'in', 'not in']
 
@@ -451,7 +453,7 @@ class SettingsWindow(ctk.CTkToplevel):
         ctk.CTkEntry(entry_frame, textvariable=exclude_skus_var).grid(row=4, column=1, sticky="ew")
 
         # --- Delete Button ---
-        delete_button = ctk.CTkButton(entry_frame, text="Delete", fg_color="red", width=60,
+        delete_button = ctk.CTkButton(entry_frame, text="Delete", fg_color=self.parent.STYLE['color_destructive'], width=60,
                                       command=lambda f=entry_frame: self.delete_packing_list_entry(f))
         delete_button.grid(row=5, column=1, padx=5, pady=5, sticky="e")
 
@@ -527,7 +529,7 @@ class SettingsWindow(ctk.CTkToplevel):
         col_combo.configure(command=lambda choice, rw=row_widgets: self._on_filter_criteria_changed(rw))
         op_combo.configure(command=lambda choice, rw=row_widgets: self._on_filter_criteria_changed(rw))
 
-        delete_button = ctk.CTkButton(row_frame, text="X", fg_color="red", width=30,
+        delete_button = ctk.CTkButton(row_frame, text="X", fg_color=self.parent.STYLE['color_destructive'], width=30,
                                       command=lambda rw=row_widgets, rl=rows_list, pf=parent_frame: self._delete_filter_rule_row(rw, rl, pf))
         delete_button.grid(row=0, column=3, padx=5, pady=5)
 
@@ -633,7 +635,7 @@ class SettingsWindow(ctk.CTkToplevel):
         add_filter_button.grid(row=3, column=1, padx=5, pady=(0, 5), sticky="w")
 
         # --- Delete Button ---
-        delete_button = ctk.CTkButton(entry_frame, text="Delete", fg_color="red", width=60,
+        delete_button = ctk.CTkButton(entry_frame, text="Delete", fg_color=self.parent.STYLE['color_destructive'], width=60,
                                       command=lambda f=entry_frame: self.delete_stock_export_entry(f))
         delete_button.grid(row=4, column=1, padx=5, pady=5, sticky="e")
 
