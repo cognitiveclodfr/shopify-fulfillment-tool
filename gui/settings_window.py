@@ -10,7 +10,7 @@ class RuleBuilderFrame(ctk.CTkScrollableFrame):
     CONDITION_FIELDS = [
         'Order_Number', 'Order_Type', 'SKU', 'Product_Name', 'Stock_Alert',
         'Order_Fulfillment_Status', 'Shipping_Provider', 'Destination_Country',
-        'Tags', 'System_note', 'Total Price'
+        'Tags', 'System_note', 'Status_Note', 'Total Price'
     ]
     CONDITION_OPERATORS = [
         'equals', 'does not equal', 'contains', 'does not contain',
@@ -201,7 +201,7 @@ class SettingsWindow(ctk.CTkToplevel):
         self.FILTERABLE_COLUMNS = [
             'Order_Number', 'Order_Type', 'SKU', 'Product_Name', 'Stock_Alert',
             'Order_Fulfillment_Status', 'Shipping_Provider', 'Destination_Country',
-            'Tags', 'System_note', 'Total Price'
+            'Tags', 'System_note', 'Status_Note', 'Total Price'
         ]
         self.OPERATORS = ['==', '!=', 'in', 'not in']
 
