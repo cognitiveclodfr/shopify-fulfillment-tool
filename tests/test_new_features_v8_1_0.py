@@ -54,8 +54,8 @@ def test_system_note_and_total_price_columns_added(sample_orders_df, sample_stoc
     assert final_df[final_df['Order_Number'] == '1002']['System_note'].iloc[0] == ''
     assert final_df[final_df['Order_Number'] == '1003']['System_note'].iloc[0] == ''
 
-    # 3. Ensure 'Status_Note' is no longer present
-    assert 'Status_Note' not in final_df.columns
+    # 3. Ensure both System_note and Status_Note are present
+    assert 'Status_Note' in final_df.columns
 
 def test_rule_engine_filter_by_order_number(sample_orders_df, sample_stock_df):
     """

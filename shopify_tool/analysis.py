@@ -112,7 +112,8 @@ def run_analysis(stock_df, orders_df, history_df):
     final_df['Destination_Country'] = np.where(final_df['Shipping_Provider'] == 'DHL', final_df['Shipping Country'], '')
     final_df['System_note'] = np.where(final_df['Order_Number'].isin(history_df['Order_Number']), 'Repeat', '')
     final_df['Stock_Alert'] = '' # Initialize the column
-    output_columns = ['Order_Number', 'Order_Type', 'SKU', 'Product_Name', 'Quantity', 'Stock', 'Final_Stock', 'Stock_Alert', 'Order_Fulfillment_Status', 'Shipping_Provider', 'Destination_Country', 'Shipping Method', 'Tags', 'Notes', 'System_note']
+    final_df['Status_Note'] = '' # Initialize column for user-defined rule tags
+    output_columns = ['Order_Number', 'Order_Type', 'SKU', 'Product_Name', 'Quantity', 'Stock', 'Final_Stock', 'Stock_Alert', 'Order_Fulfillment_Status', 'Shipping_Provider', 'Destination_Country', 'Shipping Method', 'Tags', 'Notes', 'System_note', 'Status_Note']
     if 'Total Price' in final_df.columns:
         # Insert 'Total Price' into the list at a specific position for consistent column order.
         # Placed after 'Quantity'.
