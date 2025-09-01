@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # We need to import the App class to test its methods
-from gui_main import App
+from gui_main_tkinter import App
 
 @pytest.fixture
 def mock_app_environment(tmp_path, mocker):
@@ -31,8 +31,8 @@ def mock_app_environment(tmp_path, mocker):
         json.dump(default_config_content, f)
 
     # 3. Mock the helper functions to use our temporary paths
-    mocker.patch('gui_main.get_persistent_data_path', return_value=str(app_data_dir / "config.json"))
-    mocker.patch('gui_main.resource_path', return_value=str(default_config_path))
+        mocker.patch('gui_main_tkinter.get_persistent_data_path', return_value=str(app_data_dir / "config.json"))
+        mocker.patch('gui_main_tkinter.resource_path', return_value=str(default_config_path))
 
     # Mock the GUI components that are not needed for this test
     mocker.patch('customtkinter.CTk.__init__', return_value=None)

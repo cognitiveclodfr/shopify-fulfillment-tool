@@ -206,7 +206,7 @@ def test_table_coloring_and_styling_logic(mocker):
     }
 
     # 3. Call the method under test
-    from gui_main import App
+    from gui_main_tkinter import App
     App.update_data_viewer(mock_app, debug_df)
 
     # 4. Assert the results
