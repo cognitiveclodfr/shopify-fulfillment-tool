@@ -144,8 +144,7 @@ class RuleEngine:
 
             if action_type == 'ADD_TAG':
                 # Per user feedback, ADD_TAG should modify Status_Note, not Tags
-                current_notes = df.loc[matches, 'Status_Note'].astype(str)
-                current_notes[current_notes.str.lower() == 'nan'] = ''
+                current_notes = df.loc[matches, 'Status_Note'].fillna('').astype(str)
 
                 # Append new tag, handling empty notes and preventing duplicates
                 def append_note(note):

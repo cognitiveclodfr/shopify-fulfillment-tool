@@ -79,3 +79,81 @@ def test_create_stock_export_success_path(tmp_path):
     assert results['SKU-A'] == 7
     assert results['SKU-B'] == 3
     assert row1_unit == 'бройка' # Check the static value
+
+
+def create_dummy_template(path):
+    """Helper to create a valid xls template."""
+    workbook = xlwt.Workbook()
+    sheet = workbook.add_sheet('Sheet1')
+    sheet.write(0, 0, 'SKU')
+    sheet.write(0, 1, 'Quantity')
+    workbook.save(path)
+
+
+def test_create_stock_export_with_filters(tmp_path):
+    """Tests that filters are correctly applied."""
+    analysis_df = pd.DataFrame({
+        'Order_Fulfillment_Status': ['Fulfillable', 'Fulfillable', 'Fulfillable'],
+        'SKU':                      ['SKU-A', 'SKU-B', 'SKU-C'],
+        'Quantity':                 [5, 3, 2],
+        'Order_Type':               ['Single', 'Multi', 'Single']
+    })
+    template_path = tmp_path / "template.xls"
+    create_dummy_template(template_path)
+    output_path = tmp_path / "output.xls"
+
+    filters = [{"field": "Order_Type", "operator": "==", "value": "Single"}]
+    stock_export.create_stock_export(analysis_df, str(template_path), str(output_path), filters=filters)
+
+    book = xlrd.open_workbook(output_path)
+    sheet = book.sheet_by_index(0)
+    # Should only contain SKU-A and SKU-C
+    results = {sheet.cell_value(r, 0): sheet.cell_value(r, 1) for r in range(1, sheet.nrows)}
+    assert 'SKU-A' in results and results['SKU-A'] == 5
+    assert 'SKU-C' in results and results['SKU-C'] == 2
+    assert 'SKU-B' not in results
+
+
+def test_create_stock_export_empty_after_filter(tmp_path):
+    """Tests behavior when filters result in an empty DataFrame."""
+    analysis_df = pd.DataFrame({'Order_Fulfillment_Status': ['Fulfillable'], 'SKU': ['S1'], 'Quantity': [1], 'Order_Type': ['A']})
+    template_path = tmp_path / "template.xls"
+    create_dummy_template(template_path)
+    output_path = tmp_path / "output.xls"
+    filters = [{"field": "Order_Type", "operator": "==", "value": "B"}] # This will find nothing
+    stock_export.create_stock_export(analysis_df, str(template_path), str(output_path), filters=filters)
+    assert not os.path.exists(output_path)
+
+
+def test_create_stock_export_empty_after_summary(tmp_path):
+    """Tests behavior when items exist but quantity is zero."""
+    analysis_df = pd.DataFrame({'Order_Fulfillment_Status': ['Fulfillable'], 'SKU': ['S1'], 'Quantity': [0]})
+    template_path = tmp_path / "template.xls"
+    create_dummy_template(template_path)
+    output_path = tmp_path / "output.xls"
+    stock_export.create_stock_export(analysis_df, str(template_path), str(output_path))
+    assert not os.path.exists(output_path)
+
+
+def test_create_stock_export_corrupt_template(tmp_path, mocker):
+    """Tests that a corrupt template file is handled gracefully."""
+    analysis_df = pd.DataFrame({'Order_Fulfillment_Status': ['Fulfillable'], 'SKU': ['S1'], 'Quantity': [1]})
+    template_path = tmp_path / "template.xls"
+    create_dummy_template(template_path)
+    output_path = tmp_path / "output.xls"
+    mocker.patch("xlrd.open_workbook", side_effect=xlrd.biffh.XLRDError("Corrupt"))
+    stock_export.create_stock_export(analysis_df, str(template_path), str(output_path))
+    assert not os.path.exists(output_path)
+
+
+def test_create_stock_export_skips_invalid_filter(tmp_path):
+    """Tests that an invalid filter object is skipped without crashing."""
+    analysis_df = pd.DataFrame({'Order_Fulfillment_Status': ['Fulfillable'], 'SKU': ['S1'], 'Quantity': [1]})
+    template_path = tmp_path / "template.xls"
+    create_dummy_template(template_path)
+    output_path = tmp_path / "output.xls"
+    # This filter is missing the 'value' key
+    filters = [{"field": "Order_Type", "operator": "=="}]
+    stock_export.create_stock_export(analysis_df, str(template_path), str(output_path), filters=filters)
+    # The report should be created as if there were no filters
+    assert os.path.exists(output_path)

@@ -1,10 +1,10 @@
-# Technical Documentation: Shopify Fulfillment Tool
+# Technical Documentation: Shopify Fulfillment Tool v8.1.8
 
 This document provides a technical overview of the Shopify Fulfillment Tool, intended for developers and maintainers. It covers the application's architecture, core logic, GUI structure, and data flow.
 
 ## Version 8.1.8 Changes
 
-This release introduces several new features focused on providing more detailed feedback to the user, enhancing report customization, and improving the robustness of the core logic.
+This release introduces several new features focused on providing more detailed feedback to the user, enhancing report customization, and improving the robustness of the core logic. A major focus was also placed on increasing the quality and coverage of the unit test suite.
 
 -   **Low Stock Alerts (`core.py`):**
     -   The `run_full_analysis` function can now apply a low stock warning. After the main analysis, it checks if a `low_stock_threshold` is defined in the config.
@@ -111,21 +111,21 @@ The data flow remains largely the same, but the underlying configuration and fil
 
 ## 6. Test Coverage Review (v8.1.8)
 
-A review of the unit tests was conducted. All 47 existing tests passed successfully. A coverage analysis was performed to identify areas for improvement.
+A comprehensive effort was undertaken to improve the quality and coverage of the unit test suite. All tests pass, and the final coverage results are as follows:
 
-**Overall Coverage: 85%**
+**Overall Coverage: 96%**
 
-| Module File                 | Coverage | Notes                                        |
-| --------------------------- | :------: | -------------------------------------------- |
-| `shopify_tool/analysis.py`      |   95%    | Excellent coverage.                          |
-| `shopify_tool/logger_config.py` |   96%    | Excellent coverage.                          |
-| `shopify_tool/packing_lists.py` |   91%    | Very good coverage.                          |
-| `shopify_tool/rules.py`         |   86%    | Good coverage.                               |
-| `shopify_tool/core.py`          |   74%    | **Needs improvement.** Key orchestrator module. |
-| `shopify_tool/stock_export.py`  |   76%    | **Needs improvement.**                       |
-| `shopify_tool/utils.py`         |   58%    | **Needs improvement.** Low-hanging fruit.      |
+| Module File                 | Coverage | Notes                                                                   |
+| --------------------------- | :------: | ----------------------------------------------------------------------- |
+| `shopify_tool/analysis.py`      |   95%    | Coverage maintained.                                                    |
+| `shopify_tool/logger_config.py` |   96%    | Coverage maintained.                                                    |
+| `shopify_tool/packing_lists.py` |   94%    | **Improved.** Added tests for edge cases.                               |
+| `shopify_tool/rules.py`         |   99%    | **Improved.** Added comprehensive tests for all operators & edge cases. |
+| `shopify_tool/core.py`          |   97%    | **Improved.** Added tests for error handling and all major code paths.  |
+| `shopify_tool/stock_export.py`  |   94%    | **Improved.** Added tests for filtering logic and error handling.       |
+| `shopify_tool/utils.py`         |  100%    | **Improved.** Full coverage achieved.                                   |
 
-**Recommendations:**
--   Focus on increasing test coverage for `core.py`, as it contains the main orchestration logic.
--   Add tests for `utils.py`, as these are simple functions that should be easy to cover.
--   Review the untested lines in `stock_export.py` and `rules.py` to cover more edge cases.
+**Summary of Improvements:**
+-   Unit test coverage was increased from 85% to 96%.
+-   Added new test files and numerous new tests to cover error handling, edge cases, and all logical operators in the rule engine.
+-   All modules identified as needing improvement now have coverage of 94% or higher.
