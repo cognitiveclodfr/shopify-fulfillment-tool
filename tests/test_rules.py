@@ -195,3 +195,97 @@ def test_rules_with_empty_conditions(sample_df):
     result_df = engine.apply(sample_df.copy())
 
     assert not any(result_df['Tags'].str.contains('SHOULD-NOT-BE-ADDED', na=False))
+
+
+@pytest.mark.parametrize("operator,value,expected_matches", [
+    ('equals', 'DHL', ['#1001', '#1004']),
+    ('does not equal', 'DHL', ['#1002', '#1003']),
+    ('contains', 'pos', ['#1002']),
+    ('does not contain', 'pos', ['#1001', '#1003', '#1004']),
+    ('starts with', 'Post', ['#1002']),
+    ('ends with', 'One', ['#1002']),
+    ('is empty', '', ['#1002', '#1004']), # Tags is empty
+    ('is not empty', '', ['#1001', '#1003']) # Tags is not empty
+])
+def test_all_string_operators(sample_df, operator, value, expected_matches):
+    """Tests all string-based operators via parametrization."""
+    field = 'Shipping_Provider'
+    if 'empty' in operator:
+        field = 'Tags' # 'is empty' needs a field with empty values
+
+    rules = [{
+        "match": "ALL",
+        "conditions": [{"field": field, "operator": operator, "value": value}],
+        "actions": [{"type": "SET_PRIORITY", "value": "Match"}]
+    }]
+    engine = RuleEngine(rules)
+    result_df = engine.apply(sample_df.copy())
+
+    matched_orders = result_df[result_df['Priority'] == 'Match']['Order_Number'].unique()
+    assert sorted(matched_orders) == sorted(expected_matches)
+
+
+@pytest.mark.parametrize("operator,value,expected_matches", [
+    ('is greater than', 100, ['#1002', '#1003']),
+    ('is less than', 100, ['#1001', '#1004']),
+])
+def test_all_numeric_operators(sample_df, operator, value, expected_matches):
+    """Tests all numeric operators via parametrization."""
+    rules = [{
+        "match": "ALL",
+        "conditions": [{"field": 'Total_Price', "operator": operator, "value": value}],
+        "actions": [{"type": "SET_PRIORITY", "value": "Match"}]
+    }]
+    engine = RuleEngine(rules)
+    result_df = engine.apply(sample_df.copy())
+
+    matched_orders = result_df[result_df['Priority'] == 'Match']['Order_Number'].unique()
+    assert sorted(matched_orders) == sorted(expected_matches)
+
+
+def test_rule_with_invalid_field(sample_df):
+    """Tests that a rule with a non-existent field is skipped."""
+    original_df = sample_df.copy()
+    rules = [{"conditions": [{"field": "NonExistentField", "operator": "equals", "value": "a"}]}]
+    engine = RuleEngine(rules)
+    result_df = engine.apply(sample_df.copy())
+    pd.testing.assert_frame_equal(original_df, result_df)
+
+
+def test_prepare_df_for_actions_creates_columns(sample_df):
+    """Tests that necessary columns are created if they don't exist."""
+    df = pd.DataFrame({'Order_Number': ['#1001']})
+    rules = [
+        {"actions": [{"type": "SET_PRIORITY"}]},
+        {"actions": [{"type": "ADD_TAG"}]},
+        {"actions": [{"type": "EXCLUDE_FROM_REPORT"}]}
+    ]
+    engine = RuleEngine(rules)
+    engine._prepare_df_for_actions(df)
+    assert 'Priority' in df.columns
+    assert 'Status_Note' in df.columns
+    assert '_is_excluded' in df.columns
+
+
+def test_exclude_from_report_action(sample_df):
+    """Tests the EXCLUDE_FROM_REPORT action."""
+    rules = [{"conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1002"}], "actions": [{"type": "EXCLUDE_FROM_REPORT"}]}]
+    engine = RuleEngine(rules)
+    result_df = engine.apply(sample_df.copy())
+    assert result_df.loc[result_df['Order_Number'] == '#1002', '_is_excluded'].all()
+    assert not result_df.loc[result_df['Order_Number'] != '#1002', '_is_excluded'].any()
+
+
+def test_add_tag_to_nan_note(sample_df):
+    """Tests that ADD_TAG works correctly on a cell with a NaN value."""
+    df = sample_df.copy()
+    # Force a NaN value into the Status_Note column
+    df.loc[0, 'Status_Note'] = pd.NA
+
+    rules = [{"conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}], "actions": [{"type": "ADD_TAG", "value": "NewTag"}]}]
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    # The note for order #1001 should now be 'NewTag'
+    note = result_df.loc[result_df['Order_Number'] == '#1001', 'Status_Note'].iloc[0]
+    assert note == 'NewTag'

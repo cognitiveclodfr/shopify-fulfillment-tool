@@ -14,6 +14,7 @@ Its primary purpose is to analyze order and stock export files, determine which 
 -   **Exclude SKUs from Packing Lists:** You can now specify a list of SKUs to be completely excluded from packing list reports, giving you more control over the output.
 -   **Enhanced Statistics:** The "Statistics" tab is now more detailed, providing a breakdown of completed orders and repeat orders by courier.
 -   **Improved Report Information:** The main `fulfillment_analysis.xlsx` report now includes a "Report Info" sheet that records the exact time the report was generated.
+-   **Improved Test Coverage:** The project's automated tests have been significantly improved, with coverage increasing from 85% to over 95%, ensuring higher reliability and stability.
 
 ### What's New in v8.1.0
 
