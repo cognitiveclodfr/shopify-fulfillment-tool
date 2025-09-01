@@ -2,6 +2,27 @@
 
 This document provides a technical overview of the Shopify Fulfillment Tool, intended for developers and maintainers. It covers the application's architecture, core logic, GUI structure, and data flow.
 
+## Version 8.1.8 Changes
+
+This release introduces several new features focused on providing more detailed feedback to the user, enhancing report customization, and improving the robustness of the core logic.
+
+-   **Low Stock Alerts (`core.py`):**
+    -   The `run_full_analysis` function can now apply a low stock warning. After the main analysis, it checks if a `low_stock_threshold` is defined in the config.
+    -   If it is, it uses a `np.where` clause to create a new `Stock_Alert` column, marking any item where `Final_Stock` < `threshold`.
+
+-   **Exclude SKUs from Packing Lists (`core.py`, `packing_lists.py`):**
+    -   The `create_packing_list_report` function in `core.py` now accepts an `exclude_skus` parameter from the report's configuration.
+    -   This list of SKUs to exclude is passed down to `packing_lists.create_packing_list`, where the main DataFrame is filtered to remove these SKUs before the report is generated.
+
+-   **Core Analysis Logic (`analysis.py`):**
+    -   **`toggle_order_fulfillment`:** This function has been heavily refactored for robustness. It now includes a pre-flight check to see if a "force-fulfill" is possible by checking available stock. It can also handle orders containing unlisted SKUs (items not in the stock file) by dynamically adding them to the DataFrame to track their negative stock.
+    -   **`recalculate_statistics`:** A new standalone function that computes a rich dictionary of statistics from the main analysis frame. This separates the calculation from the main analysis loop and produces a structured `couriers_stats` list. If no stats are available, it returns `None` as per the spec for the GUI.
+    -   **Improved Summary_Missing:** The logic for generating the `summary_missing_df` has been corrected to only include items that are truly out of stock (`Quantity` > `Stock`), making the report more accurate.
+
+-   **Data Validation and Export (`core.py`):**
+    -   **`validate_csv_headers`:** A new utility function has been added to `core.py` to quickly validate the headers of input CSVs against a list of required columns before loading the full file. This provides faster and clearer error feedback to the user.
+    -   **Report Info Sheet:** The `run_full_analysis` function now adds a `Report Info` worksheet to the `fulfillment_analysis.xlsx` export, containing a timestamp of when the report was generated.
+
 ## Version 8.1.0 Changes
 
 This release focuses on improving the data model, enhancing the user interface, and expanding configuration options.
@@ -87,3 +108,24 @@ The data flow remains largely the same, but the underlying configuration and fil
 2.  **Orchestration (`gui_main.py`)**: The `report_config` for the selected report is retrieved from `self.config` (loaded from the persistent `config.json`).
 3.  **Core Logic (`core.py`)**: The `create_packing_list_report` function is called.
 4.  **Filtering and Generation (`packing_lists.py`)**: `create_packing_list()` now receives the new filter format. It loops through the list of filter objects, dynamically building a pandas query string (e.g., `\`Order_Type\` == 'Multi' & \`Shipping_Provider\` != 'DHL'`). It then filters the DataFrame and generates the report.
+
+## 6. Test Coverage Review (v8.1.8)
+
+A review of the unit tests was conducted. All 47 existing tests passed successfully. A coverage analysis was performed to identify areas for improvement.
+
+**Overall Coverage: 85%**
+
+| Module File                 | Coverage | Notes                                        |
+| --------------------------- | :------: | -------------------------------------------- |
+| `shopify_tool/analysis.py`      |   95%    | Excellent coverage.                          |
+| `shopify_tool/logger_config.py` |   96%    | Excellent coverage.                          |
+| `shopify_tool/packing_lists.py` |   91%    | Very good coverage.                          |
+| `shopify_tool/rules.py`         |   86%    | Good coverage.                               |
+| `shopify_tool/core.py`          |   74%    | **Needs improvement.** Key orchestrator module. |
+| `shopify_tool/stock_export.py`  |   76%    | **Needs improvement.**                       |
+| `shopify_tool/utils.py`         |   58%    | **Needs improvement.** Low-hanging fruit.      |
+
+**Recommendations:**
+-   Focus on increasing test coverage for `core.py`, as it contains the main orchestration logic.
+-   Add tests for `utils.py`, as these are simple functions that should be easy to cover.
+-   Review the untested lines in `stock_export.py` and `rules.py` to cover more edge cases.

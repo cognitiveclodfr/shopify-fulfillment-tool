@@ -1,4 +1,4 @@
-# Shopify Fulfillment Tool v8.1.0 - User Guide
+# Shopify Fulfillment Tool v8.1.8 - User Guide
 
 ## 1. Project Overview
 
@@ -7,6 +7,13 @@ The **Shopify Fulfillment Tool** is a desktop application designed to streamline
 Its primary purpose is to analyze order and stock export files, determine which orders are fulfillable, and generate necessary documents like packing lists and courier export files. The graphical user interface (GUI) makes it accessible for warehouse staff without requiring command-line knowledge.
 
 ## 2. Key Features
+
+### What's New in v8.1.8
+
+-   **Low Stock Alerts:** A new `Stock_Alert` column in the analysis table will automatically flag items that fall below a configurable threshold after fulfillment.
+-   **Exclude SKUs from Packing Lists:** You can now specify a list of SKUs to be completely excluded from packing list reports, giving you more control over the output.
+-   **Enhanced Statistics:** The "Statistics" tab is now more detailed, providing a breakdown of completed orders and repeat orders by courier.
+-   **Improved Report Information:** The main `fulfillment_analysis.xlsx` report now includes a "Report Info" sheet that records the exact time the report was generated.
 
 ### What's New in v8.1.0
 
@@ -54,23 +61,26 @@ Its primary purpose is to analyze order and stock export files, determine which 
 
 The "Analysis Data" table is now highly interactive and includes new information:
 
--   **New Columns:** You will now see `Total Price` and `System_note` columns. Rows with system notes (like `Repeat`) will be highlighted in yellow.
--   **Change Status (Double-Click):** Double-click any row of an order to toggle its fulfillment status between "Fulfillable" and "Not Fulfillable".
+-   **New Columns:** You will now see `Total Price`, `System_note`, and `Stock_Alert` columns. Rows with system notes (like `Repeat`) will be highlighted in yellow. The `Stock_Alert` column will display 'Low Stock' for any item whose inventory falls below the threshold you define in the settings.
+-   **Change Status (Double-Click):** Double-click any row of an order to toggle its fulfillment status between "Fulfillable" and "Not Fulfillable". Be aware that "force-fulfilling" an order with insufficient stock may result in negative final stock values for the affected items.
 -   **Context Menu (Right-Click):** Right-click any row to open a context menu. It now includes **`Copy SKU`** in addition to `Change Status`, `Copy Order Number`, etc.
--   **Manage Columns:** Click the **"Manage Columns"** button above the table to show, hide, and reorder columns, including the new `Total Price` and `System_note` columns.
+-   **Manage Columns:** Click the **"Manage Columns"** button above the table to show, hide, and reorder columns, including the new `Total Price`, `System_note`, and `Stock_Alert` columns.
 
 ### Step 5: Configuring Rules, Reports, and Settings
 
 1.  Click the **Settings button (⚙️)** in the bottom right of the main action panel.
 2.  The Settings window will open with four tabs: "General & Paths", "Rules", "Packing Lists", and "Stock Exports".
-3.  When creating or editing rules and report filters, you can now select **`Order_Number`** and **`Total Price`** from the list of filterable fields.
-4.  **Example: Adding a Rule**
-    -   Go to the **"Rules"** tab and click **"Add New Rule"**.
-    -   Configure the rule's name, conditions (IF), and actions (THEN). You can now use `Order_Number` in your conditions.
-5.  Click **"Save and Close"**. Your changes will be saved permanently and will be available the next time you open the application.
+3.  **General Settings:**
+    -   In the **"General & Paths"** tab, you can now set a **"Low Stock Threshold"**. If an item's final stock level drops below this number, it will be flagged in the `Stock_Alert` column.
+4.  **Packing List Settings:**
+    -   In the **"Packing Lists"** tab, when you add or edit a report, you will see a new field: **"Exclude SKUs"**.
+    -   Enter a comma-separated list of SKUs (e.g., `SKU001,SKU002,SKU003`) that you want to be completely ignored and left out of that specific packing list report.
+5.  When creating or editing rules and report filters, you can now select **`Order_Number`** and **`Total Price`** from the list of filterable fields.
+6.  Click **"Save and Close"**. Your changes will be saved permanently and will be available the next time you open the application.
 
 ### Step 6: Generating Reports
 
 -   After a successful analysis, the report buttons on the left of the main action panel become active.
 -   Click **"Create Packing List"** or **"Create Stock Export"** to open a window with your configured reports.
 -   Select the desired report. The generated file will be saved in the current session's output folder.
+-   The main Excel export, `fulfillment_analysis.xlsx`, now contains a new sheet called **"Report Info"** which shows the exact date and time the report was created.
