@@ -37,7 +37,7 @@ class ActionsHandler:
                 session_id += 1
             os.makedirs(session_path, exist_ok=True)
             self.mw.session_path = session_path
-            self.mw.ui_manager.session_path_label.setText(f"Current Session: {os.path.basename(self.mw.session_path)}")
+            self.mw.session_path_label.setText(f"Current Session: {os.path.basename(self.mw.session_path)}")
             self.mw.load_orders_btn.setEnabled(True)
             self.mw.load_stock_btn.setEnabled(True)
             self.mw.log_activity("Session", f"New session started. Output: {self.mw.session_path}")
