@@ -9,9 +9,9 @@ class PandasModel(QAbstractTableModel):
         self._dataframe = dataframe
         # Define colors for styling
         self.colors = {
-            "Fulfillable": QColor("#2A4B3A"),
-            "NotFulfillable": QColor("#5E2E2E"),
-            "SystemNoteHighlight": QColor("#756B0D")
+            "Fulfillable": QColor("#2E8B57"), # SeaGreen
+            "NotFulfillable": QColor("#B22222"), # FireBrick
+            "SystemNoteHighlight": QColor("#DAA520") # GoldenRod
         }
 
     def rowCount(self, parent=QModelIndex()) -> int:

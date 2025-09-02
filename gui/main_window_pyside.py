@@ -367,8 +367,11 @@ class MainWindow(QMainWindow):
         if orders_ok and stock_ok: self.run_analysis_button.setEnabled(True)
 
     def _post_analysis_ui_update(self):
-        self.update_data_viewer(); self.update_statistics_tab(); self.set_ui_busy(False)
-        self.column_manager_button.setEnabled(True); self.tab_view.setCurrentWidget(self.stats_tab)
+        self.update_data_viewer()
+        self.update_statistics_tab()
+        self.set_ui_busy(False)
+        self.column_manager_button.setEnabled(True)
+        self.tab_view.setCurrentWidget(self.stats_tab)
 
     def update_data_viewer(self):
         if self.analysis_results_df.empty: return
