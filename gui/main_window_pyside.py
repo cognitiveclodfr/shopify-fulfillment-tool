@@ -4,6 +4,7 @@ import json
 import shutil
 import pickle
 from datetime import datetime
+import pandas as pd
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGridLayout, QPushButton, QLabel, QTabWidget, QFrame, QGroupBox,
@@ -21,6 +22,7 @@ from shopify_tool.utils import get_persistent_data_path, resource_path
 from shopify_tool.analysis import recalculate_statistics, toggle_order_fulfillment
 from gui.pandas_model import PandasModel
 from gui.settings_window_pyside import SettingsWindow
+from gui.report_selection_dialog import ReportSelectionDialog
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -34,7 +36,7 @@ class MainWindow(QMainWindow):
         self.config_path = None
         self.orders_file_path = None
         self.stock_file_path = None
-        self.analysis_results_df = None
+        self.analysis_results_df = pd.DataFrame()
         self.analysis_stats = None
         self.pandas_model = None
 
@@ -70,15 +72,12 @@ class MainWindow(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
-
-        # --- Session Control, File Loading, Actions... (condensed for brevity)
         session_group = QGroupBox("Session")
         session_layout = QHBoxLayout(); session_group.setLayout(session_layout)
         self.new_session_btn = QPushButton("Create New Session")
         self.session_path_label = QLabel("No session started.")
         session_layout.addWidget(self.new_session_btn); session_layout.addWidget(self.session_path_label); session_layout.addStretch()
         main_layout.addWidget(session_group)
-
         files_group = QGroupBox("Load Data")
         files_layout = QGridLayout(); files_group.setLayout(files_layout)
         self.load_orders_btn = QPushButton("Load Orders File (.csv)"); self.orders_file_path_label = QLabel("Orders file not selected"); self.orders_file_status_label = QLabel(""); self.load_orders_btn.setEnabled(False)
@@ -87,7 +86,6 @@ class MainWindow(QMainWindow):
         files_layout.addWidget(self.load_stock_btn, 1, 0); files_layout.addWidget(self.stock_file_path_label, 1, 1); files_layout.addWidget(self.stock_file_status_label, 1, 2)
         files_layout.setColumnStretch(1, 1)
         main_layout.addWidget(files_group)
-
         actions_layout = QHBoxLayout()
         reports_group = QGroupBox("Reports"); reports_v_layout = QVBoxLayout(); reports_group.setLayout(reports_v_layout)
         self.packing_list_button = QPushButton("Create Packing List"); self.stock_export_button = QPushButton("Create Stock Export"); self.report_builder_button = QPushButton("Report Builder")
@@ -100,55 +98,33 @@ class MainWindow(QMainWindow):
         main_actions_grid_layout.setRowStretch(0, 1); main_actions_grid_layout.setColumnStretch(0, 1)
         actions_layout.addWidget(reports_group, 1); actions_layout.addWidget(main_actions_group, 3)
         main_layout.addLayout(actions_layout)
-
-        # --- Tab View ---
         self.tab_view = QTabWidget()
         self.tab_view.addTab(QWidget(), "Execution Log")
-
-        # Activity Log Tab
-        self.activity_log_tab = QWidget()
-        activity_layout = QVBoxLayout(self.activity_log_tab)
-        self.activity_log_table = QTableWidget()
-        self.activity_log_table.setColumnCount(3)
-        self.activity_log_table.setHorizontalHeaderLabels(["Time", "Operation", "Description"])
-        self.activity_log_table.horizontalHeader().setStretchLastSection(True)
-        activity_layout.addWidget(self.activity_log_table)
-        self.tab_view.addTab(self.activity_log_tab, "Activity Log")
-
-        # Analysis Data Tab
-        self.data_view_tab = QWidget()
-        self.data_view_layout = QVBoxLayout(self.data_view_tab)
-        self.data_table = QTableView()
-        self.data_table.setContextMenuPolicy(Qt.CustomContextMenu) # Enable context menu
-        self.data_view_layout.addWidget(self.data_table)
-        self.tab_view.addTab(self.data_view_tab, "Analysis Data")
-
-        # Statistics Tab
-        self.stats_tab = QWidget()
-        self.create_statistics_tab()
-        self.tab_view.addTab(self.stats_tab, "Statistics")
-
-        main_layout.addWidget(self.tab_view)
-        main_layout.setStretchFactor(self.tab_view, 1)
+        self.activity_log_tab = QWidget(); activity_layout = QVBoxLayout(self.activity_log_tab)
+        self.activity_log_table = QTableWidget(); self.activity_log_table.setColumnCount(3)
+        self.activity_log_table.setHorizontalHeaderLabels(["Time", "Operation", "Description"]); self.activity_log_table.horizontalHeader().setStretchLastSection(True)
+        activity_layout.addWidget(self.activity_log_table); self.tab_view.addTab(self.activity_log_tab, "Activity Log")
+        self.data_view_tab = QWidget(); self.data_view_layout = QVBoxLayout(self.data_view_tab)
+        self.data_table = QTableView(); self.data_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.data_view_layout.addWidget(self.data_table); self.tab_view.addTab(self.data_view_tab, "Analysis Data")
+        self.stats_tab = QWidget(); self.create_statistics_tab(); self.tab_view.addTab(self.stats_tab, "Statistics")
+        main_layout.addWidget(self.tab_view); main_layout.setStretchFactor(self.tab_view, 1)
 
     def create_statistics_tab(self):
-        layout = QGridLayout(self.stats_tab)
-        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        layout = QGridLayout(self.stats_tab); layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.stats_labels = {}
         stat_keys = {"total_orders_completed": "Total Orders Completed:", "total_orders_not_completed": "Total Orders Not Completed:", "total_items_to_write_off": "Total Items to Write Off:", "total_items_not_to_write_off": "Total Items Not to Write Off:"}
         row_counter = 0
         for key, text in stat_keys.items():
             label = QLabel(text); value_label = QLabel("-"); self.stats_labels[key] = value_label
-            layout.addWidget(label, row_counter, 0); layout.addWidget(value_label, row_counter, 1)
-            row_counter += 1
+            layout.addWidget(label, row_counter, 0); layout.addWidget(value_label, row_counter, 1); row_counter += 1
         courier_header = QLabel("Couriers Stats:"); courier_header.setStyleSheet("font-weight: bold; margin-top: 15px;")
         layout.addWidget(courier_header, row_counter, 0, 1, 2); row_counter += 1
         self.courier_stats_layout = QGridLayout(); layout.addLayout(self.courier_stats_layout, row_counter, 0, 1, 2)
 
     def update_statistics_tab(self):
         if not self.analysis_stats: return
-        for key, label in self.stats_labels.items():
-            label.setText(str(self.analysis_stats.get(key, "N/A")))
+        for key, label in self.stats_labels.items(): label.setText(str(self.analysis_stats.get(key, "N/A")))
         while self.courier_stats_layout.count():
             child = self.courier_stats_layout.takeAt(0)
             if child.widget(): child.widget().deleteLater()
@@ -166,7 +142,6 @@ class MainWindow(QMainWindow):
             self.courier_stats_layout.addWidget(QLabel("No courier stats available."), 0, 0)
 
     def log_activity(self, operation_type, description):
-        """Adds a new entry to the Activity Log tab."""
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.activity_log_table.insertRow(0)
         self.activity_log_table.setItem(0, 0, QTableWidgetItem(current_time))
@@ -180,41 +155,92 @@ class MainWindow(QMainWindow):
         self.run_analysis_button.clicked.connect(self.run_analysis)
         self.settings_button.clicked.connect(self.open_settings_window)
         self.data_table.customContextMenuRequested.connect(self.show_context_menu)
+        self.packing_list_button.clicked.connect(lambda: self.open_report_selection_dialog('packing_lists'))
+        self.stock_export_button.clicked.connect(lambda: self.open_report_selection_dialog('stock_exports'))
+
+    def open_report_selection_dialog(self, report_type):
+        reports_config = self.config.get(report_type, [])
+        if not reports_config:
+            QMessageBox.information(self, "No Reports", f"No {report_type.replace('_', ' ')} configured in settings.")
+            return
+        dialog = ReportSelectionDialog(report_type, reports_config, self)
+        dialog.reportSelected.connect(lambda rc: self.run_report_logic(report_type, rc))
+        dialog.exec()
+
+    def run_report_logic(self, report_type, report_config):
+        if not self.session_path:
+            QMessageBox.critical(self, "Session Error", "Please create a new session before generating reports.")
+            return
+        self.log_activity("Report", f"Generating report: {report_config.get('name')}")
+        if report_type == "packing_lists":
+            relative_path = report_config.get('output_filename', 'default_packing_list.xlsx')
+            output_file = os.path.join(self.session_path, os.path.basename(relative_path))
+            report_config_copy = report_config.copy(); report_config_copy['output_filename'] = output_file
+            success, message = core.create_packing_list_report(analysis_df=self.analysis_results_df, report_config=report_config_copy)
+        elif report_type == "stock_exports":
+            templates_path = resource_path(self.config['paths']['templates'])
+            success, message = core.create_stock_export_report(analysis_df=self.analysis_results_df, report_config=report_config, templates_path=templates_path, output_path=self.session_path)
+        else:
+            success = False; message = "Unknown report type."
+        if success:
+            self.log_activity("Report Generation", message)
+        else:
+            QMessageBox.critical(self, "Error", message)
 
     def show_context_menu(self, pos: QPoint):
-        """Creates and displays a context menu for the data table."""
-        if not self.analysis_results_df.empty:
-            index = self.data_table.indexAt(pos)
-            if index.isValid():
-                row = index.row()
-                order_number = self.analysis_results_df.iloc[row]['Order_Number']
-                sku = self.analysis_results_df.iloc[row]['SKU']
+        if self.analysis_results_df.empty: return
+        index = self.data_table.indexAt(pos)
+        if index.isValid():
+            row = index.row()
+            order_number = self.analysis_results_df.iloc[row]['Order_Number']
+            sku = self.analysis_results_df.iloc[row]['SKU']
+            menu = QMenu()
+            copy_order_action = QAction(f"Copy Order Number: {order_number}", self)
+            copy_sku_action = QAction(f"Copy SKU: {sku}", self)
+            change_status_action = QAction("Change Status", self)
+            remove_item_action = QAction(f"Remove Item {sku} from Order", self)
+            remove_order_action = QAction(f"Remove Entire Order {order_number}", self)
+            copy_order_action.triggered.connect(lambda: self.copy_to_clipboard(order_number))
+            copy_sku_action.triggered.connect(lambda: self.copy_to_clipboard(sku))
+            change_status_action.triggered.connect(lambda: self.toggle_fulfillment_status_for_order(order_number))
+            remove_item_action.triggered.connect(lambda: self.remove_item_from_order(row))
+            remove_order_action.triggered.connect(lambda: self.remove_entire_order(order_number))
+            menu.addAction(change_status_action)
+            menu.addSeparator()
+            menu.addAction(remove_item_action)
+            menu.addAction(remove_order_action)
+            menu.addSeparator()
+            menu.addAction(copy_order_action)
+            menu.addAction(copy_sku_action)
+            menu.exec(self.data_table.viewport().mapToGlobal(pos))
 
-                menu = QMenu()
-                copy_order_action = QAction(f"Copy Order Number: {order_number}", self)
-                copy_sku_action = QAction(f"Copy SKU: {sku}", self)
-                change_status_action = QAction("Change Status", self)
+    def remove_item_from_order(self, row_index):
+        order_number = self.analysis_results_df.iloc[row_index]['Order_Number']
+        sku = self.analysis_results_df.iloc[row_index]['SKU']
+        reply = QMessageBox.question(self, "Confirm Delete", f"Are you sure you want to remove item {sku} from order {order_number}?\nThis cannot be undone.", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            self.analysis_results_df.drop(self.analysis_results_df.index[row_index], inplace=True)
+            self.analysis_results_df.reset_index(drop=True, inplace=True)
+            self.analysis_stats = recalculate_statistics(self.analysis_results_df)
+            self._post_analysis_ui_update()
+            self.log_activity("Data Edit", f"Removed item {sku} from order {order_number}.")
 
-                copy_order_action.triggered.connect(lambda: self.copy_to_clipboard(order_number))
-                copy_sku_action.triggered.connect(lambda: self.copy_to_clipboard(sku))
-                change_status_action.triggered.connect(lambda: self.toggle_fulfillment_status_for_order(order_number))
-
-                menu.addAction(change_status_action)
-                menu.addAction(copy_order_action)
-                menu.addAction(copy_sku_action)
-
-                menu.exec(self.data_table.viewport().mapToGlobal(pos))
+    def remove_entire_order(self, order_number):
+        reply = QMessageBox.question(self, "Confirm Delete", f"Are you sure you want to remove the entire order {order_number}?\nThis cannot be undone.", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            self.analysis_results_df = self.analysis_results_df[self.analysis_results_df['Order_Number'] != order_number].reset_index(drop=True)
+            self.analysis_stats = recalculate_statistics(self.analysis_results_df)
+            self._post_analysis_ui_update()
+            self.log_activity("Data Edit", f"Removed order {order_number}.")
 
     def copy_to_clipboard(self, text):
-        clipboard = QApplication.clipboard()
-        clipboard.setText(str(text))
+        QApplication.clipboard().setText(str(text))
         self.log_activity("Clipboard", f"Copied '{text}' to clipboard.")
 
     def toggle_fulfillment_status_for_order(self, order_number):
         success, result, updated_df = toggle_order_fulfillment(self.analysis_results_df, order_number)
         if success:
-            self.analysis_results_df = updated_df
-            self.analysis_stats = recalculate_statistics(self.analysis_results_df)
+            self.analysis_results_df = updated_df; self.analysis_stats = recalculate_statistics(self.analysis_results_df)
             self._post_analysis_ui_update()
             new_status = self.analysis_results_df.loc[self.analysis_results_df['Order_Number'] == order_number, 'Order_Fulfillment_Status'].iloc[0]
             self.log_activity("Manual Edit", f"Order {order_number} status changed to '{new_status}'.")
@@ -226,8 +252,7 @@ class MainWindow(QMainWindow):
         if dialog.exec():
             self.config = dialog.config_data
             try:
-                with open(self.config_path, 'w', encoding='utf-8') as f:
-                    json.dump(self.config, f, indent=2, ensure_ascii=False)
+                with open(self.config_path, 'w', encoding='utf-8') as f: json.dump(self.config, f, indent=2, ensure_ascii=False)
                 self.log_activity("Settings", "Settings saved successfully.")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to write settings to file: {e}")
@@ -252,18 +277,14 @@ class MainWindow(QMainWindow):
     def select_orders_file(self):
         filepath, _ = QFileDialog.getOpenFileName(self, "Select Orders File", "", "CSV files (*.csv)")
         if filepath:
-            self.orders_file_path = filepath
-            self.orders_file_path_label.setText(os.path.basename(filepath))
-            self.validate_file('orders')
-            self.check_files_ready()
+            self.orders_file_path = filepath; self.orders_file_path_label.setText(os.path.basename(filepath))
+            self.validate_file('orders'); self.check_files_ready()
 
     def select_stock_file(self):
         filepath, _ = QFileDialog.getOpenFileName(self, "Select Stock File", "", "CSV files (*.csv)")
         if filepath:
-            self.stock_file_path = filepath
-            self.stock_file_path_label.setText(os.path.basename(filepath))
-            self.validate_file('stock')
-            self.check_files_ready()
+            self.stock_file_path = filepath; self.stock_file_path_label.setText(os.path.basename(filepath))
+            self.validate_file('stock'); self.check_files_ready()
 
     def validate_file(self, file_type):
         if file_type == 'orders':
@@ -297,8 +318,7 @@ class MainWindow(QMainWindow):
         try:
             success, result, df, stats = core.run_full_analysis(self.stock_file_path, self.orders_file_path, self.session_path, stock_delimiter, self.config)
             if success:
-                self.analysis_results_df = df; self.analysis_stats = stats
-                self._post_analysis_ui_update()
+                self.analysis_results_df = df; self.analysis_stats = stats; self._post_analysis_ui_update()
                 self.log_activity("Analysis", f"Analysis complete. Report saved to: {result}")
             else:
                 QMessageBox.critical(self, "Analysis Error", f"An error occurred during analysis:\n{result}")
@@ -309,11 +329,9 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         if self.analysis_results_df is not None and not self.analysis_results_df.empty:
             try:
-                with open(self.session_file, 'wb') as f:
-                    pickle.dump({'dataframe': self.analysis_results_df}, f)
+                with open(self.session_file, 'wb') as f: pickle.dump({'dataframe': self.analysis_results_df}, f)
                 self.log_activity("Session", "Session data saved on exit.")
-            except Exception as e:
-                print(f"Error saving session automatically: {e}")
+            except Exception as e: print(f"Error saving session automatically: {e}")
         event.accept()
 
     def load_session(self):
@@ -321,10 +339,8 @@ class MainWindow(QMainWindow):
             reply = QMessageBox.question(self, "Restore Session", "A previous session was found. Do you want to restore it?")
             if reply == QMessageBox.Yes:
                 try:
-                    with open(self.session_file, 'rb') as f:
-                        session_data = pickle.load(f)
-                    self.analysis_results_df = session_data.get('dataframe')
-                    self.analysis_stats = recalculate_statistics(self.analysis_results_df)
+                    with open(self.session_file, 'rb') as f: session_data = pickle.load(f)
+                    self.analysis_results_df = session_data.get('dataframe'); self.analysis_stats = recalculate_statistics(self.analysis_results_df)
                     self._post_analysis_ui_update()
                     self.log_activity("Session", "Restored previous session.")
                 except Exception as e:
@@ -336,12 +352,10 @@ class MainWindow(QMainWindow):
 
 
 if __name__ == '__main__':
-    if 'pytest' in sys.modules or os.environ.get("CI"):
-        QApplication.setPlatform("offscreen")
+    if 'pytest' in sys.modules or os.environ.get("CI"): QApplication.setPlatform("offscreen")
     app = QApplication(sys.argv)
     window = MainWindow()
     if QApplication.platformName() != "offscreen":
-        window.show()
-        sys.exit(app.exec())
+        window.show(); sys.exit(app.exec())
     else:
         print("Running in offscreen mode for verification.")
