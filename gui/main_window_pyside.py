@@ -7,7 +7,7 @@ import logging
 from datetime import datetime
 
 import pandas as pd
-from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QMenu, QTableWidgetItem
+from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QMenu, QTableWidgetItem, QLabel
 from PySide6.QtCore import QThreadPool, QPoint, QModelIndex
 from PySide6.QtGui import QAction
 
@@ -166,7 +166,6 @@ class MainWindow(QMainWindow):
         if courier_stats:
             # Re-create headers and data
             headers = ["Courier ID", "Orders Assigned", "Repeated Orders"]
-            from PySide6.QtWidgets import QLabel
             for i, header_text in enumerate(headers):
                 header_label = QLabel(header_text)
                 header_label.setStyleSheet("font-weight: bold;")
@@ -176,7 +175,6 @@ class MainWindow(QMainWindow):
                 self.courier_stats_layout.addWidget(QLabel(str(stats.get("orders_assigned", "N/A"))), i, 1)
                 self.courier_stats_layout.addWidget(QLabel(str(stats.get("repeated_orders_found", "N/A"))), i, 2)
         else:
-            from PySide6.QtWidgets import QLabel
             self.courier_stats_layout.addWidget(QLabel("No courier stats available."), 0, 0)
 
     def log_activity(self, op_type, desc):
