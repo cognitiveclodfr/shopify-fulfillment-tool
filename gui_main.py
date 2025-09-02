@@ -7,10 +7,11 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from gui.main_window_pyside import MainWindow
 
+
 def main():
     """Main function to run the application."""
     # Set platform to offscreen for CI/testing environments
-    if 'pytest' in sys.modules or os.environ.get("CI"):
+    if "pytest" in sys.modules or os.environ.get("CI"):
         QApplication.setPlatform("offscreen")
         print("Running in offscreen mode.")
 

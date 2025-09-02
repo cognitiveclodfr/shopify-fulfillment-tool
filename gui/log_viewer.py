@@ -5,8 +5,10 @@ import logging
 from collections import deque
 import time
 
+
 class TreeViewLogHandler(logging.Handler):
     """A custom logging handler that sends records to a queue."""
+
     def __init__(self, queue):
         super().__init__()
         self.queue = queue
@@ -15,18 +17,19 @@ class TreeViewLogHandler(logging.Handler):
         # Add the actual record object to the queue
         self.queue.append(record)
 
+
 class LogViewer(ctk.CTkFrame):
     """A widget for displaying and filtering logs from the Python logging module."""
 
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
 
-        self.all_logs = deque(maxlen=1000) # Master list of all log records
+        self.all_logs = deque(maxlen=1000)  # Master list of all log records
         self.log_queue = deque(maxlen=1000)
         self.log_handler = TreeViewLogHandler(self.log_queue)
 
         # Configure the logger to use our handler
-        logger = logging.getLogger('ShopifyToolLogger')
+        logger = logging.getLogger("ShopifyToolLogger")
         logger.addHandler(self.log_handler)
 
         self.grid_rowconfigure(1, weight=1)
@@ -47,7 +50,7 @@ class LogViewer(ctk.CTkFrame):
             controls_frame,
             variable=self.level_filter_var,
             values=["ALL", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-            command=self._apply_filters
+            command=self._apply_filters,
         )
         self.level_filter_menu.grid(row=0, column=1, padx=5)
 
@@ -65,9 +68,9 @@ class LogViewer(ctk.CTkFrame):
         self.tree.heading("Level", text="Level")
         self.tree.heading("Message", text="Message")
 
-        self.tree.column("Time", width=160, anchor='w', stretch=tk.NO)
-        self.tree.column("Level", width=80, anchor='w', stretch=tk.NO)
-        self.tree.column("Message", width=600, anchor='w')
+        self.tree.column("Time", width=160, anchor="w", stretch=tk.NO)
+        self.tree.column("Level", width=80, anchor="w", stretch=tk.NO)
+        self.tree.column("Message", width=600, anchor="w")
 
         # --- Scrollbar ---
         vsb = ttk.Scrollbar(self, orient="vertical", command=self.tree.yview)
@@ -75,11 +78,11 @@ class LogViewer(ctk.CTkFrame):
         self.tree.configure(yscrollcommand=vsb.set)
 
         # --- Tags for color-coding ---
-        self.tree.tag_configure('DEBUG', foreground='gray')
-        self.tree.tag_configure('INFO', foreground='white')
-        self.tree.tag_configure('WARNING', foreground='#F97316') # Orange
-        self.tree.tag_configure('ERROR', foreground='#EF4444') # Red
-        self.tree.tag_configure('CRITICAL', background='#EF4444', foreground='white')
+        self.tree.tag_configure("DEBUG", foreground="gray")
+        self.tree.tag_configure("INFO", foreground="white")
+        self.tree.tag_configure("WARNING", foreground="#F97316")  # Orange
+        self.tree.tag_configure("ERROR", foreground="#EF4444")  # Red
+        self.tree.tag_configure("CRITICAL", background="#EF4444", foreground="white")
 
     def _process_log_queue(self):
         """Periodically check the queue for new log messages and add them to the master list."""
@@ -102,7 +105,7 @@ class LogViewer(ctk.CTkFrame):
         search_match = (search_term == "") or (search_term in message)
 
         if level_match and search_match:
-            log_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(record.created))
+            log_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(record.created))
             self.tree.insert("", 0, values=(log_time, level, record.getMessage()), tags=(level,))
 
     def _apply_filters(self, *args):

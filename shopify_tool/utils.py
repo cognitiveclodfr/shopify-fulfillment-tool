@@ -2,7 +2,8 @@ import os
 import sys
 import logging
 
-logger = logging.getLogger('ShopifyToolLogger')
+logger = logging.getLogger("ShopifyToolLogger")
+
 
 def get_persistent_data_path(filename):
     """
@@ -10,7 +11,7 @@ def get_persistent_data_path(filename):
     Creates the folder if it doesn't exist.
     """
     # Use APPDATA for Windows, or user's home directory for other platforms
-    app_data_path = os.getenv('APPDATA') or os.path.expanduser("~")
+    app_data_path = os.getenv("APPDATA") or os.path.expanduser("~")
     app_dir = os.path.join(app_data_path, "ShopifyFulfillmentTool")
 
     try:
@@ -22,8 +23,9 @@ def get_persistent_data_path(filename):
 
     return os.path.join(app_dir, filename)
 
+
 def resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
+    """Get absolute path to resource, works for dev and for PyInstaller"""
     try:
         base_path = sys._MEIPASS
     except Exception:

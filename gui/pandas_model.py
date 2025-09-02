@@ -2,16 +2,18 @@ from PySide6.QtCore import QAbstractTableModel, Qt, QModelIndex
 from PySide6.QtGui import QColor
 import pandas as pd
 
+
 class PandasModel(QAbstractTableModel):
     """A model to interface a pandas DataFrame with a QTableView."""
+
     def __init__(self, dataframe: pd.DataFrame, parent=None):
         super().__init__(parent)
         self._dataframe = dataframe
         # Define colors for styling
         self.colors = {
-            "Fulfillable": QColor("#2E8B57"), # SeaGreen
-            "NotFulfillable": QColor("#B22222"), # FireBrick
-            "SystemNoteHighlight": QColor("#DAA520") # GoldenRod
+            "Fulfillable": QColor("#2E8B57"),  # SeaGreen
+            "NotFulfillable": QColor("#B22222"),  # FireBrick
+            "SystemNoteHighlight": QColor("#DAA520"),  # GoldenRod
         }
 
     def rowCount(self, parent=QModelIndex()) -> int:
@@ -42,18 +44,22 @@ class PandasModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.BackgroundRole:
             try:
                 # Check for system note first, as it takes precedence
-                if 'System_note' in self._dataframe.columns and pd.notna(self._dataframe.iloc[row]['System_note']) and self._dataframe.iloc[row]['System_note']:
+                if (
+                    "System_note" in self._dataframe.columns
+                    and pd.notna(self._dataframe.iloc[row]["System_note"])
+                    and self._dataframe.iloc[row]["System_note"]
+                ):
                     return self.colors["SystemNoteHighlight"]
 
                 # Otherwise, color based on fulfillment status
-                if 'Order_Fulfillment_Status' in self._dataframe.columns:
-                    status = self._dataframe.iloc[row]['Order_Fulfillment_Status']
+                if "Order_Fulfillment_Status" in self._dataframe.columns:
+                    status = self._dataframe.iloc[row]["Order_Fulfillment_Status"]
                     if status == "Fulfillable":
                         return self.colors["Fulfillable"]
                     elif status == "Not Fulfillable":
                         return self.colors["NotFulfillable"]
             except (IndexError, KeyError):
-                return None # In case columns are missing
+                return None  # In case columns are missing
 
         return None
 

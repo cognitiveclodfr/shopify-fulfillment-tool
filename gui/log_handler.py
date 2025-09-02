@@ -1,10 +1,12 @@
 import logging
 from PySide6.QtCore import QObject, Signal
 
+
 class QtLogHandler(logging.Handler, QObject):
     """
     A custom logging handler that emits a Qt signal for each log record.
     """
+
     # Define a signal that will carry the log message
     log_message_received = Signal(str)
 

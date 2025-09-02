@@ -7,9 +7,10 @@ from .rules import RuleEngine
 from .utils import get_persistent_data_path
 import numpy as np
 
-SYSTEM_TAGS = ['Repeat', 'Priority', 'Error']
+SYSTEM_TAGS = ["Repeat", "Priority", "Error"]
 
-logger = logging.getLogger('ShopifyToolLogger')
+logger = logging.getLogger("ShopifyToolLogger")
+
 
 def _normalize_unc_path(path):
     """Normalizes a path, which is especially useful for UNC paths on Windows."""
@@ -18,15 +19,16 @@ def _normalize_unc_path(path):
     # os.path.normpath will convert / to \ on Windows and handle other inconsistencies
     return os.path.normpath(path)
 
+
 def _validate_dataframes(orders_df, stock_df, config):
     """
     Validates that the required columns are present in the dataframes.
     Returns a list of error messages. If the list is empty, validation passed.
     """
     errors = []
-    column_mappings = config.get('column_mappings', {})
-    required_orders_cols = column_mappings.get('orders_required', [])
-    required_stock_cols = column_mappings.get('stock_required', [])
+    column_mappings = config.get("column_mappings", {})
+    required_orders_cols = column_mappings.get("orders_required", [])
+    required_stock_cols = column_mappings.get("stock_required", [])
 
     for col in required_orders_cols:
         if col not in orders_df.columns:
@@ -38,7 +40,8 @@ def _validate_dataframes(orders_df, stock_df, config):
 
     return errors
 
-def validate_csv_headers(file_path, required_columns, delimiter=','):
+
+def validate_csv_headers(file_path, required_columns, delimiter=","):
     """
     Quickly validates if a CSV file contains the required column headers.
 
@@ -65,10 +68,14 @@ def validate_csv_headers(file_path, required_columns, delimiter=','):
             return False, missing_columns
 
     except FileNotFoundError:
-        return False, ["File not found."]
+        return False, [f"File not found at path: {file_path}"]
+    except pd.errors.ParserError as e:
+        logger.error(f"Parser error validating CSV '{file_path}': {e}", exc_info=True)
+        return False, [f"Could not parse file. It might be corrupt or not a valid CSV. Error: {e}"]
     except Exception as e:
-        logger.error(f"Error validating CSV headers for {file_path}: {e}")
+        logger.error(f"Unexpected error validating CSV headers for {file_path}: {e}", exc_info=True)
         return False, [f"An unexpected error occurred: {e}"]
+
 
 def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_delimiter, config):
     """
@@ -109,9 +116,9 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
         orders_df = pd.read_csv(orders_file_path)
     else:
         # For testing: allow passing DataFrames directly
-        stock_df = config.get('test_stock_df')
-        orders_df = config.get('test_orders_df')
-        history_df = config.get('test_history_df', pd.DataFrame({'Order_Number': []}))
+        stock_df = config.get("test_stock_df")
+        orders_df = config.get("test_orders_df")
+        history_df = config.get("test_history_df", pd.DataFrame({"Order_Number": []}))
     logger.info("Data loaded successfully.")
 
     # Validate dataframes
@@ -122,34 +129,28 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
         return False, error_message, None, None
 
     # Use a persistent path for the history file to avoid permission errors on network drives
-    history_path = get_persistent_data_path('fulfillment_history.csv')
+    history_path = get_persistent_data_path("fulfillment_history.csv")
     if stock_file_path is not None and orders_file_path is not None:
         try:
             history_df = pd.read_csv(history_path)
             logger.info(f"Loaded {len(history_df)} records from fulfillment history.")
         except FileNotFoundError:
-            history_df = pd.DataFrame(columns=['Order_Number', 'Execution_Date'])
+            history_df = pd.DataFrame(columns=["Order_Number", "Execution_Date"])
             logger.warning("Fulfillment history not found. A new one will be created.")
 
     # 2. Run analysis (computation only)
     logger.info("Step 2: Running fulfillment simulation...")
-    final_df, summary_present_df, summary_missing_df, stats = analysis.run_analysis(
-        stock_df, orders_df, history_df
-    )
+    final_df, summary_present_df, summary_missing_df, stats = analysis.run_analysis(stock_df, orders_df, history_df)
     logger.info("Analysis computation complete.")
 
     # 2.5. Add stock alerts based on config
-    low_stock_threshold = config.get('settings', {}).get('low_stock_threshold')
-    if low_stock_threshold is not None and 'Final_Stock' in final_df.columns:
+    low_stock_threshold = config.get("settings", {}).get("low_stock_threshold")
+    if low_stock_threshold is not None and "Final_Stock" in final_df.columns:
         logger.info(f"Applying low stock threshold: < {low_stock_threshold}")
-        final_df['Stock_Alert'] = np.where(
-            final_df['Final_Stock'] < low_stock_threshold,
-            'Low Stock',
-            ''
-        )
+        final_df["Stock_Alert"] = np.where(final_df["Final_Stock"] < low_stock_threshold, "Low Stock", "")
 
     # 2.6. Apply the new rule engine
-    rules = config.get('rules', [])
+    rules = config.get("rules", [])
     if rules:
         logger.info("Applying new rule engine...")
         engine = RuleEngine(rules)
@@ -163,40 +164,45 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
             os.makedirs(output_dir_path)
         output_file_path = os.path.join(output_dir_path, "fulfillment_analysis.xlsx")
 
-        with pd.ExcelWriter(output_file_path, engine='xlsxwriter') as writer:
-            final_df.to_excel(writer, sheet_name='fulfillment_analysis', index=False)
-            summary_present_df.to_excel(writer, sheet_name='Summary_Present', index=False)
-            summary_missing_df.to_excel(writer, sheet_name='Summary_Missing', index=False)
-            
-            workbook = writer.book
-            report_info_sheet = workbook.add_worksheet('Report Info')
-            generation_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            report_info_sheet.write('A1', 'Report Generated On:')
-            report_info_sheet.write('B1', generation_time)
-            report_info_sheet.set_column('A:B', 25)
+        with pd.ExcelWriter(output_file_path, engine="xlsxwriter") as writer:
+            final_df.to_excel(writer, sheet_name="fulfillment_analysis", index=False)
+            summary_present_df.to_excel(writer, sheet_name="Summary_Present", index=False)
+            summary_missing_df.to_excel(writer, sheet_name="Summary_Missing", index=False)
 
-            worksheet = writer.sheets['fulfillment_analysis']
-            highlight_format = workbook.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
+            workbook = writer.book
+            report_info_sheet = workbook.add_worksheet("Report Info")
+            generation_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            report_info_sheet.write("A1", "Report Generated On:")
+            report_info_sheet.write("B1", generation_time)
+            report_info_sheet.set_column("A:B", 25)
+
+            worksheet = writer.sheets["fulfillment_analysis"]
+            highlight_format = workbook.add_format({"bg_color": "#FFC7CE", "font_color": "#9C0006"})
             for idx, col in enumerate(final_df):
                 max_len = max((final_df[col].astype(str).map(len).max(), len(str(col)))) + 2
                 worksheet.set_column(idx, idx, max_len)
-            for row_num, status in enumerate(final_df['Order_Fulfillment_Status']):
-                if status == 'Not Fulfillable':
+            for row_num, status in enumerate(final_df["Order_Fulfillment_Status"]):
+                if status == "Not Fulfillable":
                     worksheet.set_row(row_num + 1, None, highlight_format)
         logger.info(f"Excel report saved to '{output_file_path}'")
 
         # 4. Update history
         logger.info("Step 4: Updating fulfillment history...")
-        newly_fulfilled = final_df[final_df['Order_Fulfillment_Status'] == 'Fulfillable'][['Order_Number']].drop_duplicates()
+        newly_fulfilled = final_df[final_df["Order_Fulfillment_Status"] == "Fulfillable"][
+            ["Order_Number"]
+        ].drop_duplicates()
         if not newly_fulfilled.empty:
-            newly_fulfilled['Execution_Date'] = datetime.now().strftime("%Y-%m-%d")
-            updated_history = pd.concat([history_df, newly_fulfilled]).drop_duplicates(subset=['Order_Number'], keep='last')
+            newly_fulfilled["Execution_Date"] = datetime.now().strftime("%Y-%m-%d")
+            updated_history = pd.concat([history_df, newly_fulfilled]).drop_duplicates(
+                subset=["Order_Number"], keep="last"
+            )
             updated_history.to_csv(history_path, index=False)
             logger.info(f"Updated fulfillment history with {len(newly_fulfilled)} new records.")
         return True, output_file_path, final_df, stats
     else:
         # For tests, just return the DataFrames
         return True, None, final_df, stats
+
 
 def create_packing_list_report(analysis_df, report_config):
     """
@@ -212,24 +218,36 @@ def create_packing_list_report(analysis_df, report_config):
             - bool: True for success, False for failure.
             - str: A message indicating the result.
     """
-    report_name = report_config.get('name', 'Unknown Report')
+    report_name = report_config.get("name", "Unknown Report")
     try:
-        output_file = report_config['output_filename']
+        output_file = report_config["output_filename"]
         os.makedirs(os.path.dirname(output_file), exist_ok=True)
-        
+
         packing_lists.create_packing_list(
             analysis_df=analysis_df,
             output_file=output_file,
             report_name=report_name,
-            filters=report_config.get('filters'),
-            exclude_skus=report_config.get('exclude_skus') # Pass the new parameter
+            filters=report_config.get("filters"),
+            exclude_skus=report_config.get("exclude_skus"),  # Pass the new parameter
         )
         success_message = f"Report '{report_name}' created successfully at '{output_file}'."
         return True, success_message
+    except KeyError as e:
+        error_message = f"Configuration error for report '{report_name}': Missing key {e}."
+        logger.error(f"Config error for packing list '{report_name}': {e}", exc_info=True)
+        return False, error_message
+    except PermissionError:
+        output_filename = report_config.get('output_filename', 'N/A')
+        error_message = f"Permission denied. Could not write report to '{output_filename}'."
+        logger.error(
+            f"Permission error creating packing list '{report_name}' at '{output_filename}'", exc_info=True
+        )
+        return False, error_message
     except Exception as e:
         error_message = f"Failed to create report '{report_name}'. See logs/app_errors.log for details."
         logger.error(f"Error creating packing list '{report_name}': {e}", exc_info=True)
         return False, error_message
+
 
 def create_stock_export_report(analysis_df, report_config, templates_path, output_path):
     """
@@ -246,15 +264,15 @@ def create_stock_export_report(analysis_df, report_config, templates_path, outpu
             - bool: True for success, False for failure.
             - str: A message indicating the result.
     """
-    report_name = report_config.get('name', 'Unknown Report')
+    report_name = report_config.get("name", "Unknown Report")
     try:
-        template_name = report_config['template']
+        template_name = report_config["template"]
         template_full_path = os.path.join(templates_path, template_name)
-        
+
         datestamp = datetime.now().strftime("%Y-%m-%d")
         name, ext = os.path.splitext(template_name)
         output_filename = f"{name}_{datestamp}{ext}"
-        
+
         os.makedirs(output_path, exist_ok=True)
         output_full_path = os.path.join(output_path, output_filename)
 
@@ -263,10 +281,22 @@ def create_stock_export_report(analysis_df, report_config, templates_path, outpu
             template_file=template_full_path,
             output_file=output_full_path,
             report_name=report_name,
-            filters=report_config.get('filters')
+            filters=report_config.get("filters"),
         )
         success_message = f"Stock export '{report_name}' created successfully at '{output_full_path}'."
         return True, success_message
+    except KeyError as e:
+        error_message = f"Configuration error for stock export '{report_name}': Missing key {e}."
+        logger.error(f"Config error for stock export '{report_name}': {e}", exc_info=True)
+        return False, error_message
+    except FileNotFoundError:
+        error_message = f"Template file not found for report '{report_name}'."
+        logger.error(f"Template not found for stock export '{report_name}'", exc_info=True)
+        return False, error_message
+    except PermissionError:
+        error_message = "Permission denied. Could not write stock export."
+        logger.error(f"Permission error creating stock export '{report_name}'", exc_info=True)
+        return False, error_message
     except Exception as e:
         error_message = f"Failed to create stock export '{report_name}'. See logs/app_errors.log for details."
         logger.error(f"Error creating stock export '{report_name}': {e}", exc_info=True)
