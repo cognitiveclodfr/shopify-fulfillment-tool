@@ -4,47 +4,45 @@ import pandas as pd
 import xlwt
 import pytest
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from shopify_tool import core
 
 
 def make_stock_df():
-    return pd.DataFrame({
-        'Артикул': ['02-FACE-1001', 'SKU-2'],
-        'Име': ['Mask A', 'Item 2'],
-        'Наличност': [5, 10]
-    })
+    return pd.DataFrame({"Артикул": ["02-FACE-1001", "SKU-2"], "Име": ["Mask A", "Item 2"], "Наличност": [5, 10]})
 
 
 def make_orders_df():
-    return pd.DataFrame({
-        'Name': ['1001', '1002'],
-        'Lineitem sku': ['02-FACE-1001', 'SKU-2'],
-        'Lineitem quantity': [2, 1],
-        'Shipping Method': ['dhl', 'dpd'],
-        'Shipping Country': ['BG', 'BG'],
-        'Tags': ['', ''],
-        'Notes': ['', '']
-    })
+    return pd.DataFrame(
+        {
+            "Name": ["1001", "1002"],
+            "Lineitem sku": ["02-FACE-1001", "SKU-2"],
+            "Lineitem quantity": [2, 1],
+            "Shipping Method": ["dhl", "dpd"],
+            "Shipping Country": ["BG", "BG"],
+            "Tags": ["", ""],
+            "Notes": ["", ""],
+        }
+    )
 
 
 def test_run_full_analysis_basic():
     stock_df = make_stock_df()
     orders_df = make_orders_df()
     # set threshold to 4 so final stock 3 will be flagged as Low Stock
-    config = {'settings': {'low_stock_threshold': 4}, 'tagging_rules': {}}
+    config = {"settings": {"low_stock_threshold": 4}, "tagging_rules": {}}
     # inject test dfs
-    config['test_stock_df'] = stock_df
-    config['test_orders_df'] = orders_df
-    config['test_history_df'] = pd.DataFrame({'Order_Number': []})
+    config["test_stock_df"] = stock_df
+    config["test_orders_df"] = orders_df
+    config["test_history_df"] = pd.DataFrame({"Order_Number": []})
 
-    success, output_path, final_df, stats = core.run_full_analysis(None, None, None, ';', config)
+    success, output_path, final_df, stats = core.run_full_analysis(None, None, None, ";", config)
     assert success
     assert output_path is None
-    assert 'Final_Stock' in final_df.columns
+    assert "Final_Stock" in final_df.columns
     # low stock alert should appear for SKU with final stock below threshold
-    mask_rows = final_df[final_df['SKU'] == '02-FACE-1001']
-    assert any(mask_rows['Stock_Alert'].str.contains('Low Stock'))
+    mask_rows = final_df[final_df["SKU"] == "02-FACE-1001"]
+    assert any(mask_rows["Stock_Alert"].str.contains("Low Stock"))
 
 
 def test_full_run_with_file_io(tmp_path):
@@ -60,7 +58,7 @@ def test_full_run_with_file_io(tmp_path):
     # 2. Create mock input files
     stock_df = make_stock_df()
     stock_file = tmp_path / "stock.csv"
-    stock_df.to_csv(stock_file, index=False, sep=';')
+    stock_df.to_csv(stock_file, index=False, sep=";")
 
     orders_df = make_orders_df()
     orders_file = tmp_path / "orders.csv"
@@ -70,37 +68,21 @@ def test_full_run_with_file_io(tmp_path):
     dummy_template_path = templates_dir / "dummy_template.xls"
     # Create a valid, empty .xls file that xlrd can read
     workbook = xlwt.Workbook()
-    workbook.add_sheet('Sheet1')
+    workbook.add_sheet("Sheet1")
     workbook.save(dummy_template_path)
-
 
     # 3. Create a config dictionary pointing to our temp files
     config = {
         "settings": {"stock_csv_delimiter": ";", "low_stock_threshold": 4},
-        "column_mappings": {
-            "orders_required": ["Name", "Lineitem sku"],
-            "stock_required": ["Артикул", "Наличност"]
-        },
+        "column_mappings": {"orders_required": ["Name", "Lineitem sku"], "stock_required": ["Артикул", "Наличност"]},
         "rules": [],
-        "packing_lists": [
-            {
-                "name": "Test Packing List",
-                "output_filename": "test_packing_list.xlsx",
-                "filters": []
-            }
-        ],
-        "stock_exports": [
-            {
-                "name": "Test Stock Export",
-                "template": "dummy_template.xls",
-                "filters": []
-            }
-        ]
+        "packing_lists": [{"name": "Test Packing List", "output_filename": "test_packing_list.xlsx", "filters": []}],
+        "stock_exports": [{"name": "Test Stock Export", "template": "dummy_template.xls", "filters": []}],
     }
 
     # 4. Run the main analysis function
     success, analysis_path, final_df, stats = core.run_full_analysis(
-        str(stock_file), str(orders_file), str(output_dir), ';', config
+        str(stock_file), str(orders_file), str(output_dir), ";", config
     )
 
     # 5. Assert main analysis results
@@ -110,18 +92,18 @@ def test_full_run_with_file_io(tmp_path):
 
     # 6. Run report generation functions
     # Packing List
-    packing_report_config = config['packing_lists'][0]
+    packing_report_config = config["packing_lists"][0]
     # IMPORTANT: core.py now expects the output_filename to be a full path
     # But settings window saves a relative path. The logic in gui_main combines them.
     # We must replicate that logic here for the test.
-    packing_report_config['output_filename'] = str(output_dir / packing_report_config['output_filename'])
+    packing_report_config["output_filename"] = str(output_dir / packing_report_config["output_filename"])
 
     pack_success, pack_msg = core.create_packing_list_report(final_df, packing_report_config)
     assert pack_success
-    assert os.path.exists(packing_report_config['output_filename'])
+    assert os.path.exists(packing_report_config["output_filename"])
 
     # Stock Export
-    export_report_config = config['stock_exports'][0]
+    export_report_config = config["stock_exports"][0]
     export_success, export_msg = core.create_stock_export_report(
         final_df, export_report_config, str(templates_dir), str(output_dir)
     )
@@ -133,19 +115,22 @@ def test_full_run_with_file_io(tmp_path):
 
 def test_normalize_unc_path():
     """Tests the UNC path normalization."""
-    if os.name == 'nt':
+    if os.name == "nt":
         assert core._normalize_unc_path("//server/share/file.txt") == "\\\\server\\share\\file.txt"
     else:
         assert core._normalize_unc_path("/server/share/file.txt") == "/server/share/file.txt"
     assert core._normalize_unc_path(None) is None
 
 
-@pytest.mark.parametrize("file_content,required_cols,delimiter,expected_result,expected_missing", [
-    ("h1,h2,h3", ["h1", "h2"], ',', True, []),
-    ("h1;h2;h3", ["h1", "h3"], ';', True, []),
-    ("h1,h2,h3", ["h1", "h4"], ',', False, ["h4"]),
-    ("h1,h2,h3", [], ',', True, []),
-])
+@pytest.mark.parametrize(
+    "file_content,required_cols,delimiter,expected_result,expected_missing",
+    [
+        ("h1,h2,h3", ["h1", "h2"], ",", True, []),
+        ("h1;h2;h3", ["h1", "h3"], ";", True, []),
+        ("h1,h2,h3", ["h1", "h4"], ",", False, ["h4"]),
+        ("h1,h2,h3", [], ",", True, []),
+    ],
+)
 def test_validate_csv_headers(tmp_path, file_content, required_cols, delimiter, expected_result, expected_missing):
     """Tests the CSV header validation function with various inputs."""
     p = tmp_path / "test.csv"
@@ -157,7 +142,7 @@ def test_validate_csv_headers(tmp_path, file_content, required_cols, delimiter, 
 
 def test_validate_csv_headers_file_not_found():
     """Tests header validation when the file does not exist."""
-    is_valid, missing = core.validate_csv_headers("non_existent_file.csv", ["any"], ',')
+    is_valid, missing = core.validate_csv_headers("non_existent_file.csv", ["any"], ",")
     assert not is_valid
     assert "File not found" in missing[0]
 
@@ -165,7 +150,7 @@ def test_validate_csv_headers_file_not_found():
 def test_validate_csv_headers_generic_exception(mocker):
     """Tests header validation when pandas raises an unexpected exception."""
     mocker.patch("pandas.read_csv", side_effect=Exception("Unexpected error"))
-    is_valid, missing = core.validate_csv_headers("any_file.csv", ["any"], ',')
+    is_valid, missing = core.validate_csv_headers("any_file.csv", ["any"], ",")
     assert not is_valid
     assert "An unexpected error occurred" in missing[0]
 
@@ -182,10 +167,9 @@ def test_run_full_analysis_validation_fails(mocker):
     """Tests run_full_analysis when dataframe validation fails."""
     # This mocks the internal _validate_dataframes function to return errors
     mocker.patch("shopify_tool.core._validate_dataframes", return_value=["Missing column 'X'"])
-    success, msg, _, _ = core.run_full_analysis(None, None, None, ';', {
-        'test_stock_df': pd.DataFrame(),
-        'test_orders_df': pd.DataFrame()
-    })
+    success, msg, _, _ = core.run_full_analysis(
+        None, None, None, ";", {"test_stock_df": pd.DataFrame(), "test_orders_df": pd.DataFrame()}
+    )
     assert not success
     assert "Missing column 'X'" in msg
 
@@ -212,13 +196,10 @@ def test_create_stock_export_report_exception(mocker):
 
 def test_validate_dataframes_with_missing_columns():
     """Tests the internal _validate_dataframes function."""
-    orders_df = pd.DataFrame({'Name': [1]})
-    stock_df = pd.DataFrame({'Артикул': ['A']})
+    orders_df = pd.DataFrame({"Name": [1]})
+    stock_df = pd.DataFrame({"Артикул": ["A"]})
     config = {
-        'column_mappings': {
-            'orders_required': ['Name', 'Lineitem sku'],
-            'stock_required': ['Артикул', 'Наличност']
-        }
+        "column_mappings": {"orders_required": ["Name", "Lineitem sku"], "stock_required": ["Артикул", "Наличност"]}
     }
     errors = core._validate_dataframes(orders_df, stock_df, config)
     assert len(errors) == 2
@@ -230,11 +211,11 @@ def test_run_full_analysis_with_rules(mocker):
     """Tests that the rule engine is applied during a full analysis."""
     mock_engine_apply = mocker.patch("shopify_tool.rules.RuleEngine.apply")
     config = {
-        'test_stock_df': make_stock_df(),
-        'test_orders_df': make_orders_df(),
-        'rules': [{"if": [], "then": []}] # Presence of rules triggers the engine
+        "test_stock_df": make_stock_df(),
+        "test_orders_df": make_orders_df(),
+        "rules": [{"if": [], "then": []}],  # Presence of rules triggers the engine
     }
-    core.run_full_analysis(None, None, None, ';', config)
+    core.run_full_analysis(None, None, None, ";", config)
     mock_engine_apply.assert_called_once()
 
 
@@ -246,8 +227,9 @@ def test_run_full_analysis_updates_history(tmp_path, mocker):
     stock_file = tmp_path / "stock.csv"
     stock_file.write_text("Артикул;Име;Наличност\nSKU-1;Item 1;10")
     orders_file = tmp_path / "orders.csv"
-    orders_file.write_text("Name,Lineitem sku,Lineitem quantity,Shipping Method,Shipping Country,Tags,Notes\n"
-                           "1001,SKU-1,1,dhl,BG,,\n")
+    orders_file.write_text(
+        "Name,Lineitem sku,Lineitem quantity,Shipping Method,Shipping Country,Tags,Notes\n1001,SKU-1,1,dhl,BG,,\n"
+    )
     history_file = tmp_path / "history.csv"
     history_file.write_text("Order_Number,Execution_Date\n999,2023-01-01")
 
@@ -255,19 +237,16 @@ def test_run_full_analysis_updates_history(tmp_path, mocker):
 
     config = {
         "settings": {"stock_csv_delimiter": ";"},
-        "column_mappings": {
-            "orders_required": ["Name", "Lineitem sku"],
-            "stock_required": ["Артикул", "Наличност"]
-        },
-        "rules": []
+        "column_mappings": {"orders_required": ["Name", "Lineitem sku"], "stock_required": ["Артикул", "Наличност"]},
+        "rules": [],
     }
 
     # Run analysis
-    core.run_full_analysis(str(stock_file), str(orders_file), str(output_dir), ';', config)
+    core.run_full_analysis(str(stock_file), str(orders_file), str(output_dir), ";", config)
 
     # Check that history file was updated
     history_df = pd.read_csv(history_file)
-    assert "1001" in history_df['Order_Number'].astype(str).values
+    assert "1001" in history_df["Order_Number"].astype(str).values
     assert len(history_df) == 2
 
 

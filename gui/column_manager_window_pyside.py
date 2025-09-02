@@ -1,8 +1,15 @@
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QPushButton,
-    QDialogButtonBox, QLabel, QAbstractItemView
+    QDialog,
+    QVBoxLayout,
+    QHBoxLayout,
+    QListWidget,
+    QPushButton,
+    QDialogButtonBox,
+    QLabel,
+    QAbstractItemView,
+    QWidget,
 )
-from PySide6.QtCore import Qt
+
 
 class ColumnManagerWindow(QDialog):
     def __init__(self, all_columns, visible_columns, parent=None):
@@ -97,7 +104,9 @@ class ColumnManagerWindow(QDialog):
                 item.setSelected(True)
 
     def move_down(self):
-        selected_rows = sorted([self.visible_list.row(item) for item in self.visible_list.selectedItems()], reverse=True)
+        selected_rows = sorted(
+            [self.visible_list.row(item) for item in self.visible_list.selectedItems()], reverse=True
+        )
         for row in selected_rows:
             if row < self.visible_list.count() - 1:
                 item = self.visible_list.takeItem(row)

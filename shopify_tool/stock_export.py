@@ -1,10 +1,10 @@
-import pandas as pd
 import os
 import xlrd
 import logging
 from xlutils.copy import copy
 
-logger = logging.getLogger('ShopifyToolLogger')
+logger = logging.getLogger("ShopifyToolLogger")
+
 
 def create_stock_export(analysis_df, template_file, output_file, report_name="Stock Export", filters=None):
     """
@@ -46,13 +46,13 @@ def create_stock_export(analysis_df, template_file, output_file, report_name="St
             return
 
         # Summarize quantities by SKU
-        sku_summary = filtered_items.groupby('SKU')['Quantity'].sum().astype(int).reset_index()
-        sku_summary = sku_summary[sku_summary['Quantity'] > 0]
-        
+        sku_summary = filtered_items.groupby("SKU")["Quantity"].sum().astype(int).reset_index()
+        sku_summary = sku_summary[sku_summary["Quantity"] > 0]
+
         if sku_summary.empty:
             logger.warning(f"Report '{report_name}': No items with a positive quantity to export.")
             return
-            
+
         logger.info(f"Found {len(sku_summary)} unique SKUs to write for report '{report_name}'.")
 
         try:
@@ -68,10 +68,10 @@ def create_stock_export(analysis_df, template_file, output_file, report_name="St
 
         # Write the summarized data into the sheet
         for index, row in sku_summary.iterrows():
-            sheet_to_write.write(index + 1, 0, row['SKU'])
-            sheet_to_write.write(index + 1, 1, row['Quantity'])
-            sheet_to_write.write(index + 1, 2, 'бройка') # This is a specific required value.
-            
+            sheet_to_write.write(index + 1, 0, row["SKU"])
+            sheet_to_write.write(index + 1, 1, row["Quantity"])
+            sheet_to_write.write(index + 1, 2, "бройка")  # This is a specific required value.
+
         wb.save(output_file)
         logger.info(f"Stock export '{report_name}' created successfully.")
 

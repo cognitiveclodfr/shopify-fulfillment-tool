@@ -1,10 +1,10 @@
 import sys
 import os
 import pandas as pd
-import pytest
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from shopify_tool import packing_lists
+
 
 def test_exclude_skus_from_packing_list(tmp_path):
     """
@@ -12,15 +12,17 @@ def test_exclude_skus_from_packing_list(tmp_path):
     "virtual" SKUs from the final report.
     """
     # 1. Create a sample analysis DataFrame
-    analysis_df = pd.DataFrame({
-        'Order_Fulfillment_Status': ['Fulfillable', 'Fulfillable', 'Fulfillable', 'Fulfillable'],
-        'Order_Number':             ['1001', '1001', '1002', '1003'],
-        'SKU':                      ['ABC-123', 'Shipping protection', 'XYZ-456', '07'],
-        'Product_Name':             ['Real Product A', 'Virtual Item', 'Real Product B', 'Another Virtual Item'],
-        'Quantity':                 [1, 1, 1, 1],
-        'Shipping_Provider':        ['DHL', 'DHL', 'DPD', 'PostOne'],
-        'Destination_Country':      ['BG', 'BG', 'US', 'DE']
-    })
+    analysis_df = pd.DataFrame(
+        {
+            "Order_Fulfillment_Status": ["Fulfillable", "Fulfillable", "Fulfillable", "Fulfillable"],
+            "Order_Number": ["1001", "1001", "1002", "1003"],
+            "SKU": ["ABC-123", "Shipping protection", "XYZ-456", "07"],
+            "Product_Name": ["Real Product A", "Virtual Item", "Real Product B", "Another Virtual Item"],
+            "Quantity": [1, 1, 1, 1],
+            "Shipping_Provider": ["DHL", "DHL", "DPD", "PostOne"],
+            "Destination_Country": ["BG", "BG", "US", "DE"],
+        }
+    )
 
     # 2. Define the SKUs to exclude and the output path
     skus_to_exclude = ["07", "Shipping protection"]
@@ -32,7 +34,7 @@ def test_exclude_skus_from_packing_list(tmp_path):
         output_file=str(output_file),
         report_name="TestExcludeSKUs",
         filters=None,
-        exclude_skus=skus_to_exclude
+        exclude_skus=skus_to_exclude,
     )
 
     # 4. Assert that the output file was created
@@ -43,7 +45,7 @@ def test_exclude_skus_from_packing_list(tmp_path):
 
     # Get the list of SKUs present in the output report
     # The column name in the output is 'SKU' as defined in columns_for_print
-    output_skus = result_df['SKU'].tolist()
+    output_skus = result_df["SKU"].tolist()
 
     # 6. Assert that the excluded SKUs are NOT in the output
     assert "Shipping protection" not in output_skus

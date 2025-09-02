@@ -1,6 +1,7 @@
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QPushButton
 from PySide6.QtCore import Signal, Slot
 
+
 class ReportSelectionDialog(QDialog):
     # Signal that emits the selected report configuration when a button is clicked
     reportSelected = Signal(dict)
@@ -18,7 +19,7 @@ class ReportSelectionDialog(QDialog):
             pass
         else:
             for report_config in reports_config:
-                button = QPushButton(report_config.get('name', 'Unknown Report'))
+                button = QPushButton(report_config.get("name", "Unknown Report"))
                 # Use a lambda to capture the specific config for this button
                 button.clicked.connect(lambda checked=False, rc=report_config: self.on_report_button_clicked(rc))
                 layout.addWidget(button)
