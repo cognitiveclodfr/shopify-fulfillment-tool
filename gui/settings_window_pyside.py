@@ -91,33 +91,37 @@ class SettingsWindow(QDialog):
 
     def add_rule_widget(self, config=None):
         logging.info("Attempting to add new rule widget to settings UI.")
-        if config is None: config = {"name": "New Rule", "match": "ALL", "conditions": [], "actions": []}
-        rule_box = QGroupBox(); rule_layout = QVBoxLayout(rule_box)
-        header_layout = QHBoxLayout(); header_layout.addWidget(QLabel("Rule Name:"))
-        name_edit = QLineEdit(config.get('name', '')); header_layout.addWidget(name_edit)
-        delete_rule_btn = QPushButton("Delete Rule"); header_layout.addWidget(delete_rule_btn)
-        rule_layout.addLayout(header_layout)
-        conditions_box = QGroupBox("IF"); conditions_layout = QVBoxLayout(conditions_box)
-        match_layout = QHBoxLayout(); match_layout.addWidget(QLabel("Execute actions if"))
-        match_combo = QComboBox(); match_combo.addItems(["ALL", "ANY"]); match_combo.setCurrentText(config.get('match', 'ALL'))
-        match_layout.addWidget(match_combo); match_layout.addWidget(QLabel("of the following conditions are met:")); match_layout.addStretch()
-        conditions_layout.addLayout(match_layout)
-        conditions_rows_layout = QVBoxLayout(); conditions_layout.addLayout(conditions_rows_layout)
-        add_condition_btn = QPushButton("Add Condition"); conditions_layout.addWidget(add_condition_btn, 0, Qt.AlignLeft)
-        rule_layout.addWidget(conditions_box)
-        actions_box = QGroupBox("THEN perform these actions:"); actions_layout = QVBoxLayout(actions_box)
-        actions_rows_layout = QVBoxLayout(); actions_layout.addLayout(actions_rows_layout)
-        add_action_btn = QPushButton("Add Action"); actions_layout.addWidget(add_action_btn, 0, Qt.AlignLeft)
-        rule_layout.addWidget(actions_box)
-        self.rules_layout.addWidget(rule_box)
-        widget_refs = {'group_box': rule_box, 'name_edit': name_edit, 'match_combo': match_combo, 'conditions_layout': conditions_rows_layout, 'actions_layout': actions_rows_layout, 'conditions': [], 'actions': []}
-        self.rule_widgets.append(widget_refs)
-        add_condition_btn.clicked.connect(lambda: self.add_condition_row(widget_refs))
-        add_action_btn.clicked.connect(lambda: self.add_action_row(widget_refs))
-        delete_rule_btn.clicked.connect(lambda: self._delete_widget_from_list(widget_refs, self.rule_widgets))
-        for cond_config in config.get('conditions', []): self.add_condition_row(widget_refs, cond_config)
-        for act_config in config.get('actions', []): self.add_action_row(widget_refs, act_config)
-        logging.info("New rule widget added successfully.")
+        try:
+            if config is None: config = {"name": "New Rule", "match": "ALL", "conditions": [], "actions": []}
+            rule_box = QGroupBox(); rule_layout = QVBoxLayout(rule_box)
+            header_layout = QHBoxLayout(); header_layout.addWidget(QLabel("Rule Name:"))
+            name_edit = QLineEdit(config.get('name', '')); header_layout.addWidget(name_edit)
+            delete_rule_btn = QPushButton("Delete Rule"); header_layout.addWidget(delete_rule_btn)
+            rule_layout.addLayout(header_layout)
+            conditions_box = QGroupBox("IF"); conditions_layout = QVBoxLayout(conditions_box)
+            match_layout = QHBoxLayout(); match_layout.addWidget(QLabel("Execute actions if"))
+            match_combo = QComboBox(); match_combo.addItems(["ALL", "ANY"]); match_combo.setCurrentText(config.get('match', 'ALL'))
+            match_layout.addWidget(match_combo); match_layout.addWidget(QLabel("of the following conditions are met:")); match_layout.addStretch()
+            conditions_layout.addLayout(match_layout)
+            conditions_rows_layout = QVBoxLayout(); conditions_layout.addLayout(conditions_rows_layout)
+            add_condition_btn = QPushButton("Add Condition"); conditions_layout.addWidget(add_condition_btn, 0, Qt.AlignLeft)
+            rule_layout.addWidget(conditions_box)
+            actions_box = QGroupBox("THEN perform these actions:"); actions_layout = QVBoxLayout(actions_box)
+            actions_rows_layout = QVBoxLayout(); actions_layout.addLayout(actions_rows_layout)
+            add_action_btn = QPushButton("Add Action"); actions_layout.addWidget(add_action_btn, 0, Qt.AlignLeft)
+            rule_layout.addWidget(actions_box)
+            self.rules_layout.addWidget(rule_box)
+            widget_refs = {'group_box': rule_box, 'name_edit': name_edit, 'match_combo': match_combo, 'conditions_layout': conditions_rows_layout, 'actions_layout': actions_rows_layout, 'conditions': [], 'actions': []}
+            self.rule_widgets.append(widget_refs)
+            add_condition_btn.clicked.connect(lambda: self.add_condition_row(widget_refs))
+            add_action_btn.clicked.connect(lambda: self.add_action_row(widget_refs))
+            delete_rule_btn.clicked.connect(lambda: self._delete_widget_from_list(widget_refs, self.rule_widgets))
+            for cond_config in config.get('conditions', []): self.add_condition_row(widget_refs, cond_config)
+            for act_config in config.get('actions', []): self.add_action_row(widget_refs, act_config)
+            logging.info("New rule widget added successfully.")
+        except Exception as e:
+            logging.error(f"Failed to add rule widget: {e}", exc_info=True)
+
 
     def add_condition_row(self, rule_widget_refs, config=None):
         if config is None: config = {}
@@ -154,26 +158,29 @@ class SettingsWindow(QDialog):
 
     def add_packing_list_widget(self, config=None):
         logging.info("Attempting to add new packing list widget to settings UI.")
-        if config is None: config = {"name": "", "output_filename": "", "filters": [], "exclude_skus": []}
-        pl_box = QGroupBox(); pl_layout = QVBoxLayout(pl_box)
-        form_layout = QFormLayout()
-        name_edit = QLineEdit(config.get('name', '')); filename_edit = QLineEdit(config.get('output_filename', ''))
-        exclude_skus_edit = QLineEdit(",".join(config.get('exclude_skus', [])))
-        form_layout.addRow("Name:", name_edit); form_layout.addRow("Output Filename:", filename_edit)
-        form_layout.addRow("Exclude SKUs (comma-separated):", exclude_skus_edit)
-        pl_layout.addLayout(form_layout)
-        filters_box = QGroupBox("Filters"); filters_layout = QVBoxLayout(filters_box)
-        filters_rows_layout = QVBoxLayout(); filters_layout.addLayout(filters_rows_layout)
-        add_filter_btn = QPushButton("Add Filter"); filters_layout.addWidget(add_filter_btn, 0, Qt.AlignLeft)
-        pl_layout.addWidget(filters_box)
-        delete_btn = QPushButton("Delete Packing List"); pl_layout.addWidget(delete_btn, 0, Qt.AlignRight)
-        self.packing_lists_layout.addWidget(pl_box)
-        widget_refs = {'group_box': pl_box, 'name': name_edit, 'filename': filename_edit, 'exclude_skus': exclude_skus_edit, 'filters_layout': filters_rows_layout, 'filters': []}
-        self.packing_list_widgets.append(widget_refs)
-        add_filter_btn.clicked.connect(lambda: self.add_filter_row(widget_refs, self.FILTERABLE_COLUMNS, self.FILTER_OPERATORS))
-        delete_btn.clicked.connect(lambda: self._delete_widget_from_list(widget_refs, self.packing_list_widgets))
-        for f_config in config.get('filters', []): self.add_filter_row(widget_refs, self.FILTERABLE_COLUMNS, self.FILTER_OPERATORS, f_config)
-        logging.info("New packing list widget added successfully.")
+        try:
+            if config is None: config = {"name": "", "output_filename": "", "filters": [], "exclude_skus": []}
+            pl_box = QGroupBox(); pl_layout = QVBoxLayout(pl_box)
+            form_layout = QFormLayout()
+            name_edit = QLineEdit(config.get('name', '')); filename_edit = QLineEdit(config.get('output_filename', ''))
+            exclude_skus_edit = QLineEdit(",".join(config.get('exclude_skus', [])))
+            form_layout.addRow("Name:", name_edit); form_layout.addRow("Output Filename:", filename_edit)
+            form_layout.addRow("Exclude SKUs (comma-separated):", exclude_skus_edit)
+            pl_layout.addLayout(form_layout)
+            filters_box = QGroupBox("Filters"); filters_layout = QVBoxLayout(filters_box)
+            filters_rows_layout = QVBoxLayout(); filters_layout.addLayout(filters_rows_layout)
+            add_filter_btn = QPushButton("Add Filter"); filters_layout.addWidget(add_filter_btn, 0, Qt.AlignLeft)
+            pl_layout.addWidget(filters_box)
+            delete_btn = QPushButton("Delete Packing List"); pl_layout.addWidget(delete_btn, 0, Qt.AlignRight)
+            self.packing_lists_layout.addWidget(pl_box)
+            widget_refs = {'group_box': pl_box, 'name': name_edit, 'filename': filename_edit, 'exclude_skus': exclude_skus_edit, 'filters_layout': filters_rows_layout, 'filters': []}
+            self.packing_list_widgets.append(widget_refs)
+            add_filter_btn.clicked.connect(lambda: self.add_filter_row(widget_refs, self.FILTERABLE_COLUMNS, self.FILTER_OPERATORS))
+            delete_btn.clicked.connect(lambda: self._delete_widget_from_list(widget_refs, self.packing_list_widgets))
+            for f_config in config.get('filters', []): self.add_filter_row(widget_refs, self.FILTERABLE_COLUMNS, self.FILTER_OPERATORS, f_config)
+            logging.info("New packing list widget added successfully.")
+        except Exception as e:
+            logging.error(f"Failed to add packing list widget: {e}", exc_info=True)
 
     def add_filter_row(self, parent_widget_refs, fields, operators, config=None):
         if config is None: config = {}
@@ -201,24 +208,27 @@ class SettingsWindow(QDialog):
 
     def add_stock_export_widget(self, config=None):
         logging.info("Attempting to add new stock export widget to settings UI.")
-        if config is None: config = {"name": "", "template": "", "filters": []}
-        se_box = QGroupBox(); se_layout = QVBoxLayout(se_box)
-        form_layout = QFormLayout()
-        name_edit = QLineEdit(config.get('name', '')); template_edit = QLineEdit(config.get('template', ''))
-        form_layout.addRow("Name:", name_edit); form_layout.addRow("Template Filename:", template_edit)
-        se_layout.addLayout(form_layout)
-        filters_box = QGroupBox("Filters"); filters_layout = QVBoxLayout(filters_box)
-        filters_rows_layout = QVBoxLayout(); filters_layout.addLayout(filters_rows_layout)
-        add_filter_btn = QPushButton("Add Filter"); filters_layout.addWidget(add_filter_btn, 0, Qt.AlignLeft)
-        se_layout.addWidget(filters_box)
-        delete_btn = QPushButton("Delete Stock Export"); se_layout.addWidget(delete_btn, 0, Qt.AlignRight)
-        self.stock_exports_layout.addWidget(se_box)
-        widget_refs = {'group_box': se_box, 'name': name_edit, 'template': template_edit, 'filters_layout': filters_rows_layout, 'filters': []}
-        self.stock_export_widgets.append(widget_refs)
-        add_filter_btn.clicked.connect(lambda: self.add_filter_row(widget_refs, self.FILTERABLE_COLUMNS, self.FILTER_OPERATORS))
-        delete_btn.clicked.connect(lambda: self._delete_widget_from_list(widget_refs, self.stock_export_widgets))
-        for f_config in config.get('filters', []): self.add_filter_row(widget_refs, self.FILTERABLE_COLUMNS, self.FILTER_OPERATORS, f_config)
-        logging.info("New stock export widget added successfully.")
+        try:
+            if config is None: config = {"name": "", "template": "", "filters": []}
+            se_box = QGroupBox(); se_layout = QVBoxLayout(se_box)
+            form_layout = QFormLayout()
+            name_edit = QLineEdit(config.get('name', '')); template_edit = QLineEdit(config.get('template', ''))
+            form_layout.addRow("Name:", name_edit); form_layout.addRow("Template Filename:", template_edit)
+            se_layout.addLayout(form_layout)
+            filters_box = QGroupBox("Filters"); filters_layout = QVBoxLayout(filters_box)
+            filters_rows_layout = QVBoxLayout(); filters_layout.addLayout(filters_rows_layout)
+            add_filter_btn = QPushButton("Add Filter"); filters_layout.addWidget(add_filter_btn, 0, Qt.AlignLeft)
+            se_layout.addWidget(filters_box)
+            delete_btn = QPushButton("Delete Stock Export"); se_layout.addWidget(delete_btn, 0, Qt.AlignRight)
+            self.stock_exports_layout.addWidget(se_box)
+            widget_refs = {'group_box': se_box, 'name': name_edit, 'template': template_edit, 'filters_layout': filters_rows_layout, 'filters': []}
+            self.stock_export_widgets.append(widget_refs)
+            add_filter_btn.clicked.connect(lambda: self.add_filter_row(widget_refs, self.FILTERABLE_COLUMNS, self.FILTER_OPERATORS))
+            delete_btn.clicked.connect(lambda: self._delete_widget_from_list(widget_refs, self.stock_export_widgets))
+            for f_config in config.get('filters', []): self.add_filter_row(widget_refs, self.FILTERABLE_COLUMNS, self.FILTER_OPERATORS, f_config)
+            logging.info("New stock export widget added successfully.")
+        except Exception as e:
+            logging.error(f"Failed to add stock export widget: {e}", exc_info=True)
 
     def save_settings(self):
         try:

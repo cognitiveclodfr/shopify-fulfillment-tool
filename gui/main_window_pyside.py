@@ -215,6 +215,14 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "No Data", "Please run an analysis to load data first.")
             return
         dialog = ColumnManagerWindow(self.all_columns, self.visible_columns, self)
+
+        # Move dialog to the center of the parent window
+        parent_geometry = self.geometry()
+        dialog_geometry = dialog.frameGeometry()
+        center_point = parent_geometry.center()
+        dialog_geometry.moveCenter(center_point)
+        dialog.move(dialog_geometry.topLeft())
+
         if dialog.exec():
             self.visible_columns = dialog.new_visible_columns
             self.update_data_viewer()
@@ -225,6 +233,11 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "No Data", "Please run an analysis before using the Report Builder.")
             return
         dialog = ReportBuilderWindow(self.analysis_results_df, self)
+        parent_geometry = self.geometry()
+        dialog_geometry = dialog.frameGeometry()
+        center_point = parent_geometry.center()
+        dialog_geometry.moveCenter(center_point)
+        dialog.move(dialog_geometry.topLeft())
         dialog.exec()
 
     def open_report_selection_dialog(self, report_type):
@@ -232,7 +245,16 @@ class MainWindow(QMainWindow):
         if not reports_config:
             QMessageBox.information(self, "No Reports", f"No {report_type.replace('_', ' ')} configured in settings.")
             return
-        dialog = ReportSelectionDialog(report_type, reports_config, self); dialog.reportSelected.connect(lambda rc: self.run_report_logic(report_type, rc)); dialog.exec()
+        dialog = ReportSelectionDialog(report_type, reports_config, self)
+        dialog.reportSelected.connect(lambda rc: self.run_report_logic(report_type, rc))
+
+        parent_geometry = self.geometry()
+        dialog_geometry = dialog.frameGeometry()
+        center_point = parent_geometry.center()
+        dialog_geometry.moveCenter(center_point)
+        dialog.move(dialog_geometry.topLeft())
+
+        dialog.exec()
 
     def run_report_logic(self, report_type, report_config):
         if not self.session_path:
