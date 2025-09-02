@@ -346,7 +346,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", result)
 
     def open_settings_window(self):
-        dialog = SettingsWindow(self, self.config)
+        dialog = SettingsWindow(self, self.config, self.analysis_results_df)
         if dialog.exec():
             self.config = dialog.config_data
             try:

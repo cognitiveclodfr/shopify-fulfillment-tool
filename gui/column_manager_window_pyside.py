@@ -1,63 +1,73 @@
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QPushButton,
-    QDialogButtonBox, QListWidgetItem, QAbstractItemView
+    QDialogButtonBox, QLabel, QAbstractItemView
 )
+from PySide6.QtCore import Qt
 
 class ColumnManagerWindow(QDialog):
     def __init__(self, all_columns, visible_columns, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Manage Columns")
         self.setMinimumSize(500, 400)
+        self.setModal(True)
 
-        # The final list of visible columns in the desired order
+        # This will hold the final list of visible columns in the correct order
         self.new_visible_columns = visible_columns[:]
-
         hidden_columns = sorted([c for c in all_columns if c not in visible_columns])
 
         # --- Main Layout ---
-        main_layout = QHBoxLayout(self)
+        main_layout = QVBoxLayout(self)
 
-        # --- Visible Columns List ---
-        visible_layout = QVBoxLayout()
+        # --- Lists Layout ---
+        lists_layout = QHBoxLayout()
+
+        # Visible Columns
+        visible_widget = QWidget()
+        visible_v_layout = QVBoxLayout(visible_widget)
+        visible_v_layout.addWidget(QLabel("Visible Columns"))
         self.visible_list = QListWidget()
         self.visible_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.visible_list.addItems(visible_columns)
-        visible_layout.addWidget(self.visible_list)
-        main_layout.addLayout(visible_layout)
+        visible_v_layout.addWidget(self.visible_list)
+        lists_layout.addWidget(visible_widget)
 
-        # --- Control Buttons ---
+        # Control Buttons
         controls_layout = QVBoxLayout()
-        add_btn = QPushButton(" < ")
-        remove_btn = QPushButton(" > ")
-        move_up_btn = QPushButton("Up")
-        move_down_btn = QPushButton("Down")
         controls_layout.addStretch()
+        add_btn = QPushButton(" < ")
+        add_btn.setToolTip("Show selected column(s)")
+        remove_btn = QPushButton(" > ")
+        remove_btn.setToolTip("Hide selected column(s)")
         controls_layout.addWidget(add_btn)
         controls_layout.addWidget(remove_btn)
-        controls_layout.addSpacing(20)
-        controls_layout.addWidget(move_up_btn)
-        controls_layout.addWidget(move_down_btn)
         controls_layout.addStretch()
-        main_layout.addLayout(controls_layout)
+        lists_layout.addLayout(controls_layout)
 
-        # --- Hidden Columns List ---
-        hidden_layout = QVBoxLayout()
+        # Hidden Columns
+        hidden_widget = QWidget()
+        hidden_v_layout = QVBoxLayout(hidden_widget)
+        hidden_v_layout.addWidget(QLabel("Hidden Columns"))
         self.hidden_list = QListWidget()
         self.hidden_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.hidden_list.addItems(hidden_columns)
-        hidden_layout.addWidget(self.hidden_list)
-        main_layout.addLayout(hidden_layout)
+        hidden_v_layout.addWidget(self.hidden_list)
+        lists_layout.addWidget(hidden_widget)
 
-        # Add main layout to a container widget for the dialog button box
-        container_widget = QWidget()
-        container_widget.setLayout(main_layout)
+        # Reordering buttons for the visible list
+        reorder_layout = QVBoxLayout()
+        reorder_layout.addStretch()
+        move_up_btn = QPushButton("Up")
+        move_down_btn = QPushButton("Down")
+        reorder_layout.addWidget(move_up_btn)
+        reorder_layout.addWidget(move_down_btn)
+        reorder_layout.addStretch()
+        lists_layout.addLayout(reorder_layout)
 
-        dialog_layout = QVBoxLayout(self)
-        dialog_layout.addWidget(container_widget)
+        main_layout.addLayout(lists_layout)
 
         # --- Dialog Buttons ---
         button_box = QDialogButtonBox(QDialogButtonBox.Apply | QDialogButtonBox.Cancel)
-        dialog_layout.addWidget(button_box)
+        main_layout.addWidget(button_box)
 
         # --- Connect Signals ---
         add_btn.clicked.connect(self.move_to_visible)
@@ -76,26 +86,23 @@ class ColumnManagerWindow(QDialog):
         for item in self.visible_list.selectedItems():
             self.visible_list.takeItem(self.visible_list.row(item))
             self.hidden_list.addItem(item)
-        # Keep the hidden list sorted for easier browsing
         self.hidden_list.sortItems()
 
     def move_up(self):
-        for item in self.visible_list.selectedItems():
-            row = self.visible_list.row(item)
+        selected_rows = sorted([self.visible_list.row(item) for item in self.visible_list.selectedItems()])
+        for row in selected_rows:
             if row > 0:
-                self.visible_list.takeItem(row)
+                item = self.visible_list.takeItem(row)
                 self.visible_list.insertItem(row - 1, item)
-                self.visible_list.setCurrentItem(item)
+                item.setSelected(True)
 
     def move_down(self):
-        for i in reversed(range(self.visible_list.count())):
-            item = self.visible_list.item(i)
-            if item.isSelected():
-                row = self.visible_list.row(item)
-                if row < self.visible_list.count() - 1:
-                    self.visible_list.takeItem(row)
-                    self.visible_list.insertItem(row + 1, item)
-                    self.visible_list.setCurrentItem(item)
+        selected_rows = sorted([self.visible_list.row(item) for item in self.visible_list.selectedItems()], reverse=True)
+        for row in selected_rows:
+            if row < self.visible_list.count() - 1:
+                item = self.visible_list.takeItem(row)
+                self.visible_list.insertItem(row + 1, item)
+                item.setSelected(True)
 
     def apply_changes(self):
         self.new_visible_columns = [self.visible_list.item(i).text() for i in range(self.visible_list.count())]
