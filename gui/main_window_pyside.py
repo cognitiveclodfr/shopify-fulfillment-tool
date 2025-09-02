@@ -210,6 +210,7 @@ class MainWindow(QMainWindow):
         self.is_syncing_selection = False
 
     def open_column_manager(self):
+        logging.info("Attempting to open Column Manager window...")
         if not self.all_columns:
             QMessageBox.warning(self, "No Data", "Please run an analysis to load data first.")
             return
@@ -217,6 +218,7 @@ class MainWindow(QMainWindow):
         if dialog.exec():
             self.visible_columns = dialog.new_visible_columns
             self.update_data_viewer()
+            logging.info("Column settings applied.")
 
     def open_report_builder_window(self):
         if self.analysis_results_df.empty:

@@ -1,5 +1,6 @@
 import sys
 import json
+import logging
 from PySide6.QtWidgets import (
     QApplication, QDialog, QDialogButtonBox, QVBoxLayout, QTabWidget,
     QWidget, QFormLayout, QLabel, QLineEdit, QMessageBox, QScrollArea,
@@ -89,6 +90,7 @@ class SettingsWindow(QDialog):
             self.add_rule_widget(rule_config)
 
     def add_rule_widget(self, config=None):
+        logging.info("Attempting to add new rule widget to settings UI.")
         if config is None: config = {"name": "New Rule", "match": "ALL", "conditions": [], "actions": []}
         rule_box = QGroupBox(); rule_layout = QVBoxLayout(rule_box)
         header_layout = QHBoxLayout(); header_layout.addWidget(QLabel("Rule Name:"))
@@ -115,6 +117,7 @@ class SettingsWindow(QDialog):
         delete_rule_btn.clicked.connect(lambda: self._delete_widget_from_list(widget_refs, self.rule_widgets))
         for cond_config in config.get('conditions', []): self.add_condition_row(widget_refs, cond_config)
         for act_config in config.get('actions', []): self.add_action_row(widget_refs, act_config)
+        logging.info("New rule widget added successfully.")
 
     def add_condition_row(self, rule_widget_refs, config=None):
         if config is None: config = {}
@@ -150,6 +153,7 @@ class SettingsWindow(QDialog):
             self.add_packing_list_widget(pl_config)
 
     def add_packing_list_widget(self, config=None):
+        logging.info("Attempting to add new packing list widget to settings UI.")
         if config is None: config = {"name": "", "output_filename": "", "filters": [], "exclude_skus": []}
         pl_box = QGroupBox(); pl_layout = QVBoxLayout(pl_box)
         form_layout = QFormLayout()
@@ -169,6 +173,7 @@ class SettingsWindow(QDialog):
         add_filter_btn.clicked.connect(lambda: self.add_filter_row(widget_refs, self.FILTERABLE_COLUMNS, self.FILTER_OPERATORS))
         delete_btn.clicked.connect(lambda: self._delete_widget_from_list(widget_refs, self.packing_list_widgets))
         for f_config in config.get('filters', []): self.add_filter_row(widget_refs, self.FILTERABLE_COLUMNS, self.FILTER_OPERATORS, f_config)
+        logging.info("New packing list widget added successfully.")
 
     def add_filter_row(self, parent_widget_refs, fields, operators, config=None):
         if config is None: config = {}
@@ -195,6 +200,7 @@ class SettingsWindow(QDialog):
             self.add_stock_export_widget(se_config)
 
     def add_stock_export_widget(self, config=None):
+        logging.info("Attempting to add new stock export widget to settings UI.")
         if config is None: config = {"name": "", "template": "", "filters": []}
         se_box = QGroupBox(); se_layout = QVBoxLayout(se_box)
         form_layout = QFormLayout()
@@ -212,6 +218,7 @@ class SettingsWindow(QDialog):
         add_filter_btn.clicked.connect(lambda: self.add_filter_row(widget_refs, self.FILTERABLE_COLUMNS, self.FILTER_OPERATORS))
         delete_btn.clicked.connect(lambda: self._delete_widget_from_list(widget_refs, self.stock_export_widgets))
         for f_config in config.get('filters', []): self.add_filter_row(widget_refs, self.FILTERABLE_COLUMNS, self.FILTER_OPERATORS, f_config)
+        logging.info("New stock export widget added successfully.")
 
     def save_settings(self):
         try:
