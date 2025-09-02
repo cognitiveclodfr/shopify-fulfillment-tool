@@ -223,6 +223,9 @@ class MainWindow(QMainWindow):
         dialog_geometry.moveCenter(center_point)
         dialog.move(dialog_geometry.topLeft())
 
+        dialog.raise_()
+        dialog.activateWindow()
+
         if dialog.exec():
             self.visible_columns = dialog.new_visible_columns
             self.update_data_viewer()
@@ -238,6 +241,8 @@ class MainWindow(QMainWindow):
         center_point = parent_geometry.center()
         dialog_geometry.moveCenter(center_point)
         dialog.move(dialog_geometry.topLeft())
+        dialog.raise_()
+        dialog.activateWindow()
         dialog.exec()
 
     def open_report_selection_dialog(self, report_type):
@@ -253,6 +258,8 @@ class MainWindow(QMainWindow):
         center_point = parent_geometry.center()
         dialog_geometry.moveCenter(center_point)
         dialog.move(dialog_geometry.topLeft())
+        dialog.raise_()
+        dialog.activateWindow()
 
         dialog.exec()
 

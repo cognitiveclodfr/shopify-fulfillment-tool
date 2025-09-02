@@ -92,7 +92,8 @@ class SettingsWindow(QDialog):
     def add_rule_widget(self, config=None):
         logging.info("Attempting to add new rule widget to settings UI.")
         try:
-            if config is None: config = {"name": "New Rule", "match": "ALL", "conditions": [], "actions": []}
+            if not isinstance(config, dict):
+                config = {"name": "New Rule", "match": "ALL", "conditions": [], "actions": []}
             rule_box = QGroupBox(); rule_layout = QVBoxLayout(rule_box)
             header_layout = QHBoxLayout(); header_layout.addWidget(QLabel("Rule Name:"))
             name_edit = QLineEdit(config.get('name', '')); header_layout.addWidget(name_edit)
@@ -124,7 +125,7 @@ class SettingsWindow(QDialog):
 
 
     def add_condition_row(self, rule_widget_refs, config=None):
-        if config is None: config = {}
+        if not isinstance(config, dict): config = {}
         row_layout = QHBoxLayout(); field_combo = QComboBox(); field_combo.addItems(self.CONDITION_FIELDS)
         op_combo = QComboBox(); op_combo.addItems(self.CONDITION_OPERATORS); value_edit = QLineEdit(); delete_btn = QPushButton("X")
         row_layout.addWidget(field_combo); row_layout.addWidget(op_combo); row_layout.addWidget(value_edit, 1); row_layout.addWidget(delete_btn)
@@ -135,7 +136,7 @@ class SettingsWindow(QDialog):
         delete_btn.clicked.connect(lambda: self._delete_row_from_list(row_widget, rule_widget_refs['conditions'], condition_refs))
 
     def add_action_row(self, rule_widget_refs, config=None):
-        if config is None: config = {}
+        if not isinstance(config, dict): config = {}
         row_layout = QHBoxLayout(); type_combo = QComboBox(); type_combo.addItems(self.ACTION_TYPES)
         value_edit = QLineEdit(); delete_btn = QPushButton("X")
         row_layout.addWidget(type_combo); row_layout.addWidget(value_edit, 1); row_layout.addWidget(delete_btn)
@@ -159,7 +160,7 @@ class SettingsWindow(QDialog):
     def add_packing_list_widget(self, config=None):
         logging.info("Attempting to add new packing list widget to settings UI.")
         try:
-            if config is None: config = {"name": "", "output_filename": "", "filters": [], "exclude_skus": []}
+            if not isinstance(config, dict): config = {"name": "", "output_filename": "", "filters": [], "exclude_skus": []}
             pl_box = QGroupBox(); pl_layout = QVBoxLayout(pl_box)
             form_layout = QFormLayout()
             name_edit = QLineEdit(config.get('name', '')); filename_edit = QLineEdit(config.get('output_filename', ''))
@@ -183,7 +184,7 @@ class SettingsWindow(QDialog):
             logging.error(f"Failed to add packing list widget: {e}", exc_info=True)
 
     def add_filter_row(self, parent_widget_refs, fields, operators, config=None):
-        if config is None: config = {}
+        if not isinstance(config, dict): config = {}
         row_layout = QHBoxLayout(); field_combo = QComboBox(); field_combo.addItems(fields)
         op_combo = QComboBox(); op_combo.addItems(operators); value_edit = QLineEdit(); delete_btn = QPushButton("X")
         row_layout.addWidget(field_combo); row_layout.addWidget(op_combo); row_layout.addWidget(value_edit, 1); row_layout.addWidget(delete_btn)
@@ -209,7 +210,7 @@ class SettingsWindow(QDialog):
     def add_stock_export_widget(self, config=None):
         logging.info("Attempting to add new stock export widget to settings UI.")
         try:
-            if config is None: config = {"name": "", "template": "", "filters": []}
+            if not isinstance(config, dict): config = {"name": "", "template": "", "filters": []}
             se_box = QGroupBox(); se_layout = QVBoxLayout(se_box)
             form_layout = QFormLayout()
             name_edit = QLineEdit(config.get('name', '')); template_edit = QLineEdit(config.get('template', ''))
