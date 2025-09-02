@@ -17,7 +17,7 @@ class FileHandler:
         filepath, _ = QFileDialog.getOpenFileName(self.mw, "Select Orders File", "", "CSV files (*.csv)")
         if filepath:
             self.mw.orders_file_path = filepath
-            self.mw.ui_manager.orders_file_path_label.setText(os.path.basename(filepath))
+            self.mw.orders_file_path_label.setText(os.path.basename(filepath))
             self.log.info(f"Orders file selected: {filepath}")
             self.validate_file("orders")
             self.check_files_ready()
@@ -27,7 +27,7 @@ class FileHandler:
         filepath, _ = QFileDialog.getOpenFileName(self.mw, "Select Stock File", "", "CSV files (*.csv)")
         if filepath:
             self.mw.stock_file_path = filepath
-            self.mw.ui_manager.stock_file_path_label.setText(os.path.basename(filepath))
+            self.mw.stock_file_path_label.setText(os.path.basename(filepath))
             self.log.info(f"Stock file selected: {filepath}")
             self.validate_file("stock")
             self.check_files_ready()
@@ -36,12 +36,12 @@ class FileHandler:
         """Validates that the selected CSV file contains the required headers."""
         if file_type == "orders":
             path = self.mw.orders_file_path
-            label = self.mw.ui_manager.orders_file_status_label
+            label = self.mw.orders_file_status_label
             required_cols = self.mw.config.get("column_mappings", {}).get("orders_required", [])
             delimiter = ","
         else:  # stock
             path = self.mw.stock_file_path
-            label = self.mw.ui_manager.stock_file_status_label
+            label = self.mw.stock_file_status_label
             required_cols = self.mw.config.get("column_mappings", {}).get("stock_required", [])
             delimiter = self.mw.config.get("settings", {}).get("stock_csv_delimiter", ";")
 
@@ -66,8 +66,8 @@ class FileHandler:
 
     def check_files_ready(self):
         """Checks if both files are selected and valid, enabling the analysis button."""
-        orders_ok = self.mw.orders_file_path and self.mw.ui_manager.orders_file_status_label.text() == "✓"
-        stock_ok = self.mw.stock_file_path and self.mw.ui_manager.stock_file_status_label.text() == "✓"
+        orders_ok = self.mw.orders_file_path and self.mw.orders_file_status_label.text() == "✓"
+        stock_ok = self.mw.stock_file_path and self.mw.stock_file_status_label.text() == "✓"
         if orders_ok and stock_ok:
             self.mw.run_analysis_button.setEnabled(True)
             self.log.info("Both files are validated and ready for analysis.")
