@@ -9,9 +9,12 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QWidget,
 )
+from PySide6.QtCore import Signal
 
 
 class ColumnManagerWindow(QDialog):
+    columns_updated = Signal(list)
+
     def __init__(self, all_columns, visible_columns, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Manage Columns")
@@ -115,4 +118,5 @@ class ColumnManagerWindow(QDialog):
 
     def apply_changes(self):
         self.new_visible_columns = [self.visible_list.item(i).text() for i in range(self.visible_list.count())]
+        self.columns_updated.emit(self.new_visible_columns)
         self.accept()
