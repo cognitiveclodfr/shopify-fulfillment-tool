@@ -7,4 +7,5 @@ pyinstaller-hooks-contrib==2025.8
 pytest==8.4.1
 pytest-qt
 pytest-mock==3.14.1
+pytest-cov
 ruff

@@ -112,8 +112,10 @@ class SettingsWindow(QDialog):
 
     def create_rules_tab(self):
         tab = QWidget()
+        tab.setObjectName("rules_tab")
         main_layout = QVBoxLayout(tab)
         add_rule_btn = QPushButton("Add New Rule")
+        add_rule_btn.setObjectName("add_rule_btn")
         add_rule_btn.clicked.connect(self.add_rule_widget)
         main_layout.addWidget(add_rule_btn, 0, Qt.AlignLeft)
         scroll_area = QScrollArea()
@@ -137,6 +139,7 @@ class SettingsWindow(QDialog):
         name_edit = QLineEdit(config.get("name", ""))
         header_layout.addWidget(name_edit)
         delete_rule_btn = QPushButton("Delete Rule")
+        delete_rule_btn.setObjectName("delete_rule_btn")
         header_layout.addWidget(delete_rule_btn)
         rule_layout.addLayout(header_layout)
         conditions_box = QGroupBox("IF")
