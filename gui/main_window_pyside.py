@@ -205,8 +205,19 @@ class MainWindow(QMainWindow):
     def update_table_columns(self, visible_columns):
         """Slot to update visible columns and refresh the table view."""
         self.visible_columns = visible_columns
-        self.ui_manager.update_results_table(self.analysis_results_df)
-        logging.info("Column visibility updated.")
+        logging.info(f"Updating visible columns to: {visible_columns}")
+
+        source_model = self.proxy_model.sourceModel()
+        if not source_model:
+            return
+
+        for i in range(source_model.columnCount()):
+            column_name = source_model.headerData(i, Qt.Horizontal)
+            if column_name in self.visible_columns:
+                self.tableView.setColumnHidden(i, False)
+            else:
+                self.tableView.setColumnHidden(i, True)
+        self.tableView.resizeColumnsToContents()
 
     def on_table_double_clicked(self, index: QModelIndex):
         """Handles double-click events on the tables."""
