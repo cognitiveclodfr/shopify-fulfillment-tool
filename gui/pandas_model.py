@@ -70,3 +70,18 @@ class PandasModel(QAbstractTableModel):
             if orientation == Qt.Orientation.Vertical:
                 return str(section + 1)
         return None
+
+    def get_column_index(self, column_name):
+        """Returns the index of a column by its name."""
+        try:
+            return self._dataframe.columns.get_loc(column_name)
+        except KeyError:
+            return None
+
+    def set_column_order_and_visibility(self, all_columns_in_order, visible_columns):
+        """Sets the new order and visibility of columns."""
+        self.beginResetModel()
+        existing_columns = [col for col in all_columns_in_order if col in self._dataframe.columns]
+        self._dataframe = self._dataframe[existing_columns]
+        self.hidden_columns = [col for col in all_columns_in_order if col not in visible_columns]
+        self.endResetModel()

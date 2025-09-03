@@ -1,7 +1,7 @@
 import logging
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, QLabel,
-    QTabWidget, QGroupBox, QTableView, QPlainTextEdit, QTableWidget
+    QTabWidget, QGroupBox, QTableView, QPlainTextEdit, QTableWidget, QLineEdit
 )
 from PySide6.QtCore import Qt
 from .pandas_model import PandasModel
@@ -161,14 +161,18 @@ class UIManager:
         top_bar_layout = QHBoxLayout()
         self.mw.column_manager_button = QPushButton("Manage Columns")
         self.mw.column_manager_button.setEnabled(False)
+        self.mw.filter_input = QLineEdit()
+        self.mw.filter_input.setPlaceholderText("Filter table...")
         top_bar_layout.addWidget(self.mw.column_manager_button)
-        top_bar_layout.addStretch()
+        top_bar_layout.addWidget(self.mw.filter_input)
+        top_bar_layout.setStretchFactor(self.mw.filter_input, 1)
         layout.addLayout(top_bar_layout)
 
         table_layout = QHBoxLayout()
         self.mw.frozen_table = QTableView()
         self.mw.frozen_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.mw.main_table = QTableView()
+        self.mw.main_table.setSortingEnabled(True)
         self.mw.main_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.mw.frozen_table.setFixedWidth(120)
         self.mw.frozen_table.horizontalHeader().setStretchLastSection(True)
@@ -230,8 +234,13 @@ class UIManager:
         main_df_cols = [col for col in self.mw.visible_columns if col in data_df.columns]
         main_df = data_df[main_df_cols].copy()
 
-        self.mw.frozen_table.setModel(PandasModel(frozen_df))
-        self.mw.main_table.setModel(PandasModel(main_df))
+        source_model = PandasModel(main_df)
+        self.mw.proxy_model.setSourceModel(source_model)
+
+        # The frozen table does not get sorted/filtered, so it uses the source model directly
+        frozen_model = PandasModel(frozen_df)
+        self.mw.frozen_table.setModel(frozen_model)
+        self.mw.main_table.setModel(self.mw.proxy_model)
 
         # Re-connect selection synchronization after setting new models
         try:
@@ -242,4 +251,5 @@ class UIManager:
         self.mw.main_table.selectionModel().selectionChanged.connect(self.mw.sync_selection_from_main)
         self.mw.frozen_table.selectionModel().selectionChanged.connect(self.mw.sync_selection_from_frozen)
 
+        self.mw.main_table.resizeColumnsToContents()
         self.mw.column_manager_button.setEnabled(True)
