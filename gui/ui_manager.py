@@ -234,11 +234,11 @@ class UIManager:
 
         # Reset columns if this is the first data load
         if not self.mw.all_columns:
-            self.mw.all_columns = [c for c in data_df.columns if c != "Order_Number"]
+            self.mw.all_columns = data_df.columns.tolist()
             self.mw.visible_columns = self.mw.all_columns[:]
 
-        main_df_cols = [col for col in self.mw.visible_columns if col in data_df.columns]
-        main_df = data_df[main_df_cols].copy()
+        # Use all columns from the dataframe, visibility is handled by the view
+        main_df = data_df.copy()
 
         source_model = PandasModel(main_df)
         self.mw.proxy_model.setSourceModel(source_model)
