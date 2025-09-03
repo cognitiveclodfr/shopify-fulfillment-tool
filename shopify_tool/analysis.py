@@ -27,8 +27,7 @@ def _generalize_shipping_method(method):
 
 
 def run_analysis(stock_df, orders_df, history_df):
-    """
-    Performs the core fulfillment analysis and simulation.
+    """Performs the core fulfillment analysis and simulation.
 
     This function takes cleaned stock, order, and history data, simulates the
     fulfillment process by prioritizing multi-item orders, and calculates
@@ -36,17 +35,23 @@ def run_analysis(stock_df, orders_df, history_df):
 
     Args:
         stock_df (pd.DataFrame): DataFrame with stock levels for each SKU.
-        orders_df (pd.DataFrame): DataFrame with all order line items.
-        history_df (pd.DataFrame): DataFrame with previously fulfilled order numbers.
+            Must contain columns 'Артикул' (SKU), 'Име' (Product_Name),
+            and 'Наличност' (Stock).
+        orders_df (pd.DataFrame): DataFrame with all order line items. Must
+            contain columns 'Name' (Order_Number), 'Lineitem sku' (SKU),
+            and 'Lineitem quantity'. Other columns like 'Shipping Method',
+            'Shipping Country', 'Tags', 'Notes', and 'Total' are optional.
+        history_df (pd.DataFrame): DataFrame with previously fulfilled order
+            numbers. Must contain an 'Order_Number' column.
 
     Returns:
         tuple: A tuple containing four elements:
-            - final_df (pd.DataFrame): The main DataFrame with detailed results
-              for every line item, including fulfillment status.
+            - final_df (pd.DataFrame): The main DataFrame with detailed
+              results for every line item, including fulfillment status.
             - summary_present_df (pd.DataFrame): A summary of all items that
-              will be fulfilled.
-            - summary_missing_df (pd.DataFrame): A summary of items that could
-              not be fulfilled due to lack of stock.
+              will be fulfilled, grouped by SKU.
+            - summary_missing_df (pd.DataFrame): A summary of items that
+              could not be fulfilled due to lack of stock.
             - stats (dict): A dictionary containing key statistics about the
               fulfillment analysis (e.g., total orders completed).
     """
@@ -188,14 +193,17 @@ def run_analysis(stock_df, orders_df, history_df):
 
 
 def recalculate_statistics(df):
-    """
-    Calculates statistics based on the provided analysis DataFrame.
+    """Calculates statistics based on the provided analysis DataFrame.
 
     Args:
-        df (pd.DataFrame): The main analysis DataFrame.
+        df (pd.DataFrame): The main analysis DataFrame, which is the output of
+            the `run_analysis` function. It must contain
+            'Order_Fulfillment_Status', 'Order_Number', 'Quantity',
+            'Shipping_Provider', and 'System_note' columns.
 
     Returns:
-        dict: A dictionary containing key statistics.
+        dict: A dictionary containing key statistics, such as total orders
+        completed, items to write off, and courier-specific data.
     """
     stats = {}
     completed_orders_df = df[df["Order_Fulfillment_Status"] == "Fulfillable"].copy()
@@ -225,18 +233,29 @@ def recalculate_statistics(df):
 
 
 def toggle_order_fulfillment(df, order_number):
-    """
-    Manually toggles the fulfillment status of an order and recalculates stock.
+    """Manually toggles the fulfillment status of an order and recalculates stock.
+
+    If an order is 'Fulfillable', it will be changed to 'Not Fulfillable',
+    and the stock that was allocated to it will be returned to the
+    'Final_Stock' count for the relevant SKUs.
+
+    If an order is 'Not Fulfillable', it will be force-fulfilled. This will
+    only succeed if there is enough 'Final_Stock' available for all items
+    in the order.
 
     Args:
-        df (pd.DataFrame): The main analysis DataFrame.
+        df (pd.DataFrame): The main analysis DataFrame. Must contain
+            'Order_Number', 'Order_Fulfillment_Status', 'SKU', 'Quantity',
+            and 'Final_Stock' columns.
         order_number (str): The order number to toggle.
 
     Returns:
         tuple: A tuple containing:
             - success (bool): True if the toggle was successful, False otherwise.
-            - error_message (str or None): An error message if success is False.
-            - updated_df (pd.DataFrame): The modified DataFrame.
+            - error_message (str or None): An error message if the toggle
+              failed (e.g., due to insufficient stock for force-fulfillment).
+            - updated_df (pd.DataFrame): The modified DataFrame with the
+              updated status and 'Final_Stock' counts.
     """
     if df is None or order_number not in df["Order_Number"].values:
         return False, "Order number not found.", df

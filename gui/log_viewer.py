@@ -7,21 +7,59 @@ import time
 
 
 class TreeViewLogHandler(logging.Handler):
-    """A custom logging handler that sends records to a queue."""
+    """A custom logging handler that sends log records to a queue.
+
+    This handler is used to safely pass log records from any thread to the
+    main GUI thread for processing and display.
+
+    Attributes:
+        queue (deque): A deque instance where log records are appended.
+    """
 
     def __init__(self, queue):
+        """Initializes the TreeViewLogHandler.
+
+        Args:
+            queue (deque): The queue to which log records will be sent.
+        """
         super().__init__()
         self.queue = queue
 
     def emit(self, record):
+        """Adds the log record to the queue.
+
+        This method is called automatically by the Python logging framework.
+
+        Args:
+            record (logging.LogRecord): The log record to be handled.
+        """
         # Add the actual record object to the queue
         self.queue.append(record)
 
 
 class LogViewer(ctk.CTkFrame):
-    """A widget for displaying and filtering logs from the Python logging module."""
+    """A CustomTkinter widget for displaying and filtering application logs.
+
+    This widget uses a `ttk.Treeview` to display log messages captured by the
+    standard Python logging module. It provides controls to filter logs by
+    level and to search for text within log messages.
+
+    Attributes:
+        all_logs (deque): A deque holding the master list of all received
+            log records, up to a maximum length.
+        log_queue (deque): A queue used by the `TreeViewLogHandler` to pass
+            log records from other threads to the GUI thread.
+        log_handler (TreeViewLogHandler): The custom logging handler instance.
+        tree (ttk.Treeview): The treeview widget used to display the logs.
+    """
 
     def __init__(self, master, **kwargs):
+        """Initializes the LogViewer widget.
+
+        Args:
+            master: The parent widget.
+            **kwargs: Keyword arguments passed to the ctk.CTkFrame constructor.
+        """
         super().__init__(master, **kwargs)
 
         self.all_logs = deque(maxlen=1000)  # Master list of all log records
