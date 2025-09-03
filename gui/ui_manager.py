@@ -4,6 +4,7 @@ from PySide6.QtWidgets import (
     QTabWidget, QGroupBox, QTableView, QPlainTextEdit, QTableWidget
 )
 from PySide6.QtCore import Qt
+from .pandas_model import PandasModel
 
 
 class UIManager:
@@ -213,3 +214,32 @@ class UIManager:
         self.mw.stock_export_button.setEnabled(not is_busy and is_data_loaded)
         self.mw.report_builder_button.setEnabled(not is_busy and is_data_loaded)
         self.log.debug(f"UI busy state set to: {is_busy}")
+
+    def update_results_table(self, data_df):
+        """Updates the table views with new data."""
+        self.log.info("Updating results table with new data.")
+        if data_df.empty:
+            self.log.warning("Received empty dataframe, clearing tables.")
+
+        # Reset columns if this is the first data load
+        if not self.mw.all_columns:
+            self.mw.all_columns = [c for c in data_df.columns if c != "Order_Number"]
+            self.mw.visible_columns = self.mw.all_columns[:]
+
+        frozen_df = data_df[["Order_Number"]].copy()
+        main_df_cols = [col for col in self.mw.visible_columns if col in data_df.columns]
+        main_df = data_df[main_df_cols].copy()
+
+        self.mw.frozen_table.setModel(PandasModel(frozen_df))
+        self.mw.main_table.setModel(PandasModel(main_df))
+
+        # Re-connect selection synchronization after setting new models
+        try:
+            self.mw.main_table.selectionModel().selectionChanged.disconnect()
+            self.mw.frozen_table.selectionModel().selectionChanged.disconnect()
+        except (RuntimeError, TypeError):
+            pass  # Ignore errors if signals were not connected
+        self.mw.main_table.selectionModel().selectionChanged.connect(self.mw.sync_selection_from_main)
+        self.mw.frozen_table.selectionModel().selectionChanged.connect(self.mw.sync_selection_from_frozen)
+
+        self.mw.column_manager_button.setEnabled(True)

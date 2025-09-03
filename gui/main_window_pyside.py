@@ -15,7 +15,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from shopify_tool.utils import get_persistent_data_path, resource_path
 from shopify_tool.analysis import recalculate_statistics
-from gui.pandas_model import PandasModel
 from gui.log_handler import QtLogHandler
 from gui.ui_manager import UIManager
 from gui.file_handler import FileHandler
@@ -117,37 +116,16 @@ class MainWindow(QMainWindow):
         self.main_table.verticalScrollBar().valueChanged.connect(self.frozen_table.verticalScrollBar().setValue)
         self.frozen_table.verticalScrollBar().valueChanged.connect(self.main_table.verticalScrollBar().setValue)
 
+        # Custom signals
+        self.actions_handler.analysis_finished.connect(self.ui_manager.update_results_table)
+        self.actions_handler.analysis_finished.connect(self._post_analysis_ui_update)
+
     def _post_analysis_ui_update(self):
         """Updates the UI after an analysis or session load."""
-        self.update_data_viewer()
         self.update_statistics_tab()
         self.ui_manager.set_ui_busy(False)
         self.column_manager_button.setEnabled(True)
         self.tab_view.setCurrentWidget(self.stats_tab)
-
-    def update_data_viewer(self):
-        """Updates the table views with the latest analysis data."""
-        if self.analysis_results_df.empty:
-            return
-        if not self.all_columns:
-            self.all_columns = [c for c in self.analysis_results_df.columns if c != "Order_Number"]
-            self.visible_columns = self.all_columns[:]
-
-        frozen_df = self.analysis_results_df[["Order_Number"]].copy()
-        main_df_cols = [col for col in self.visible_columns if col in self.analysis_results_df.columns]
-        main_df = self.analysis_results_df[main_df_cols].copy()
-
-        self.frozen_table.setModel(PandasModel(frozen_df))
-        self.main_table.setModel(PandasModel(main_df))
-
-        # Re-connect selection synchronization after setting new models
-        try:
-            self.main_table.selectionModel().selectionChanged.disconnect()
-            self.frozen_table.selectionModel().selectionChanged.disconnect()
-        except (RuntimeError, TypeError):
-            pass  # Ignore errors if signals were not connected
-        self.main_table.selectionModel().selectionChanged.connect(self.sync_selection_from_main)
-        self.frozen_table.selectionModel().selectionChanged.connect(self.sync_selection_from_frozen)
 
     def update_statistics_tab(self):
         """Populates the Statistics tab with the latest analysis data."""
