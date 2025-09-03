@@ -8,7 +8,7 @@ from datetime import datetime
 
 import pandas as pd
 from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QMenu, QTableWidgetItem, QLabel
-from PySide6.QtCore import QThreadPool, QPoint, QModelIndex
+from PySide6.QtCore import QThreadPool, QPoint, QModelIndex, QSortFilterProxyModel, Qt
 from PySide6.QtGui import QAction
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -44,6 +44,11 @@ class MainWindow(QMainWindow):
         self.all_columns = []
         self.visible_columns = []
         self.is_syncing_selection = False
+
+        # Models
+        self.proxy_model = QSortFilterProxyModel()
+        self.proxy_model.setFilterCaseSensitivity(Qt.CaseInsensitive)
+        self.proxy_model.setFilterKeyColumn(-1)  # Search across all columns
 
         # Initialize handlers
         self.ui_manager = UIManager(self)
@@ -120,6 +125,13 @@ class MainWindow(QMainWindow):
         # Custom signals
         self.actions_handler.data_changed.connect(self._update_all_views)
 
+        # Filter input
+        self.filter_input.textChanged.connect(self.filter_table)
+
+    def filter_table(self, text):
+        """Filters the table based on the input text."""
+        self.proxy_model.setFilterRegularExpression(text)
+
     def _update_all_views(self):
         """Central slot to refresh all UI components after data changes."""
         self.analysis_stats = recalculate_statistics(self.analysis_results_df)
@@ -181,9 +193,17 @@ class MainWindow(QMainWindow):
 
     def on_table_double_clicked(self, index: QModelIndex):
         """Handles double-click events on the tables."""
-        if index.isValid():
-            row = index.row()
-            order_number = self.analysis_results_df.iloc[row]["Order_Number"]
+        if not index.isValid():
+            return
+
+        source_index = self.proxy_model.mapToSource(index)
+        source_model = self.proxy_model.sourceModel()
+
+        # We need the original, unfiltered dataframe for this operation
+        order_number_col_idx = source_model.get_column_index("Order_Number")
+        order_number = source_model.index(source_index.row(), order_number_col_idx).data()
+
+        if order_number:
             self.actions_handler.toggle_fulfillment_status_for_order(order_number)
 
     def show_context_menu(self, pos: QPoint):
@@ -193,16 +213,28 @@ class MainWindow(QMainWindow):
         table = self.sender()
         index = table.indexAt(pos)
         if index.isValid():
-            row = index.row()
-            order_number = self.analysis_results_df.iloc[row]["Order_Number"]
-            sku = self.analysis_results_df.iloc[row]["SKU"]
+            source_index = self.proxy_model.mapToSource(index)
+            source_model = self.proxy_model.sourceModel()
+
+            order_col_idx = source_model.get_column_index("Order_Number")
+            sku_col_idx = source_model.get_column_index("SKU")
+
+            order_number = source_model.index(source_index.row(), order_col_idx).data()
+            sku = source_model.index(source_index.row(), sku_col_idx).data()
+
+            if not order_number:
+                return
+
             menu = QMenu()
             # Dynamically create actions and connect them
             actions = [
                 ("Change Status", lambda: self.actions_handler.toggle_fulfillment_status_for_order(order_number)),
                 ("Add Tag Manually...", lambda: self.actions_handler.add_tag_manually(order_number)),
                 ("---", None),
-                (f"Remove Item {sku} from Order", lambda: self.actions_handler.remove_item_from_order(row)),
+                (
+                    f"Remove Item {sku} from Order",
+                    lambda: self.actions_handler.remove_item_from_order(source_index.row()),
+                ),
                 (f"Remove Entire Order {order_number}", lambda: self.actions_handler.remove_entire_order(order_number)),
                 ("---", None),
                 ("Copy Order Number", lambda: QApplication.clipboard().setText(order_number)),
