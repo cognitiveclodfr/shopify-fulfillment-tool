@@ -113,23 +113,34 @@ class MainWindow(QMainWindow):
 
         # Table interactions
         self.column_manager_button.clicked.connect(self.open_column_manager)
-        self.frozen_table.customContextMenuRequested.connect(self.show_context_menu)
-        self.main_table.customContextMenuRequested.connect(self.show_context_menu)
-        self.frozen_table.doubleClicked.connect(self.on_table_double_clicked)
-        self.main_table.doubleClicked.connect(self.on_table_double_clicked)
-
-        # Scroll synchronization
-        self.main_table.verticalScrollBar().valueChanged.connect(self.frozen_table.verticalScrollBar().setValue)
-        self.frozen_table.verticalScrollBar().valueChanged.connect(self.main_table.verticalScrollBar().setValue)
+        self.tableView.customContextMenuRequested.connect(self.show_context_menu)
+        self.tableView.doubleClicked.connect(self.on_table_double_clicked)
 
         # Custom signals
         self.actions_handler.data_changed.connect(self._update_all_views)
 
         # Filter input
         self.filter_input.textChanged.connect(self.filter_table)
+        self.filter_column_selector.currentIndexChanged.connect(self.filter_table)
+        self.case_sensitive_checkbox.stateChanged.connect(self.filter_table)
+        self.clear_filter_button.clicked.connect(self.clear_filter)
 
-    def filter_table(self, text):
+    def clear_filter(self):
+        """Clears the filter input."""
+        self.filter_input.clear()
+
+    def filter_table(self):
         """Filters the table based on the input text."""
+        text = self.filter_input.text()
+        column_index = self.filter_column_selector.currentIndex()
+
+        # First item is "All Columns", so filter should be -1
+        filter_column = column_index - 1
+
+        case_sensitivity = Qt.CaseSensitive if self.case_sensitive_checkbox.isChecked() else Qt.CaseInsensitive
+
+        self.proxy_model.setFilterKeyColumn(filter_column)
+        self.proxy_model.setFilterCaseSensitivity(case_sensitivity)
         self.proxy_model.setFilterRegularExpression(text)
 
     def _update_all_views(self):
@@ -137,6 +148,12 @@ class MainWindow(QMainWindow):
         self.analysis_stats = recalculate_statistics(self.analysis_results_df)
         self.ui_manager.update_results_table(self.analysis_results_df)
         self.update_statistics_tab()
+
+        # Populate filter dropdown
+        self.filter_column_selector.clear()
+        self.filter_column_selector.addItem("All Columns")
+        if not self.analysis_results_df.empty:
+            self.filter_column_selector.addItems(self.all_columns)
         self.ui_manager.set_ui_busy(False)
         # The column manager button is enabled within update_results_table
 
@@ -248,24 +265,6 @@ class MainWindow(QMainWindow):
                     action.triggered.connect(func)
                     menu.addAction(action)
             menu.exec(table.viewport().mapToGlobal(pos))
-
-    def sync_selection_from_main(self, selected, deselected):
-        """Synchronizes selection from the main table to the frozen table."""
-        if self.is_syncing_selection:
-            return
-        self.is_syncing_selection = True
-        self.frozen_table.selectionModel().select(selected, self.main_table.selectionModel().Select)
-        self.frozen_table.selectionModel().select(deselected, self.main_table.selectionModel().Deselect)
-        self.is_syncing_selection = False
-
-    def sync_selection_from_frozen(self, selected, deselected):
-        """Synchronizes selection from the frozen table to the main table."""
-        if self.is_syncing_selection:
-            return
-        self.is_syncing_selection = True
-        self.main_table.selectionModel().select(selected, self.frozen_table.selectionModel().Select)
-        self.main_table.selectionModel().select(deselected, self.frozen_table.selectionModel().Deselect)
-        self.is_syncing_selection = False
 
     def closeEvent(self, event):
         """Saves the session data on application close."""
