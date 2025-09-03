@@ -19,7 +19,6 @@ from gui.log_handler import QtLogHandler
 from gui.ui_manager import UIManager
 from gui.file_handler import FileHandler
 from gui.actions_handler import ActionsHandler
-from gui.column_manager_window_pyside import ColumnManagerWindow
 
 
 class MainWindow(QMainWindow):
@@ -112,7 +111,6 @@ class MainWindow(QMainWindow):
         )
 
         # Table interactions
-        self.column_manager_button.clicked.connect(self.open_column_manager)
         self.tableView.customContextMenuRequested.connect(self.show_context_menu)
         self.tableView.doubleClicked.connect(self.on_table_double_clicked)
 
@@ -192,32 +190,6 @@ class MainWindow(QMainWindow):
         self.activity_log_table.setItem(0, 0, QTableWidgetItem(current_time))
         self.activity_log_table.setItem(0, 1, QTableWidgetItem(op_type))
         self.activity_log_table.setItem(0, 2, QTableWidgetItem(desc))
-
-    def open_column_manager(self):
-        """Opens the column manager dialog."""
-        if self.analysis_results_df.empty:
-            QMessageBox.warning(self, "No Data", "Please run an analysis to load data first.")
-            return
-        dialog = ColumnManagerWindow(self.all_columns, self.visible_columns, self)
-        dialog.columns_updated.connect(self.update_table_columns)
-        dialog.exec()
-
-    def update_table_columns(self, visible_columns):
-        """Slot to update visible columns and refresh the table view."""
-        self.visible_columns = visible_columns
-        logging.info(f"Updating visible columns to: {visible_columns}")
-
-        source_model = self.proxy_model.sourceModel()
-        if not source_model:
-            return
-
-        for i in range(source_model.columnCount()):
-            column_name = source_model.headerData(i, Qt.Horizontal)
-            if column_name in self.visible_columns:
-                self.tableView.setColumnHidden(i, False)
-            else:
-                self.tableView.setColumnHidden(i, True)
-        self.tableView.resizeColumnsToContents()
 
     def on_table_double_clicked(self, index: QModelIndex):
         """Handles double-click events on the tables."""

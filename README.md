@@ -13,7 +13,7 @@ The tool provides a clear, color-coded user interface to quickly identify which 
 -   **Interactive Data Table**: View all order lines with fulfillment status, stock levels, and other key details.
     -   **Color-Coded Status**: Green for 'Fulfillable', Red for 'Not Fulfillable', Yellow for 'Repeat Order'.
     -   **Context Menu**: Quickly change an order's status or copy key information like Order Number or SKU.
-    -   **Customizable View**: Show, hide, and reorder columns to fit your workflow.
+    -   **Filtering and Sorting**: The main data table can be sorted by any column and filtered by text across all columns or a specific column.
 -   **Rule Engine**: Automatically tag orders based on custom rules (e.g., tag orders from a specific country).
 -   **Report Generation**:
     -   **Packing Lists**: Create custom packing lists with specific filters (e.g., by shipping provider).

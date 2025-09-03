@@ -174,13 +174,6 @@ class UIManager:
         filter_layout.addWidget(self.mw.clear_filter_button)
         layout.addLayout(filter_layout)
 
-        # --- Column Manager Button ---
-        top_bar_layout = QHBoxLayout()
-        self.mw.column_manager_button = QPushButton("Manage Columns")
-        self.mw.column_manager_button.setEnabled(False)
-        top_bar_layout.addWidget(self.mw.column_manager_button)
-        top_bar_layout.addStretch()
-        layout.addLayout(top_bar_layout)
 
         # --- Table View ---
         self.mw.tableView = QTableView()
@@ -245,4 +238,3 @@ class UIManager:
         self.mw.tableView.setModel(self.mw.proxy_model)
 
         self.mw.tableView.resizeColumnsToContents()
-        self.mw.column_manager_button.setEnabled(True)
