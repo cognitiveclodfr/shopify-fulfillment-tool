@@ -1,7 +1,8 @@
 import logging
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, QLabel,
-    QTabWidget, QGroupBox, QTableView, QPlainTextEdit, QTableWidget, QLineEdit
+    QTabWidget, QGroupBox, QTableView, QPlainTextEdit, QTableWidget, QLineEdit,
+    QComboBox, QCheckBox
 )
 from PySide6.QtCore import Qt
 from .pandas_model import PandasModel
@@ -158,28 +159,34 @@ class UIManager:
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
+        # --- Advanced Filter Controls ---
+        filter_layout = QHBoxLayout()
+        self.mw.filter_column_selector = QComboBox()
+        self.mw.filter_input = QLineEdit()
+        self.mw.filter_input.setPlaceholderText("Enter filter text...")
+        self.mw.case_sensitive_checkbox = QCheckBox("Case Sensitive")
+        self.mw.clear_filter_button = QPushButton("Clear")
+
+        filter_layout.addWidget(QLabel("Filter by:"))
+        filter_layout.addWidget(self.mw.filter_column_selector)
+        filter_layout.addWidget(self.mw.filter_input, 1) # Allow stretching
+        filter_layout.addWidget(self.mw.case_sensitive_checkbox)
+        filter_layout.addWidget(self.mw.clear_filter_button)
+        layout.addLayout(filter_layout)
+
+        # --- Column Manager Button ---
         top_bar_layout = QHBoxLayout()
         self.mw.column_manager_button = QPushButton("Manage Columns")
         self.mw.column_manager_button.setEnabled(False)
-        self.mw.filter_input = QLineEdit()
-        self.mw.filter_input.setPlaceholderText("Filter table...")
         top_bar_layout.addWidget(self.mw.column_manager_button)
-        top_bar_layout.addWidget(self.mw.filter_input)
-        top_bar_layout.setStretchFactor(self.mw.filter_input, 1)
+        top_bar_layout.addStretch()
         layout.addLayout(top_bar_layout)
 
-        table_layout = QHBoxLayout()
-        self.mw.frozen_table = QTableView()
-        self.mw.frozen_table.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.mw.main_table = QTableView()
-        self.mw.main_table.setSortingEnabled(True)
-        self.mw.main_table.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.mw.frozen_table.setFixedWidth(120)
-        self.mw.frozen_table.horizontalHeader().setStretchLastSection(True)
-        self.mw.frozen_table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        table_layout.addWidget(self.mw.frozen_table)
-        table_layout.addWidget(self.mw.main_table)
-        layout.addLayout(table_layout)
+        # --- Table View ---
+        self.mw.tableView = QTableView()
+        self.mw.tableView.setSortingEnabled(True)
+        self.mw.tableView.setContextMenuPolicy(Qt.CustomContextMenu)
+        layout.addWidget(self.mw.tableView)
         return tab
 
     def create_statistics_tab(self, tab_widget):
@@ -230,26 +237,12 @@ class UIManager:
             self.mw.all_columns = [c for c in data_df.columns if c != "Order_Number"]
             self.mw.visible_columns = self.mw.all_columns[:]
 
-        frozen_df = data_df[["Order_Number"]].copy()
         main_df_cols = [col for col in self.mw.visible_columns if col in data_df.columns]
         main_df = data_df[main_df_cols].copy()
 
         source_model = PandasModel(main_df)
         self.mw.proxy_model.setSourceModel(source_model)
+        self.mw.tableView.setModel(self.mw.proxy_model)
 
-        # The frozen table does not get sorted/filtered, so it uses the source model directly
-        frozen_model = PandasModel(frozen_df)
-        self.mw.frozen_table.setModel(frozen_model)
-        self.mw.main_table.setModel(self.mw.proxy_model)
-
-        # Re-connect selection synchronization after setting new models
-        try:
-            self.mw.main_table.selectionModel().selectionChanged.disconnect()
-            self.mw.frozen_table.selectionModel().selectionChanged.disconnect()
-        except (RuntimeError, TypeError):
-            pass  # Ignore errors if signals were not connected
-        self.mw.main_table.selectionModel().selectionChanged.connect(self.mw.sync_selection_from_main)
-        self.mw.frozen_table.selectionModel().selectionChanged.connect(self.mw.sync_selection_from_frozen)
-
-        self.mw.main_table.resizeColumnsToContents()
+        self.mw.tableView.resizeColumnsToContents()
         self.mw.column_manager_button.setEnabled(True)
