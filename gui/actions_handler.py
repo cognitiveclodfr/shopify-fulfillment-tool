@@ -13,7 +13,6 @@ from shopify_tool.analysis import toggle_order_fulfillment
 from shopify_tool.utils import resource_path
 from gui.settings_window_pyside import SettingsWindow
 from gui.report_selection_dialog import ReportSelectionDialog
-from gui.column_manager_window_pyside import ColumnManagerWindow
 from gui.report_builder_window_pyside import ReportBuilderWindow
 
 
@@ -170,18 +169,6 @@ class ActionsHandler(QObject):
         else:
             self.log.warning(f"Failed to toggle status for order {order_number}: {result}")
             QMessageBox.critical(self.mw, "Error", result)
-
-    def open_column_manager(self):
-        """Opens the column manager dialog."""
-        if not self.mw.all_columns:
-            QMessageBox.warning(self.mw, "No Data", "Please run an analysis to load data first.")
-            return
-        dialog = ColumnManagerWindow(self.mw.all_columns, self.mw.visible_columns, self.mw)
-        if dialog.exec():
-            self.mw.visible_columns = dialog.new_visible_columns
-            # Manually update the table view since only column visibility has changed, not the data itself.
-            self.mw.ui_manager.update_results_table(self.mw.analysis_results_df)
-            self.log.info("Column settings applied.")
 
     def open_report_builder_window(self):
         """Opens the report builder dialog."""
