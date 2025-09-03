@@ -1,22 +1,53 @@
 import logging
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, QLabel,
-    QTabWidget, QGroupBox, QTableView, QPlainTextEdit, QTableWidget, QLineEdit,
-    QComboBox, QCheckBox
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QGridLayout,
+    QPushButton,
+    QLabel,
+    QTabWidget,
+    QGroupBox,
+    QTableView,
+    QPlainTextEdit,
+    QTableWidget,
+    QLineEdit,
+    QComboBox,
+    QCheckBox,
 )
 from PySide6.QtCore import Qt
 from .pandas_model import PandasModel
 
 
 class UIManager:
-    """Handles the creation and layout of all UI widgets for the main window."""
+    """Handles the creation and layout of all UI widgets for the main window.
+
+    This class is responsible for building the user interface by creating all
+    the necessary widgets (buttons, labels, tables, etc.) and arranging them
+    in layouts. It keeps a reference to the main window to access and modify
+    its widgets.
+
+    Attributes:
+        mw (MainWindow): A reference to the main application window instance.
+        log (logging.Logger): A logger instance for this class.
+    """
 
     def __init__(self, main_window):
+        """Initializes the UIManager.
+
+        Args:
+            main_window (MainWindow): The main application window instance.
+        """
         self.mw = main_window
         self.log = logging.getLogger(__name__)
 
     def create_widgets(self):
-        """Create and layout all widgets in the main window."""
+        """Creates and lays out all widgets in the main window.
+
+        This is the main method for building the UI. It constructs the session,
+        file loading, actions, and reports group boxes, and assembles the main
+        tab view.
+        """
         self.log.info("Creating UI widgets.")
         central_widget = QWidget()
         self.mw.setCentralWidget(central_widget)
@@ -169,11 +200,10 @@ class UIManager:
 
         filter_layout.addWidget(QLabel("Filter by:"))
         filter_layout.addWidget(self.mw.filter_column_selector)
-        filter_layout.addWidget(self.mw.filter_input, 1) # Allow stretching
+        filter_layout.addWidget(self.mw.filter_input, 1)  # Allow stretching
         filter_layout.addWidget(self.mw.case_sensitive_checkbox)
         filter_layout.addWidget(self.mw.clear_filter_button)
         layout.addLayout(filter_layout)
-
 
         # --- Table View ---
         self.mw.tableView = QTableView()
@@ -183,7 +213,11 @@ class UIManager:
         return tab
 
     def create_statistics_tab(self, tab_widget):
-        """Creates the UI elements for the Statistics tab."""
+        """Creates and populates the UI elements for the 'Statistics' tab.
+
+        Args:
+            tab_widget (QWidget): The parent widget for the tab content.
+        """
         layout = QGridLayout(tab_widget)
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.mw.stats_labels = {}
@@ -211,7 +245,14 @@ class UIManager:
         self.log.info("Statistics tab created.")
 
     def set_ui_busy(self, is_busy):
-        """Enable or disable UI elements based on busy status."""
+        """Enables or disables UI elements based on application busy status.
+
+        This is used to prevent user interaction during long-running tasks
+        like the main analysis.
+
+        Args:
+            is_busy (bool): True to disable controls, False to enable them.
+        """
         self.mw.run_analysis_button.setEnabled(not is_busy)
         is_data_loaded = not self.mw.analysis_results_df.empty
         self.mw.packing_list_button.setEnabled(not is_busy and is_data_loaded)
@@ -220,7 +261,15 @@ class UIManager:
         self.log.debug(f"UI busy state set to: {is_busy}")
 
     def update_results_table(self, data_df):
-        """Updates the table views with new data."""
+        """Updates the main results table view with a new DataFrame.
+
+        This method sets up the `PandasModel` and `QSortFilterProxyModel`
+        to display the provided DataFrame in the main table view. It also
+        handles the initial setup of column lists.
+
+        Args:
+            data_df (pd.DataFrame): The new DataFrame to display.
+        """
         self.log.info("Updating results table with new data.")
         if data_df.empty:
             self.log.warning("Received empty dataframe, clearing tables.")

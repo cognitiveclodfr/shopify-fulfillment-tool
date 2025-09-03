@@ -7,8 +7,26 @@ logger = logging.getLogger("ShopifyToolLogger")
 
 
 def create_packing_list(analysis_df, output_file, report_name="Packing List", filters=None, exclude_skus=None):
-    """
-    Creates a versatile packing list in .xlsx format with advanced formatting.
+    """Creates a versatile packing list in .xlsx format with advanced formatting.
+
+    This function filters the main analysis DataFrame based on a list of
+    conditions, sorts the data for efficient packing, and generates an
+    Excel file with custom styling. The styling includes borders to group
+    items by order, specific column widths, and print-friendly settings.
+
+    Args:
+        analysis_df (pd.DataFrame): The main analysis DataFrame, which must
+            contain columns like 'Order_Fulfillment_Status', 'SKU',
+            'Order_Number', etc.
+        output_file (str): The full path where the generated .xlsx file
+            will be saved.
+        report_name (str, optional): The name of the report, used for
+            logging purposes. Defaults to "Packing List".
+        filters (list, optional): A list of filter dictionaries to apply to
+            the DataFrame. Each dictionary should have 'field', 'operator',
+            and 'value' keys. Defaults to None.
+        exclude_skus (list, optional): A list of SKUs to exclude from the
+            final report. Defaults to None.
     """
     try:
         logger.info(f"--- Creating report: '{report_name}' ---")

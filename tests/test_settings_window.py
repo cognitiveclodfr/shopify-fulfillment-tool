@@ -1,13 +1,12 @@
 import sys
 import os
 import pytest
-import json
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import MagicMock, mock_open
 
 from PySide6.QtWidgets import QWidget, QDialogButtonBox, QPushButton, QApplication
 
 # Add the project root to the Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from gui.settings_window_pyside import SettingsWindow
 
@@ -18,18 +17,12 @@ def mock_settings_dependencies(mocker):
     mock_parent = QWidget()
 
     mock_parent.config = {
-        "settings": {
-            "low_stock_threshold": 10,
-            "stock_csv_delimiter": ";"
-        },
-        "paths": {
-            "templates": "data/templates",
-            "output_dir_stock": "data/output"
-        },
+        "settings": {"low_stock_threshold": 10, "stock_csv_delimiter": ";"},
+        "paths": {"templates": "data/templates", "output_dir_stock": "data/output"},
         "column_mappings": {},
         "rules": [],
         "packing_lists": [],
-        "stock_exports": []
+        "stock_exports": [],
     }
 
     mocker.patch("builtins.open", mock_open())
