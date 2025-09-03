@@ -22,33 +22,6 @@ from PySide6.QtCore import Qt
 
 
 class SettingsWindow(QDialog):
-    """A dialog window for viewing and editing all application settings.
-
-    This window provides a tabbed interface to manage different sections of
-    the application's configuration, including general settings, paths,
-    rules, packing list definitions, and stock export definitions. It handles
-    dynamic creation and deletion of UI elements for rules, reports, and their
-    respective filters and actions.
-
-    Class Attributes:
-        FILTERABLE_COLUMNS (list): Columns that can be used in report filters.
-        FILTER_OPERATORS (list): Operators available for report filters.
-        CONDITION_FIELDS (list): Columns that can be used in rule conditions.
-        CONDITION_OPERATORS (list): Operators available for rule conditions.
-        ACTION_TYPES (list): Action types available for rules.
-
-    Attributes:
-        config_data (dict): A deep copy of the main application configuration.
-        analysis_df (pd.DataFrame): The main analysis DataFrame, used to
-            populate dynamic dropdowns with unique values.
-        rule_widgets (list): A list of dictionaries, each holding references
-            to the UI widgets for a single rule.
-        packing_list_widgets (list): A list holding references to the UI
-            widgets for a single packing list report.
-        stock_export_widgets (list): A list holding references to the UI
-            widgets for a single stock export report.
-    """
-
     # Constants for builders
     FILTERABLE_COLUMNS = [
         "Order_Number",
@@ -81,15 +54,6 @@ class SettingsWindow(QDialog):
     ACTION_TYPES = ["ADD_TAG", "SET_STATUS", "SET_PRIORITY", "EXCLUDE_FROM_REPORT", "EXCLUDE_SKU"]
 
     def __init__(self, parent, config, analysis_df=None):
-        """Initializes the SettingsWindow.
-
-        Args:
-            parent (QWidget): The parent widget.
-            config (dict): The application's configuration dictionary.
-            analysis_df (pd.DataFrame, optional): The current analysis
-                DataFrame, used for populating filter dropdowns.
-                Defaults to None.
-        """
         super().__init__(parent)
         self.parent = parent
         self.config_data = json.loads(json.dumps(config))
@@ -128,7 +92,6 @@ class SettingsWindow(QDialog):
         ref_list.remove(ref_dict)
 
     def create_general_tab(self):
-        """Creates and populates the 'General & Paths' settings tab."""
         tab = QWidget()
         layout = QFormLayout(tab)
         self.stock_delimiter_edit = QLineEdit()
@@ -148,12 +111,9 @@ class SettingsWindow(QDialog):
         self.tab_widget.addTab(tab, "General & Paths")
 
     def create_rules_tab(self):
-        """Creates the 'Rules' tab and populates it from the config."""
         tab = QWidget()
-        tab.setObjectName("rules_tab")
         main_layout = QVBoxLayout(tab)
         add_rule_btn = QPushButton("Add New Rule")
-        add_rule_btn.setObjectName("add_rule_btn")
         add_rule_btn.clicked.connect(self.add_rule_widget)
         main_layout.addWidget(add_rule_btn, 0, Qt.AlignLeft)
         scroll_area = QScrollArea()
@@ -168,12 +128,6 @@ class SettingsWindow(QDialog):
             self.add_rule_widget(rule_config)
 
     def add_rule_widget(self, config=None):
-        """Adds a new group of widgets for a single rule to the 'Rules' tab.
-
-        Args:
-            config (dict, optional): The configuration for the rule. If None,
-                a new default rule is created. Defaults to None.
-        """
         if not isinstance(config, dict):
             config = {"name": "New Rule", "match": "ALL", "conditions": [], "actions": []}
         rule_box = QGroupBox()
@@ -183,7 +137,6 @@ class SettingsWindow(QDialog):
         name_edit = QLineEdit(config.get("name", ""))
         header_layout.addWidget(name_edit)
         delete_rule_btn = QPushButton("Delete Rule")
-        delete_rule_btn.setObjectName("delete_rule_btn")
         header_layout.addWidget(delete_rule_btn)
         rule_layout.addLayout(header_layout)
         conditions_box = QGroupBox("IF")
@@ -229,14 +182,6 @@ class SettingsWindow(QDialog):
             self.add_action_row(widget_refs, act_config)
 
     def add_condition_row(self, rule_widget_refs, config=None):
-        """Adds a new row of widgets for a single rule condition.
-
-        Args:
-            rule_widget_refs (dict): The dictionary of widget references for
-                the parent rule.
-            config (dict, optional): The configuration for the condition.
-                If None, a new default condition is created. Defaults to None.
-        """
         if not isinstance(config, dict):
             config = {}
         row_layout = QHBoxLayout()
@@ -263,14 +208,6 @@ class SettingsWindow(QDialog):
         )
 
     def add_action_row(self, rule_widget_refs, config=None):
-        """Adds a new row of widgets for a single rule action.
-
-        Args:
-            rule_widget_refs (dict): The dictionary of widget references for
-                the parent rule.
-            config (dict, optional): The configuration for the action.
-                If None, a new default action is created. Defaults to None.
-        """
         if not isinstance(config, dict):
             config = {}
         row_layout = QHBoxLayout()
@@ -293,7 +230,6 @@ class SettingsWindow(QDialog):
         )
 
     def create_packing_lists_tab(self):
-        """Creates the 'Packing Lists' tab and populates it from the config."""
         tab = QWidget()
         main_layout = QVBoxLayout(tab)
         add_btn = QPushButton("Add New Packing List")
@@ -311,12 +247,6 @@ class SettingsWindow(QDialog):
             self.add_packing_list_widget(pl_config)
 
     def add_packing_list_widget(self, config=None):
-        """Adds a new group of widgets for a packing list to the corresponding tab.
-
-        Args:
-            config (dict, optional): The configuration for the packing list.
-                If None, a new default packing list is created. Defaults to None.
-        """
         if not isinstance(config, dict):
             config = {"name": "", "output_filename": "", "filters": [], "exclude_skus": []}
         pl_box = QGroupBox()
@@ -356,19 +286,6 @@ class SettingsWindow(QDialog):
             self.add_filter_row(widget_refs, self.FILTERABLE_COLUMNS, self.FILTER_OPERATORS, f_config)
 
     def add_filter_row(self, parent_widget_refs, fields, operators, config=None):
-        """Adds a new row of widgets for a single filter condition.
-
-        This is a generic method used by both the packing list and stock
-        export tabs.
-
-        Args:
-            parent_widget_refs (dict): The dictionary of widget references for
-                the parent report.
-            fields (list): The list of column names for the field dropdown.
-            operators (list): The list of operators for the operator dropdown.
-            config (dict, optional): The configuration for the filter.
-                If None, a new default filter is created. Defaults to None.
-        """
         if not isinstance(config, dict):
             config = {}
         row_layout = QHBoxLayout()
@@ -444,7 +361,6 @@ class SettingsWindow(QDialog):
         filter_refs["value_widget"] = new_widget
 
     def create_stock_exports_tab(self):
-        """Creates the 'Stock Exports' tab and populates it from the config."""
         tab = QWidget()
         main_layout = QVBoxLayout(tab)
         add_btn = QPushButton("Add New Stock Export")
@@ -462,12 +378,6 @@ class SettingsWindow(QDialog):
             self.add_stock_export_widget(se_config)
 
     def add_stock_export_widget(self, config=None):
-        """Adds a new group of widgets for a stock export to the corresponding tab.
-
-        Args:
-            config (dict, optional): The configuration for the stock export.
-                If None, a new default stock export is created. Defaults to None.
-        """
         if not isinstance(config, dict):
             config = {"name": "", "template": "", "filters": []}
         se_box = QGroupBox()
@@ -504,14 +414,6 @@ class SettingsWindow(QDialog):
             self.add_filter_row(widget_refs, self.FILTERABLE_COLUMNS, self.FILTER_OPERATORS, f_config)
 
     def save_settings(self):
-        """Validates and saves all settings from the UI back to the config dict.
-
-        This method iterates through all the dynamically created widgets in each
-        tab, retrieves their current values, and reconstructs the
-        `self.config_data` dictionary. If the data is valid, it accepts the
-        dialog, which allows the main window to grab the updated config.
-        If validation fails, it shows an error message.
-        """
         try:
             # General Tab
             self.config_data["settings"]["stock_csv_delimiter"] = self.stock_delimiter_edit.text()

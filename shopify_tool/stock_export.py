@@ -7,25 +7,8 @@ logger = logging.getLogger("ShopifyToolLogger")
 
 
 def create_stock_export(analysis_df, template_file, output_file, report_name="Stock Export", filters=None):
-    """Creates a stock export file by writing data into an .xls template.
-
-    This function filters the main analysis DataFrame to get a list of
-    fulfillable items, summarizes the total quantity for each SKU, and then
-    writes this summary into a new Excel file created from a template.
-    It uses `xlrd` and `xlutils` to preserve the formatting of the original
-    template file.
-
-    Args:
-        analysis_df (pd.DataFrame): The main analysis DataFrame, which must
-            contain 'Order_Fulfillment_Status', 'SKU', and 'Quantity'.
-        template_file (str): The path to the .xls template file. The data
-            will be written into the first sheet of this template.
-        output_file (str): The path where the generated .xls file will be
-            saved.
-        report_name (str, optional): The name of the report, used for
-            logging. Defaults to "Stock Export".
-        filters (list, optional): A list of filter dictionaries to apply to
-            the DataFrame before summarizing. Defaults to None.
+    """
+    Creates a stock export file by writing data into an existing .xls template file.
     """
     try:
         logger.info(f"--- Creating report: '{report_name}' ---")

@@ -16,26 +16,7 @@ import pandas as pd
 
 
 class ReportBuilderWindow(QDialog):
-    """A dialog window for creating custom reports from a DataFrame.
-
-    This window allows users to:
-    1. Select which columns to include in the report.
-    2. Apply a single, simple filter to the data.
-    3. Generate and save the resulting data as an Excel file.
-
-    Attributes:
-        df (pd.DataFrame): The source DataFrame from which to build the report.
-        column_vars (dict): A dictionary mapping column names to their QCheckBox
-            widgets for selection.
-    """
-
     def __init__(self, dataframe, parent=None):
-        """Initializes the ReportBuilderWindow.
-
-        Args:
-            dataframe (pd.DataFrame): The source DataFrame.
-            parent (QWidget, optional): The parent widget. Defaults to None.
-        """
         super().__init__(parent)
         self.df = dataframe
         self.setWindowTitle("Report Builder")
@@ -82,17 +63,6 @@ class ReportBuilderWindow(QDialog):
         self.generate_btn.clicked.connect(self.generate_custom_report)
 
     def generate_custom_report(self):
-        """Generates and saves the custom report based on user selections.
-
-        This method performs the following steps:
-        1. Gathers the list of columns selected by the user.
-        2. Applies the filter specified in the UI, if any.
-        3. Creates the final report DataFrame with the selected columns and
-           filtered data.
-        4. Opens a file dialog to ask the user for a save location.
-        5. Saves the DataFrame to an Excel file.
-        6. Shows a success or error message.
-        """
         selected_columns = [col for col, var in self.column_vars.items() if var.isChecked()]
         if not selected_columns:
             QMessageBox.critical(self, "Error", "Please select at least one column.")

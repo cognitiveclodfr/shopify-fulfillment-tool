@@ -1,10 +1,3 @@
-"""Main entry point for the Shopify Fulfillment Tool application.
-
-This script initializes the QApplication, creates the main window, and starts
-the application's event loop. It also handles setting the platform to
-'offscreen' for testing or continuous integration environments.
-"""
-
 import sys
 import os
 from PySide6.QtWidgets import QApplication
@@ -16,12 +9,7 @@ from gui.main_window_pyside import MainWindow
 
 
 def main():
-    """Initializes and runs the Qt application.
-
-    Sets up the QApplication, instantiates the MainWindow, and shows it.
-    In a testing or CI environment, it sets the platform to 'offscreen'
-    to prevent the GUI from actually being displayed.
-    """
+    """Main function to run the application."""
     # Set platform to offscreen for CI/testing environments
     if "pytest" in sys.modules or os.environ.get("CI"):
         QApplication.setPlatform("offscreen")

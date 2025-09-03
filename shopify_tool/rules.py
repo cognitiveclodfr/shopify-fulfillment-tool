@@ -59,38 +59,13 @@ def _op_is_not_empty(series_val, rule_val):
 
 
 class RuleEngine:
-    """Applies a set of user-defined rules to a DataFrame to modify it.
-
-    The RuleEngine iterates through a list of rule configurations. Each rule
-    consists of conditions (e.g., 'Shipping_Provider equals "DHL"') and
-    actions (e.g., 'ADD_TAG "Priority"'). If a row in the DataFrame matches
-    a rule's conditions, the corresponding actions are applied to that row.
-
-    Attributes:
-        rules (list): A list of dictionaries, where each dictionary
-            represents a single rule configuration.
-    """
-
     def __init__(self, rules_config):
-        """Initializes the RuleEngine with a given rules configuration.
-
-        Args:
-            rules_config (list): A list of rule configuration dictionaries.
-        """
         self.rules = rules_config
 
     def apply(self, df):
-        """Applies all configured rules to the given DataFrame.
-
-        This method iterates through each rule, finds all rows in the
-        DataFrame that match the rule's conditions, and then executes the
-        rule's actions on those matching rows.
-
-        Args:
-            df (pd.DataFrame): The DataFrame to apply the rules to.
-
-        Returns:
-            pd.DataFrame: The modified DataFrame with all rules applied.
+        """
+        Apply all configured rules to the DataFrame.
+        Returns the modified DataFrame.
         """
         if not self.rules or not isinstance(self.rules, list):
             return df

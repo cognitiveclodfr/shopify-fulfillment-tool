@@ -4,13 +4,15 @@ from PySide6.QtCore import QObject, QRunnable, Signal, Slot
 
 
 class WorkerSignals(QObject):
-    """Defines the signals available from a running worker thread.
-
+    """
+    Defines the signals available from a running worker thread.
     Supported signals are:
-    - finished: Emitted when the task is done, with no data.
-    - error: Emitted when an exception occurs, carrying a tuple of
-      (exception_type, value, traceback_string).
-    - result: Emitted upon successful completion, carrying the result object.
+    finished
+        No data
+    error
+        `tuple` (exctype, value, traceback.format_exc())
+    result
+        `object` data returned from processing, anything
     """
 
     finished = Signal()
@@ -19,21 +21,17 @@ class WorkerSignals(QObject):
 
 
 class Worker(QRunnable):
-    """A generic worker thread that runs a function with given arguments.
-
-    This class inherits from QRunnable to be used with a QThreadPool. It is
-    designed to run a specified function in a separate thread to prevent
-    blocking the main GUI thread. It uses a `WorkerSignals` object to
-    communicate results, errors, or completion status back to the main thread.
-
-    Args:
-        fn (function): The function to execute in the worker thread.
-        *args: Positional arguments to pass to the function.
-        **kwargs: Keyword arguments to pass to the function.
+    """
+    Worker thread
+    Inherits from QRunnable to handler worker thread setup, signals and wrap-up.
+    :param callback: The function callback to run on this worker thread. Supplied args and
+                     kwargs will be passed through to the runner.
+    :type callback: function
+    :param args: Arguments to pass to the callback function
+    :param kwargs: Keywords to pass to the callback function
     """
 
     def __init__(self, fn, *args, **kwargs):
-        """Initializes the Worker instance."""
         super(Worker, self).__init__()
         # Store constructor arguments (re-used for processing)
         self.fn = fn
@@ -43,13 +41,8 @@ class Worker(QRunnable):
 
     @Slot()
     def run(self):
-        """Executes the stored function and emits signals based on the outcome.
-
-        This method is called automatically when the `QThreadPool` starts the
-        runnable. It wraps the function call in a try...except block to
-        handle exceptions gracefully, emitting an `error` signal if one
-        occurs, or a `result` signal on success. The `finished` signal is
-        always emitted.
+        """
+        Initialise the runner function with passed args, kwargs.
         """
         # Retrieve args/kwargs here; and fire processing using them
         try:

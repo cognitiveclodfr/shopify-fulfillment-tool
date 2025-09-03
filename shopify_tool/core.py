@@ -42,23 +42,18 @@ def _validate_dataframes(orders_df, stock_df, config):
 
 
 def validate_csv_headers(file_path, required_columns, delimiter=","):
-    """Quickly validates if a CSV file contains the required column headers.
-
-    This function reads only the first row of the specified CSV file to
-    check for the presence of required column names. It is designed to be
-    a fast check before loading the entire file into memory.
+    """
+    Quickly validates if a CSV file contains the required column headers.
 
     Args:
         file_path (str): The path to the CSV file.
-        required_columns (list): A list of column names that must be present
-            in the CSV header.
-        delimiter (str): The delimiter used in the CSV file. Defaults to ','.
+        required_columns (list): A list of column names that must be present.
+        delimiter (str): The delimiter used in the CSV file.
 
     Returns:
         tuple: A tuple containing:
             - bool: True if all required columns are present, False otherwise.
-            - list: A list of the missing columns. If all columns are
-              present, this list is empty.
+            - list: A list of missing columns. An empty list if all are present.
     """
     if not required_columns:
         return True, []
@@ -83,38 +78,26 @@ def validate_csv_headers(file_path, required_columns, delimiter=","):
 
 
 def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_delimiter, config):
-    """Orchestrates the entire fulfillment analysis process from file I/O to report generation.
+    """
+    Orchestrates the entire fulfillment analysis process.
 
-    This function serves as the main entry point for the analysis workflow.
-    It performs the following steps:
-    1. Loads stock and order data from the specified CSV files.
-    2. Validates that the loaded data contains the required columns.
-    3. Loads the fulfillment history to identify repeat orders.
-    4. Calls the core `analysis.run_analysis` function to simulate fulfillment.
-    5. Applies post-analysis rules, such as low stock alerts and custom tagging.
-    6. Saves the detailed results and summary reports to a single Excel file
-       in the specified output directory.
-    7. Updates the fulfillment history with newly fulfilled orders.
+    This function loads data from CSV files, runs the fulfillment simulation,
+    applies business rules (e.g., stock alerts, tagging), saves the
+    main analysis report to an Excel file, and updates the fulfillment history.
 
     Args:
         stock_file_path (str): Path to the stock data CSV file.
         orders_file_path (str): Path to the Shopify orders export CSV file.
-        output_dir_path (str): Path to the directory where the output report
-            will be saved.
+        output_dir_path (str): Path to the directory where the output report will be saved.
         stock_delimiter (str): The delimiter used in the stock CSV file.
-        config (dict): The application configuration dictionary, which contains
-            settings for low stock thresholds, rules, and column mappings.
+        config (dict): The application configuration dictionary.
 
     Returns:
-        tuple: A tuple containing four elements:
-            - success (bool): True if the analysis completed successfully,
-              False otherwise.
-            - message (str or None): If successful, the path to the output
-              Excel file. If failed, an error message.
-            - final_df (pd.DataFrame or None): The final analysis DataFrame if
-              successful, otherwise None.
-            - stats (dict or None): A dictionary of calculated statistics if
-              successful, otherwise None.
+        tuple: A tuple containing:
+            - bool: True for success, False for failure.
+            - str or None: A message indicating the result or the path to the output file.
+            - pd.DataFrame or None: The final analysis DataFrame.
+            - dict or None: A dictionary of calculated statistics.
     """
     logger.info("--- Starting Full Analysis Process ---")
     # 1. Load data
@@ -222,26 +205,18 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
 
 
 def create_packing_list_report(analysis_df, report_config):
-    """Generates a single packing list report based on a report configuration.
-
-    This function acts as a wrapper around the `packing_lists.create_packing_list`
-    function. It handles extracting necessary parameters from the report
-    configuration, creating the output directory, and catching potential
-    exceptions like `KeyError` or `PermissionError`.
+    """
+    Generates a single packing list report based on a report configuration.
 
     Args:
-        analysis_df (pd.DataFrame): The main analysis DataFrame containing
-            fulfillment data. This is typically the output from `run_full_analysis`.
-        report_config (dict): A dictionary from the main application config
-            that defines the settings for this specific report, including
-            'name', 'output_filename', 'filters', and 'exclude_skus'.
+        analysis_df (pd.DataFrame): The main analysis DataFrame containing fulfillment data.
+        report_config (dict): A dictionary from the main config file that defines
+                              the filters, output filename, and other settings for this report.
 
     Returns:
         tuple: A tuple containing:
-            - success (bool): True if the report was generated successfully,
-              False otherwise.
-            - message (str): A message indicating the result, such as the
-              path to the created file or an error description.
+            - bool: True for success, False for failure.
+            - str: A message indicating the result.
     """
     report_name = report_config.get("name", "Unknown Report")
     try:
@@ -262,9 +237,11 @@ def create_packing_list_report(analysis_df, report_config):
         logger.error(f"Config error for packing list '{report_name}': {e}", exc_info=True)
         return False, error_message
     except PermissionError:
-        output_filename = report_config.get("output_filename", "N/A")
+        output_filename = report_config.get('output_filename', 'N/A')
         error_message = f"Permission denied. Could not write report to '{output_filename}'."
-        logger.error(f"Permission error creating packing list '{report_name}' at '{output_filename}'", exc_info=True)
+        logger.error(
+            f"Permission error creating packing list '{report_name}' at '{output_filename}'", exc_info=True
+        )
         return False, error_message
     except Exception as e:
         error_message = f"Failed to create report '{report_name}'. See logs/app_errors.log for details."
@@ -273,28 +250,19 @@ def create_packing_list_report(analysis_df, report_config):
 
 
 def create_stock_export_report(analysis_df, report_config, templates_path, output_path):
-    """Generates a stock export report based on a template and configuration.
-
-    This function acts as a wrapper around the `stock_export.create_stock_export`
-    function. It handles constructing the correct template and output file paths,
-    and catches potential exceptions like `KeyError`, `FileNotFoundError`,
-    or `PermissionError`.
+    """
+    Generates a single stock export report based on a template and report configuration.
 
     Args:
         analysis_df (pd.DataFrame): The main analysis DataFrame.
-        report_config (dict): A dictionary from the main application config
-            that defines the report, including 'name', 'template', and 'filters'.
-        templates_path (str): The base path to the directory containing
-            template files.
-        output_path (str): The path to the directory where the generated
-            export file will be saved.
+        report_config (dict): A dictionary from the main config defining the report.
+        templates_path (str): The path to the directory containing template files.
+        output_path (str): The path to the directory where the export file will be saved.
 
     Returns:
         tuple: A tuple containing:
-            - success (bool): True if the report was generated successfully,
-              False otherwise.
-            - message (str): A message indicating the result, such as the
-              path to the created file or an error description.
+            - bool: True for success, False for failure.
+            - str: A message indicating the result.
     """
     report_name = report_config.get("name", "Unknown Report")
     try:
