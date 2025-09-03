@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QMessageBox, QInputDialog
 
 from gui.worker import Worker
 from shopify_tool import core
-from shopify_tool.analysis import recalculate_statistics, toggle_order_fulfillment
+from shopify_tool.analysis import toggle_order_fulfillment
 from shopify_tool.utils import resource_path
 from gui.settings_window_pyside import SettingsWindow
 from gui.report_selection_dialog import ReportSelectionDialog
@@ -20,7 +20,7 @@ from gui.report_builder_window_pyside import ReportBuilderWindow
 class ActionsHandler(QObject):
     """Handles application logic triggered by user actions."""
 
-    analysis_finished = Signal(pd.DataFrame)
+    data_changed = Signal()
 
     def __init__(self, main_window):
         super().__init__()
@@ -77,7 +77,7 @@ class ActionsHandler(QObject):
         if success:
             self.mw.analysis_results_df = df
             self.mw.analysis_stats = stats
-            self.analysis_finished.emit(df)  # Emit the signal with the dataframe
+            self.data_changed.emit()
             self.mw.log_activity("Analysis", f"Analysis complete. Report saved to: {result_msg}")
         else:
             self.log.error(f"Analysis failed: {result_msg}")
@@ -163,10 +163,8 @@ class ActionsHandler(QObject):
         success, result, updated_df = toggle_order_fulfillment(self.mw.analysis_results_df, order_number)
         if success:
             self.mw.analysis_results_df = updated_df
-            self.mw.analysis_stats = recalculate_statistics(self.mw.analysis_results_df)
-            self.mw._post_analysis_ui_update()
-            df = self.mw.analysis_results_df
-            new_status = df.loc[df["Order_Number"] == order_number, "Order_Fulfillment_Status"].iloc[0]
+            self.data_changed.emit()
+            new_status = updated_df.loc[updated_df["Order_Number"] == order_number, "Order_Fulfillment_Status"].iloc[0]
             self.mw.log_activity("Manual Edit", f"Order {order_number} status changed to '{new_status}'.")
             self.log.info(f"Order {order_number} status changed to '{new_status}'.")
         else:
@@ -181,7 +179,8 @@ class ActionsHandler(QObject):
         dialog = ColumnManagerWindow(self.mw.all_columns, self.mw.visible_columns, self.mw)
         if dialog.exec():
             self.mw.visible_columns = dialog.new_visible_columns
-            self.mw.update_data_viewer()
+            # Manually update the table view since only column visibility has changed, not the data itself.
+            self.mw.ui_manager.update_results_table(self.mw.analysis_results_df)
             self.log.info("Column settings applied.")
 
     def open_report_builder_window(self):
@@ -210,7 +209,7 @@ class ActionsHandler(QObject):
                 else:
                     new_notes = current_notes
                 self.mw.analysis_results_df.loc[index, "Status_Note"] = new_notes
-            self.mw._post_analysis_ui_update()
+            self.data_changed.emit()
             self.mw.log_activity("Manual Tag", f"Added note '{tag_to_add}' to order {order_number}.")
 
     def remove_item_from_order(self, row_index):
@@ -227,8 +226,7 @@ class ActionsHandler(QObject):
         if reply == QMessageBox.Yes:
             self.mw.analysis_results_df.drop(self.mw.analysis_results_df.index[row_index], inplace=True)
             self.mw.analysis_results_df.reset_index(drop=True, inplace=True)
-            self.mw.analysis_stats = recalculate_statistics(self.mw.analysis_results_df)
-            self.mw._post_analysis_ui_update()
+            self.data_changed.emit()
             self.mw.log_activity("Data Edit", f"Removed item {sku} from order {order_number}.")
 
     def remove_entire_order(self, order_number):
@@ -244,6 +242,5 @@ class ActionsHandler(QObject):
             self.mw.analysis_results_df = self.mw.analysis_results_df[
                 self.mw.analysis_results_df["Order_Number"] != order_number
             ].reset_index(drop=True)
-            self.mw.analysis_stats = recalculate_statistics(self.mw.analysis_results_df)
-            self.mw._post_analysis_ui_update()
+            self.data_changed.emit()
             self.mw.log_activity("Data Edit", f"Removed order {order_number}.")

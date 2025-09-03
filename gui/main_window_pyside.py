@@ -117,15 +117,15 @@ class MainWindow(QMainWindow):
         self.frozen_table.verticalScrollBar().valueChanged.connect(self.main_table.verticalScrollBar().setValue)
 
         # Custom signals
-        self.actions_handler.analysis_finished.connect(self.ui_manager.update_results_table)
-        self.actions_handler.analysis_finished.connect(self._post_analysis_ui_update)
+        self.actions_handler.data_changed.connect(self._update_all_views)
 
-    def _post_analysis_ui_update(self):
-        """Updates the UI after an analysis or session load."""
+    def _update_all_views(self):
+        """Central slot to refresh all UI components after data changes."""
+        self.analysis_stats = recalculate_statistics(self.analysis_results_df)
+        self.ui_manager.update_results_table(self.analysis_results_df)
         self.update_statistics_tab()
         self.ui_manager.set_ui_busy(False)
-        self.column_manager_button.setEnabled(True)
-        self.tab_view.setCurrentWidget(self.stats_tab)
+        # The column manager button is enabled within update_results_table
 
     def update_statistics_tab(self):
         """Populates the Statistics tab with the latest analysis data."""
@@ -245,8 +245,7 @@ class MainWindow(QMainWindow):
                     all_df_cols = [c for c in self.analysis_results_df.columns if c != "Order_Number"]
                     self.visible_columns = session_data.get("visible_columns", all_df_cols)
                     self.all_columns = all_df_cols
-                    self.analysis_stats = recalculate_statistics(self.analysis_results_df)
-                    self._post_analysis_ui_update()
+                    self._update_all_views()
                     self.log_activity("Session", "Restored previous session.")
                 except Exception as e:
                     QMessageBox.critical(self, "Load Error", f"Failed to load session file: {e}")
