@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 import pandas as pd
 
+from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QMessageBox, QInputDialog
 
 from gui.worker import Worker
@@ -16,10 +17,13 @@ from gui.column_manager_window_pyside import ColumnManagerWindow
 from gui.report_builder_window_pyside import ReportBuilderWindow
 
 
-class ActionsHandler:
+class ActionsHandler(QObject):
     """Handles application logic triggered by user actions."""
 
+    analysis_finished = Signal(pd.DataFrame)
+
     def __init__(self, main_window):
+        super().__init__()
         self.mw = main_window
         self.log = logging.getLogger(__name__)
 
@@ -73,7 +77,7 @@ class ActionsHandler:
         if success:
             self.mw.analysis_results_df = df
             self.mw.analysis_stats = stats
-            self.mw._post_analysis_ui_update()
+            self.analysis_finished.emit(df)  # Emit the signal with the dataframe
             self.mw.log_activity("Analysis", f"Analysis complete. Report saved to: {result_msg}")
         else:
             self.log.error(f"Analysis failed: {result_msg}")
