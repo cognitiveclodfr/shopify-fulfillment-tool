@@ -1,0 +1,5 @@
+Name,Lineitem sku,Lineitem quantity
+Order1,SKU1,1
+Order2,SKU2,1
+Order3,SKU1,1
+Order3,SKU2,1
