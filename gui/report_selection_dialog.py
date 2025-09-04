@@ -3,10 +3,33 @@ from PySide6.QtCore import Signal, Slot
 
 
 class ReportSelectionDialog(QDialog):
+    """A dialog that dynamically creates buttons for selecting a pre-configured report.
+
+    This dialog is populated with a button for each report found in the
+    application's configuration file for a given report type (e.g.,
+    'packing_lists' or 'stock_exports'). When the user clicks a button, the
+    dialog emits a signal containing the configuration for that specific
+    report and then closes.
+
+    Signals:
+        reportSelected (dict): Emitted when a report button is clicked,
+                               carrying the configuration dictionary for that
+                               report.
+    """
+
     # Signal that emits the selected report configuration when a button is clicked
     reportSelected = Signal(dict)
 
     def __init__(self, report_type, reports_config, parent=None):
+        """Initializes the ReportSelectionDialog.
+
+        Args:
+            report_type (str): The type of reports to display (e.g.,
+                "packing_lists"). Used for the window title.
+            reports_config (list[dict]): A list of report configuration
+                dictionaries, each used to create a button.
+            parent (QWidget, optional): The parent widget. Defaults to None.
+        """
         super().__init__(parent)
 
         self.setWindowTitle(f"Select {report_type.replace('_', ' ').title()}")
@@ -26,9 +49,14 @@ class ReportSelectionDialog(QDialog):
 
     @Slot(dict)
     def on_report_button_clicked(self, report_config):
-        """
-        When a report button is clicked, emit the signal with its config
-        and accept the dialog to close it.
+        """Handles the click of any report button.
+
+        Emits the `reportSelected` signal with the configuration of the
+        clicked report and then closes the dialog.
+
+        Args:
+            report_config (dict): The configuration dictionary associated
+                with the button that was clicked.
         """
         self.reportSelected.emit(report_config)
         self.accept()

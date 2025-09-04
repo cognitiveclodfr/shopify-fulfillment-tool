@@ -1,5 +1,23 @@
 import pandas as pd
 
+
+"""Implements a configurable rule engine to process and modify order data.
+
+This module provides a `RuleEngine` class that can apply a series of
+user-defined rules to a pandas DataFrame of order data. Rules are defined in a
+JSON or dictionary format and can be used to tag orders, change their status,
+set priority, and perform other actions based on a set of conditions.
+
+The core components are:
+- **Operator Functions**: A set of functions (_op_equals, _op_contains, etc.)
+  that perform the actual comparison for rule conditions.
+- **OPERATOR_MAP**: A dictionary that maps user-friendly operator names from
+  the configuration (e.g., "contains") to their corresponding function.
+- **RuleEngine**: A class that takes a list of rule configurations,
+  interprets them, and applies the specified actions to the DataFrame rows
+  that match the conditions.
+"""
+
 # A mapping from user-friendly operator names to internal function names
 OPERATOR_MAP = {
     "equals": "_op_equals",
@@ -18,54 +36,83 @@ OPERATOR_MAP = {
 
 
 def _op_equals(series_val, rule_val):
+    """Returns True where the series value equals the rule value."""
     return series_val == rule_val
 
 
 def _op_not_equals(series_val, rule_val):
+    """Returns True where the series value does not equal the rule value."""
     return series_val != rule_val
 
 
 def _op_contains(series_val, rule_val):
+    """Returns True where the series string contains the rule string (case-insensitive)."""
     # Case-insensitive containment check for strings
     return series_val.str.contains(rule_val, case=False, na=False)
 
 
 def _op_not_contains(series_val, rule_val):
+    """Returns True where the series string does not contain the rule string (case-insensitive)."""
     return ~series_val.str.contains(rule_val, case=False, na=False)
 
 
 def _op_greater_than(series_val, rule_val):
+    """Returns True where the series value is greater than the numeric rule value."""
     return pd.to_numeric(series_val, errors="coerce") > float(rule_val)
 
 
 def _op_less_than(series_val, rule_val):
+    """Returns True where the series value is less than the numeric rule value."""
     return pd.to_numeric(series_val, errors="coerce") < float(rule_val)
 
 
 def _op_starts_with(series_val, rule_val):
+    """Returns True where the series string starts with the rule string."""
     return series_val.str.startswith(rule_val, na=False)
 
 
 def _op_ends_with(series_val, rule_val):
+    """Returns True where the series string ends with the rule string."""
     return series_val.str.endswith(rule_val, na=False)
 
 
 def _op_is_empty(series_val, rule_val):
+    """Returns True where the series value is null or an empty string."""
     return series_val.isnull() | (series_val == "")
 
 
 def _op_is_not_empty(series_val, rule_val):
+    """Returns True where the series value is not null and not an empty string."""
     return series_val.notna() & (series_val != "")
 
 
 class RuleEngine:
+    """Applies a set of configured rules to a DataFrame of order data."""
+
     def __init__(self, rules_config):
+        """Initializes the RuleEngine with a given set of rules.
+
+        Args:
+            rules_config (list[dict]): A list of dictionaries, where each
+                dictionary represents a single rule. A rule consists of
+                conditions and actions.
+        """
         self.rules = rules_config
 
     def apply(self, df):
-        """
-        Apply all configured rules to the DataFrame.
-        Returns the modified DataFrame.
+        """Applies all configured rules to the given DataFrame.
+
+        This is the main entry point for the engine. It iterates through each
+        rule, finds all rows in the DataFrame that match the rule's conditions,
+        and then executes the rule's actions on those matching rows.
+
+        The DataFrame is modified in place.
+
+        Args:
+            df (pd.DataFrame): The order data DataFrame to process.
+
+        Returns:
+            pd.DataFrame: The modified DataFrame.
         """
         if not self.rules or not isinstance(self.rules, list):
             return df
@@ -84,7 +131,17 @@ class RuleEngine:
         return df
 
     def _prepare_df_for_actions(self, df):
-        """Ensure DataFrame has columns required for the actions in the current ruleset."""
+        """Ensures the DataFrame has the columns required for rule actions.
+
+        Scans all rules to find out which columns will be modified or created
+        by the actions (e.g., 'Priority', 'Status_Note'). If these columns
+        do not already exist in the DataFrame, they are created and initialized
+        with a default value. This prevents errors when an action tries to
+        modify a non-existent column.
+
+        Args:
+            df (pd.DataFrame): The DataFrame to prepare.
+        """
         # Determine which columns are needed by scanning the actions in all rules
         needed_columns = set()
         for rule in self.rules:
@@ -108,9 +165,20 @@ class RuleEngine:
             df["Status_Note"] = ""
 
     def _get_matching_rows(self, df, rule):
-        """
-        Evaluates the conditions of a rule and returns a boolean Series
-        of matching rows.
+        """Evaluates a rule's conditions and finds all matching rows.
+
+        Combines the results of each individual condition in a rule using
+        either "AND" (all conditions must match) or "OR" (any condition can
+        match) logic, as specified by the rule's 'match' property.
+
+        Args:
+            df (pd.DataFrame): The DataFrame to evaluate.
+            rule (dict): The rule dictionary containing the conditions.
+
+        Returns:
+            pd.Series[bool]: A boolean Series with the same index as the
+                DataFrame, where `True` indicates a row matches the rule's
+                conditions.
         """
         match_type = rule.get("match", "ALL").upper()
         conditions = rule.get("conditions", [])
@@ -144,9 +212,17 @@ class RuleEngine:
             return pd.concat(condition_results, axis=1).any(axis=1)
 
     def _execute_actions(self, df, matches, actions):
-        """
-        Executes a list of actions on the rows of the DataFrame
-        indicated by the 'matches' boolean Series.
+        """Executes a list of actions on the matching rows of the DataFrame.
+
+        Applies the specified actions (e.g., adding a tag, setting a status)
+        to the rows of the DataFrame that are marked as `True` in the `matches`
+        Series.
+
+        Args:
+            df (pd.DataFrame): The DataFrame to be modified.
+            matches (pd.Series[bool]): A boolean Series indicating which rows
+                to apply the actions to.
+            actions (list[dict]): A list of action dictionaries to execute.
         """
         for action in actions:
             action_type = action.get("type", "").upper()

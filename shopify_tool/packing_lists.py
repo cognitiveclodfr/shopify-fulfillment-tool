@@ -7,8 +7,40 @@ logger = logging.getLogger("ShopifyToolLogger")
 
 
 def create_packing_list(analysis_df, output_file, report_name="Packing List", filters=None, exclude_skus=None):
-    """
-    Creates a versatile packing list in .xlsx format with advanced formatting.
+    """Creates a versatile, formatted packing list in an Excel .xlsx file.
+
+    This function takes the main analysis DataFrame and generates a packing list
+    based on a set of filters. The resulting list is sorted for efficient
+    warehouse picking and formatted for clarity.
+
+    Key steps in the process:
+    1.  **Filtering**: It filters the main DataFrame to include only 'Fulfillable'
+        orders that match the provided filter criteria (e.g., by shipping provider).
+    2.  **Exclusion**: It can exclude specific SKUs from the final list, which is
+        useful for items that are packed separately.
+    3.  **Sorting**: The list is sorted by shipping provider, order number, and SKU
+        to group items logically for picking.
+    4.  **Formatting**: It generates an Excel file with advanced formatting:
+        -   Custom headers, with one header containing the report's generation
+            timestamp and another the filename for reference.
+        -   Borders are used to visually group line items belonging to the same order.
+        -   Column widths are auto-adjusted to fit content.
+        -   Print settings are configured for A4 landscape with repeated headers.
+    5.  **Data Transformation**: The 'Destination_Country' is shown only for the
+        first item of an order to reduce clutter.
+
+    Args:
+        analysis_df (pd.DataFrame): The main DataFrame from the fulfillment
+            analysis, containing all order line items and their statuses.
+        output_file (str): The full path where the output .xlsx file will be
+            saved.
+        report_name (str, optional): The name of the report, used for logging.
+            Defaults to "Packing List".
+        filters (list[dict], optional): A list of dictionaries, where each
+            dictionary defines a filter condition. Each filter dict should have
+            'field', 'operator', and 'value' keys. Defaults to None.
+        exclude_skus (list[str], optional): A list of SKUs to exclude from the
+            packing list. Defaults to None.
     """
     try:
         logger.info(f"--- Creating report: '{report_name}' ---")

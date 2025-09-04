@@ -7,21 +7,60 @@ import time
 
 
 class TreeViewLogHandler(logging.Handler):
-    """A custom logging handler that sends records to a queue."""
+    """A custom logging handler that sends records to a deque.
+
+    This handler is designed to be used with the `LogViewer` widget. Instead
+    of writing to a file or console, it simply places each `LogRecord` it
+    receives onto a thread-safe deque (double-ended queue). The `LogViewer`
+    can then process this queue in the main UI thread.
+
+    Attributes:
+        queue (deque): The queue where log records are placed.
+    """
 
     def __init__(self, queue):
+        """Initializes the TreeViewLogHandler.
+
+        Args:
+            queue (deque): The deque instance to use for storing log records.
+        """
         super().__init__()
         self.queue = queue
 
     def emit(self, record):
+        """Adds the log record to the queue.
+
+        Args:
+            record (logging.LogRecord): The log record to handle.
+        """
         # Add the actual record object to the queue
         self.queue.append(record)
 
 
 class LogViewer(ctk.CTkFrame):
-    """A widget for displaying and filtering logs from the Python logging module."""
+    """A widget for displaying and filtering logs from the Python logging module.
+
+    Note: This widget appears to be from a previous implementation using
+    CustomTkinter and is likely not used in the current PySide6-based
+    application.
+
+    This widget provides a table-like view of log messages with capabilities
+    for filtering by log level and searching by message content. It uses a
+    custom `TreeViewLogHandler` to capture log records in a thread-safe manner.
+
+    Attributes:
+        all_logs (deque): A master list of all received log records.
+        log_queue (deque): A queue for incoming log records from the handler.
+        log_handler (TreeViewLogHandler): The custom logging handler instance.
+    """
 
     def __init__(self, master, **kwargs):
+        """Initializes the LogViewer widget.
+
+        Args:
+            master: The parent widget.
+            **kwargs: Additional keyword arguments for the ctk.CTkFrame.
+        """
         super().__init__(master, **kwargs)
 
         self.all_logs = deque(maxlen=1000)  # Master list of all log records
@@ -39,6 +78,7 @@ class LogViewer(ctk.CTkFrame):
         self._process_log_queue()
 
     def _create_widgets(self):
+        """Creates and lays out all the sub-widgets for the log viewer."""
         # --- Controls Frame ---
         controls_frame = ctk.CTkFrame(self, fg_color="transparent")
         controls_frame.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
@@ -85,7 +125,13 @@ class LogViewer(ctk.CTkFrame):
         self.tree.tag_configure("CRITICAL", background="#EF4444", foreground="white")
 
     def _process_log_queue(self):
-        """Periodically check the queue for new log messages and add them to the master list."""
+        """Periodically checks the queue for new log messages.
+
+        This method runs on a timer in the UI thread. It moves records from
+        the `log_queue` to the `all_logs` master list and adds them to the
+        view if they match the current filters. This ensures thread-safe
+        updates to the UI.
+        """
         while self.log_queue:
             record = self.log_queue.popleft()
             self.all_logs.append(record)
@@ -95,7 +141,11 @@ class LogViewer(ctk.CTkFrame):
         self.after(100, self._process_log_queue)
 
     def _add_log_entry_if_match(self, record):
-        """Adds a log entry to the treeview only if it matches the current filters."""
+        """Adds a single log entry to the treeview if it matches current filters.
+
+        Args:
+            record (logging.LogRecord): The log record to check and add.
+        """
         level_filter = self.level_filter_var.get()
         search_term = self.search_var.get().lower()
         level = record.levelname
@@ -109,7 +159,12 @@ class LogViewer(ctk.CTkFrame):
             self.tree.insert("", 0, values=(log_time, level, record.getMessage()), tags=(level,))
 
     def _apply_filters(self, *args):
-        """Clear the tree and repopulate it based on the current filters."""
+        """Clears and repopulates the log view based on the current filter settings.
+
+        This is called whenever a filter control (level dropdown, search box)
+        is changed. It iterates through the `all_logs` master list and re-adds
+        only the records that match the new filter criteria.
+        """
         # Clear the tree view
         for item in self.tree.get_children():
             self.tree.delete(item)

@@ -7,6 +7,7 @@ from shopify_tool import core
 
 
 def run_test(stock_df, orders_df, history_df=None, low_stock_threshold=10):
+    """Helper function to run an analysis with given data and return the results."""
     config = {"settings": {"low_stock_threshold": low_stock_threshold}}
     config["test_stock_df"] = stock_df
     config["test_orders_df"] = orders_df
@@ -17,6 +18,7 @@ def run_test(stock_df, orders_df, history_df=None, low_stock_threshold=10):
 
 
 def test_TC02_multi_item_fulfillable():
+    """Tests a multi-item order where all items are in stock."""
     # One multi-item order, all items available
     stock = pd.DataFrame({"Артикул": ["A", "B"], "Име": ["A", "B"], "Наличност": [2, 2]})
     orders = pd.DataFrame(
@@ -39,6 +41,7 @@ def test_TC02_multi_item_fulfillable():
 
 
 def test_TC03_prioritization_multi_over_single():
+    """Tests that a multi-item order is prioritized over a single-item order."""
     # Stock A=2, B=1
     stock = pd.DataFrame({"Артикул": ["A", "B"], "Име": ["A", "B"], "Наличност": [2, 1]})
     # Multi-order M1 wants A:2 & B:1 (item_count=2); Single S1 wants A:1
@@ -62,6 +65,7 @@ def test_TC03_prioritization_multi_over_single():
 
 
 def test_TC05_multi_order_with_missing_item_fails():
+    """Tests that a multi-item order fails if any single item is out of stock."""
     # Multi-order with one missing SKU -> whole order Not Fulfillable
     stock = pd.DataFrame({"Артикул": ["A"], "Име": ["A"], "Наличност": [5]})
     orders = pd.DataFrame(
@@ -86,6 +90,7 @@ def test_TC05_multi_order_with_missing_item_fails():
 
 
 def test_TC08_exact_stock_matches():
+    """Tests fulfillment when the required quantity exactly matches the available stock."""
     stock = pd.DataFrame({"Артикул": ["X"], "Име": ["X"], "Наличност": [1]})
     orders = pd.DataFrame(
         {
@@ -104,6 +109,7 @@ def test_TC08_exact_stock_matches():
 
 
 def test_TC09_missing_lineitem_sku_is_ignored():
+    """Tests that order line items with a missing SKU are ignored."""
     stock = pd.DataFrame({"Артикул": ["Y"], "Име": ["Y"], "Наличност": [5]})
     orders = pd.DataFrame(
         {
@@ -122,6 +128,7 @@ def test_TC09_missing_lineitem_sku_is_ignored():
 
 
 def test_TC10_missing_sku_in_stock_file():
+    """Tests that stock items with a missing SKU are ignored."""
     # Stock has a row with missing SKU which should be ignored
     stock = pd.DataFrame({"Артикул": [pd.NA], "Име": ["NA"], "Наличност": [99]})
     orders = pd.DataFrame(
@@ -141,6 +148,7 @@ def test_TC10_missing_sku_in_stock_file():
 
 
 def test_TC11_duplicate_sku_in_stock_keep_first():
+    """Tests that duplicate SKUs in the stock file are handled by keeping the first entry."""
     stock = pd.DataFrame({"Артикул": ["D", "D"], "Име": ["D1", "D2"], "Наличност": [5, 99]})
     orders = pd.DataFrame(
         {
@@ -159,6 +167,7 @@ def test_TC11_duplicate_sku_in_stock_keep_first():
 
 
 def test_TC13_empty_input_files_do_not_crash():
+    """Tests that the analysis runs without crashing when given empty input files."""
     stock = pd.DataFrame(columns=["Артикул", "Име", "Наличност"])
     orders = pd.DataFrame(
         columns=["Name", "Lineitem sku", "Lineitem quantity", "Shipping Method", "Shipping Country", "Tags", "Notes"]

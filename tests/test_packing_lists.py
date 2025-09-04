@@ -7,6 +7,7 @@ from shopify_tool import packing_lists
 
 
 def test_create_packing_list_minimal(tmp_path):
+    """Tests the basic creation of a packing list with minimal data."""
     # Build a small DataFrame that matches the analysis_df shape
     df = pd.DataFrame(
         {

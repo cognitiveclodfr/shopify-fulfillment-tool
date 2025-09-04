@@ -7,8 +7,38 @@ logger = logging.getLogger("ShopifyToolLogger")
 
 
 def create_stock_export(analysis_df, template_file, output_file, report_name="Stock Export", filters=None):
-    """
-    Creates a stock export file by writing data into an existing .xls template file.
+    """Creates a stock export file by populating an existing .xls template.
+
+    This function is designed to generate stock export files required by couriers
+    or other systems. It works by taking an existing Excel template file (.xls),
+    populating it with summarized stock data, and saving it as a new file.
+
+    Key steps in the process:
+    1.  **Filtering**: It filters the main analysis DataFrame to include only
+        'Fulfillable' orders that match the provided filter criteria.
+    2.  **Summarization**: It summarizes the filtered data, calculating the total
+        quantity for each unique SKU.
+    3.  **Template Population**: It opens the specified .xls template file, copies
+        it, and writes the summarized SKU and quantity data into the first sheet
+        of the copy, starting from the second row.
+    4.  **Static Data**: It also writes a static value ("бройка") in the third
+        column, as required by the export format.
+    5.  **Saving**: The populated template is saved to the specified output file path.
+
+    Note: This function relies on `xlrd` and `xlutils`, which are designed for
+    the older .xls format, not .xlsx.
+
+    Args:
+        analysis_df (pd.DataFrame): The main DataFrame from the fulfillment
+            analysis.
+        template_file (str): The full path to the .xls template file. This file
+            must exist and be readable.
+        output_file (str): The full path where the new, populated .xls file will
+            be saved.
+        report_name (str, optional): The name of the report, used for logging.
+            Defaults to "Stock Export".
+        filters (list[dict], optional): A list of dictionaries defining filter
+            conditions to apply before summarizing the data. Defaults to None.
     """
     try:
         logger.info(f"--- Creating report: '{report_name}' ---")
