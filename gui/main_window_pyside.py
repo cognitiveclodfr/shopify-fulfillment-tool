@@ -22,9 +22,33 @@ from gui.actions_handler import ActionsHandler
 
 
 class MainWindow(QMainWindow):
-    """The main window of the Shopify Fulfillment Tool."""
+    """The main window for the Shopify Fulfillment Tool application.
+
+    This class encapsulates the main user interface and orchestrates the
+    interactions between the UI elements, the data processing backend, and
+    various handlers for files, actions, and UI management.
+
+    Attributes:
+        session_path (str): The directory path for the current work session.
+        config (dict): The application's configuration settings.
+        config_path (str): The path to the user's config.json file.
+        orders_file_path (str): The path to the loaded orders CSV file.
+        stock_file_path (str): The path to the loaded stock CSV file.
+        analysis_results_df (pd.DataFrame): The main DataFrame holding the
+            results of the fulfillment analysis.
+        analysis_stats (dict): A dictionary of statistics derived from the
+            analysis results.
+        threadpool (QThreadPool): A thread pool for running background tasks.
+        proxy_model (QSortFilterProxyModel): The proxy model for filtering and
+            sorting the main results table.
+        ui_manager (UIManager): Handles the creation and state of UI widgets.
+        file_handler (FileHandler): Manages file selection and loading logic.
+        actions_handler (ActionsHandler): Handles user actions like running
+            analysis or generating reports.
+    """
 
     def __init__(self):
+        """Initializes the MainWindow, sets up UI, and connects signals."""
         super().__init__()
         self.setWindowTitle("Shopify Fulfillment Tool (PySide6 Refactored)")
         self.setGeometry(100, 100, 950, 800)
@@ -65,7 +89,14 @@ class MainWindow(QMainWindow):
         self.load_session()
 
     def _init_and_load_config(self):
-        """Initializes and loads the application configuration from a JSON file."""
+        """Initializes and loads the application configuration.
+
+        Ensures a 'config.json' exists in the user's persistent data
+        directory. If it doesn't, a default config is copied from the
+        application's resources. It then loads this configuration into
+        `self.config`. If loading fails, it shows a critical error and
+        quits the application.
+        """
         self.config_path = get_persistent_data_path("config.json")
         default_config_path = resource_path("config.json")
         if not os.path.exists(self.config_path):
@@ -83,7 +114,12 @@ class MainWindow(QMainWindow):
             QApplication.quit()
 
     def setup_logging(self):
-        """Sets up the Qt-based logger."""
+        """Sets up the Qt-based logging handler.
+
+        Initializes a `QtLogHandler` that emits a signal whenever a log
+        message is received. This signal is connected to a slot that appends
+        the message to the 'Execution Log' text box in the UI.
+        """
         self.log_handler = QtLogHandler()
         self.log_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
         logging.getLogger().addHandler(self.log_handler)
@@ -91,7 +127,12 @@ class MainWindow(QMainWindow):
         self.log_handler.log_message_received.connect(self.execution_log_edit.appendPlainText)
 
     def connect_signals(self):
-        """Connects all widget signals to their corresponding slots."""
+        """Connects all UI widget signals to their corresponding slots.
+
+        This method centralizes all signal-slot connections for the main
+        window, including button clicks, text changes, and custom signals
+        from handler classes. This makes the UI event flow easier to trace.
+        """
         # Session and file loading
         self.new_session_btn.clicked.connect(self.actions_handler.create_new_session)
         self.load_orders_btn.clicked.connect(self.file_handler.select_orders_file)
@@ -124,11 +165,16 @@ class MainWindow(QMainWindow):
         self.clear_filter_button.clicked.connect(self.clear_filter)
 
     def clear_filter(self):
-        """Clears the filter input."""
+        """Clears the filter input text box."""
         self.filter_input.clear()
 
     def filter_table(self):
-        """Filters the table based on the input text."""
+        """Applies the current filter settings to the results table view.
+
+        Reads the filter text, selected column, and case sensitivity setting
+        from the UI controls and applies them to the `QSortFilterProxyModel`
+        to update the visible rows in the table.
+        """
         text = self.filter_input.text()
         column_index = self.filter_column_selector.currentIndex()
 
@@ -142,7 +188,13 @@ class MainWindow(QMainWindow):
         self.proxy_model.setFilterRegularExpression(text)
 
     def _update_all_views(self):
-        """Central slot to refresh all UI components after data changes."""
+        """Central slot to refresh all UI components after data changes.
+
+        This method is called whenever the main `analysis_results_df` is
+        modified. It recalculates statistics, updates the main results table,
+        refreshes the statistics tab, and repopulates the column filter
+        dropdown. It acts as a single point of refresh for the UI.
+        """
         self.analysis_stats = recalculate_statistics(self.analysis_results_df)
         self.ui_manager.update_results_table(self.analysis_results_df)
         self.update_statistics_tab()
@@ -156,7 +208,12 @@ class MainWindow(QMainWindow):
         # The column manager button is enabled within update_results_table
 
     def update_statistics_tab(self):
-        """Populates the Statistics tab with the latest analysis data."""
+        """Populates the 'Statistics' tab with the latest analysis data.
+
+        Clears any existing data and redraws the statistics display,
+        including the main stats labels and the detailed grid of courier
+        statistics.
+        """
         if not self.analysis_stats:
             return
         for key, label in self.stats_labels.items():
@@ -184,7 +241,12 @@ class MainWindow(QMainWindow):
             self.courier_stats_layout.addWidget(QLabel("No courier stats available."), 0, 0)
 
     def log_activity(self, op_type, desc):
-        """Adds a new entry to the Activity Log table."""
+        """Adds a new entry to the 'Activity Log' table in the UI.
+
+        Args:
+            op_type (str): The type of operation (e.g., "Session", "Analysis").
+            desc (str): A description of the activity.
+        """
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.activity_log_table.insertRow(0)
         self.activity_log_table.setItem(0, 0, QTableWidgetItem(current_time))
@@ -192,7 +254,15 @@ class MainWindow(QMainWindow):
         self.activity_log_table.setItem(0, 2, QTableWidgetItem(desc))
 
     def on_table_double_clicked(self, index: QModelIndex):
-        """Handles double-click events on the tables."""
+        """Handles double-click events on the results table.
+
+        A double-click on a row triggers the toggling of the fulfillment
+        status for the corresponding order.
+
+        Args:
+            index (QModelIndex): The model index of the cell that was
+                double-clicked.
+        """
         if not index.isValid():
             return
 
@@ -207,7 +277,15 @@ class MainWindow(QMainWindow):
             self.actions_handler.toggle_fulfillment_status_for_order(order_number)
 
     def show_context_menu(self, pos: QPoint):
-        """Shows a context menu for table view items."""
+        """Shows a context menu for the results table view.
+
+        The menu is populated with actions relevant to the clicked row,
+        such as changing order status, copying data, or removing items/orders.
+
+        Args:
+            pos (QPoint): The position where the right-click occurred, in the
+                table's viewport coordinates.
+        """
         if self.analysis_results_df.empty:
             return
         table = self.sender()
@@ -250,7 +328,14 @@ class MainWindow(QMainWindow):
             menu.exec(table.viewport().mapToGlobal(pos))
 
     def closeEvent(self, event):
-        """Saves the session data on application close."""
+        """Handles the application window being closed.
+
+        Saves the current analysis DataFrame and visible columns to a session
+        pickle file, allowing the user to restore their work later.
+
+        Args:
+            event: The close event.
+        """
         if not self.analysis_results_df.empty:
             try:
                 session_data = {"dataframe": self.analysis_results_df, "visible_columns": self.visible_columns}
@@ -262,7 +347,12 @@ class MainWindow(QMainWindow):
         event.accept()
 
     def load_session(self):
-        """Loads a previous session if available."""
+        """Loads a previous session from a pickle file if available.
+
+        If a session file exists, it prompts the user to restore it. If they
+        agree, the DataFrame and column visibility are loaded from the file,
+        and the UI is updated. The session file is deleted after the attempt.
+        """
         if os.path.exists(self.session_file):
             reply = QMessageBox.question(
                 self, "Restore Session", "A previous session was found. Do you want to restore it?"

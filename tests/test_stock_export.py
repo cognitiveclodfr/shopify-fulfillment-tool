@@ -9,6 +9,7 @@ from shopify_tool import stock_export
 
 
 def test_create_stock_export_no_template(tmp_path):
+    """Tests that the function handles a non-existent template file gracefully."""
     df = pd.DataFrame({"Order_Fulfillment_Status": ["Fulfillable"], "SKU": ["S1"], "Quantity": [1]})
     # Use a template path that doesn't exist
     template = str(tmp_path / "nonexistent_template.xls")
@@ -76,7 +77,7 @@ def test_create_stock_export_success_path(tmp_path):
 
 
 def create_dummy_template(path):
-    """Helper to create a valid xls template."""
+    """Helper function to create a valid empty .xls template for testing."""
     workbook = xlwt.Workbook()
     sheet = workbook.add_sheet("Sheet1")
     sheet.write(0, 0, "SKU")
@@ -85,7 +86,7 @@ def create_dummy_template(path):
 
 
 def test_create_stock_export_with_filters(tmp_path):
-    """Tests that filters are correctly applied."""
+    """Tests that filters are correctly applied before generating a stock export."""
     analysis_df = pd.DataFrame(
         {
             "Order_Fulfillment_Status": ["Fulfillable", "Fulfillable", "Fulfillable"],
@@ -111,7 +112,7 @@ def test_create_stock_export_with_filters(tmp_path):
 
 
 def test_create_stock_export_empty_after_filter(tmp_path):
-    """Tests behavior when filters result in an empty DataFrame."""
+    """Tests that no report is created if filtering results in an empty dataset."""
     analysis_df = pd.DataFrame(
         {"Order_Fulfillment_Status": ["Fulfillable"], "SKU": ["S1"], "Quantity": [1], "Order_Type": ["A"]}
     )
@@ -124,7 +125,7 @@ def test_create_stock_export_empty_after_filter(tmp_path):
 
 
 def test_create_stock_export_empty_after_summary(tmp_path):
-    """Tests behavior when items exist but quantity is zero."""
+    """Tests that no report is created if all item quantities are zero."""
     analysis_df = pd.DataFrame({"Order_Fulfillment_Status": ["Fulfillable"], "SKU": ["S1"], "Quantity": [0]})
     template_path = tmp_path / "template.xls"
     create_dummy_template(template_path)
@@ -134,7 +135,7 @@ def test_create_stock_export_empty_after_summary(tmp_path):
 
 
 def test_create_stock_export_corrupt_template(tmp_path, mocker):
-    """Tests that a corrupt template file is handled gracefully."""
+    """Tests that a corrupt template file is handled gracefully without crashing."""
     analysis_df = pd.DataFrame({"Order_Fulfillment_Status": ["Fulfillable"], "SKU": ["S1"], "Quantity": [1]})
     template_path = tmp_path / "template.xls"
     create_dummy_template(template_path)

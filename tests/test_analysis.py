@@ -41,11 +41,7 @@ def test_generalize_shipping_method(input_method, expected_output):
 
 
 def test_fulfillment_prioritization_logic():
-    """
-    Tests that the fulfillment logic correctly prioritizes orders based on:
-    1. Multi-item orders before single-item orders.
-    2. Older orders (lower order number) before newer orders.
-    """
+    """Tests that the fulfillment logic correctly prioritizes multi-item orders."""
     # Create a stock of 4 for a single SKU. This is the key to the test.
     # It's enough to fulfill the two multi-item orders (2+2=4), but not any of the single-item orders.
     stock_df = pd.DataFrame({"Артикул": ["SKU-1"], "Име": ["Test Product"], "Наличност": [4]})
@@ -84,10 +80,7 @@ def test_fulfillment_prioritization_logic():
 
 
 def test_summary_missing_report():
-    """
-    Tests that the summary_missing_df is correctly generated for items that
-    are missing because the required quantity exceeds the initial stock.
-    """
+    """Tests that the missing items summary is correctly generated."""
     stock_df = pd.DataFrame({"Артикул": ["SKU-1"], "Име": ["P1"], "Наличност": [5]})
     orders_df = pd.DataFrame(
         {
@@ -112,7 +105,7 @@ def test_summary_missing_report():
 
 @pytest.fixture
 def sample_analysis_df():
-    """Provides a sample analysis_df for testing toggle logic."""
+    """Provides a sample analysis DataFrame fixture for testing."""
     df = pd.DataFrame(
         {
             "Order_Number": ["1001", "1001", "1002"],
@@ -129,8 +122,10 @@ def sample_analysis_df():
 
 
 class TestToggleOrderFulfillment:
+    """Groups tests for the toggle_order_fulfillment function."""
+
     def test_toggle_fulfillable_to_not_fulfillable(self, sample_analysis_df):
-        """Tests that un-fulfilling an order correctly returns stock."""
+        """Tests changing an order from 'Fulfillable' to 'Not Fulfillable'."""
         df = sample_analysis_df.copy()
 
         # Un-fulfill order 1001 (contains SKU-A:1, SKU-B:2)
@@ -144,7 +139,7 @@ class TestToggleOrderFulfillment:
         assert all(updated_df[updated_df["Order_Number"] == "1001"]["Order_Fulfillment_Status"] == "Not Fulfillable")
 
     def test_toggle_not_fulfillable_to_fulfillable_success(self, sample_analysis_df):
-        """Tests that force-fulfilling an order correctly deducts stock."""
+        """Tests successfully changing an order to 'Fulfillable' when stock is sufficient."""
         df = sample_analysis_df.copy()
         # Stock for SKU-A is 6. Order 1002 needs 3. This should succeed.
 
@@ -156,7 +151,7 @@ class TestToggleOrderFulfillment:
         assert all(updated_df[updated_df["Order_Number"] == "1002"]["Order_Fulfillment_Status"] == "Fulfillable")
 
     def test_toggle_not_fulfillable_to_fulfillable_fail_no_stock(self, sample_analysis_df):
-        """Tests that force-fulfilling fails if there is not enough stock."""
+        """Tests that changing an order to 'Fulfillable' fails when stock is insufficient."""
         df = sample_analysis_df.copy()
         # Order 1002 needs 3 of SKU-A, but let's set the stock to 2
         df.loc[df["SKU"] == "SKU-A", "Final_Stock"] = 2

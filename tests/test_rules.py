@@ -201,7 +201,7 @@ def test_rules_with_empty_conditions(sample_df):
     ],
 )
 def test_all_string_operators(sample_df, operator, value, expected_matches):
-    """Tests all string-based operators via parametrization."""
+    """Tests all string-based operators of the rule engine via parametrization."""
     field = "Shipping_Provider"
     if "empty" in operator:
         field = "Tags"  # 'is empty' needs a field with empty values
@@ -228,7 +228,7 @@ def test_all_string_operators(sample_df, operator, value, expected_matches):
     ],
 )
 def test_all_numeric_operators(sample_df, operator, value, expected_matches):
-    """Tests all numeric operators via parametrization."""
+    """Tests all numeric operators of the rule engine via parametrization."""
     rules = [
         {
             "match": "ALL",
@@ -244,7 +244,7 @@ def test_all_numeric_operators(sample_df, operator, value, expected_matches):
 
 
 def test_rule_with_invalid_field(sample_df):
-    """Tests that a rule with a non-existent field is skipped."""
+    """Tests that a rule with a non-existent field is skipped gracefully."""
     original_df = sample_df.copy()
     rules = [{"conditions": [{"field": "NonExistentField", "operator": "equals", "value": "a"}]}]
     engine = RuleEngine(rules)
@@ -253,7 +253,7 @@ def test_rule_with_invalid_field(sample_df):
 
 
 def test_prepare_df_for_actions_creates_columns(sample_df):
-    """Tests that necessary columns are created if they don't exist."""
+    """Tests that the _prepare_df_for_actions method creates missing columns."""
     df = pd.DataFrame({"Order_Number": ["#1001"]})
     rules = [
         {"actions": [{"type": "SET_PRIORITY"}]},
@@ -268,7 +268,7 @@ def test_prepare_df_for_actions_creates_columns(sample_df):
 
 
 def test_exclude_from_report_action(sample_df):
-    """Tests the EXCLUDE_FROM_REPORT action."""
+    """Tests the EXCLUDE_FROM_REPORT action sets the internal flag correctly."""
     rules = [
         {
             "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1002"}],
@@ -282,7 +282,7 @@ def test_exclude_from_report_action(sample_df):
 
 
 def test_add_tag_to_nan_note(sample_df):
-    """Tests that ADD_TAG works correctly on a cell with a NaN value."""
+    """Tests that the ADD_TAG action works correctly on a cell with a NaN/null value."""
     df = sample_df.copy()
     # Force a NaN value into the Status_Note column
     df.loc[0, "Status_Note"] = pd.NA

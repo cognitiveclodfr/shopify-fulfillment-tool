@@ -9,10 +9,12 @@ from shopify_tool import core
 
 
 def make_stock_df():
+    """Creates a sample stock DataFrame for testing."""
     return pd.DataFrame({"Артикул": ["02-FACE-1001", "SKU-2"], "Име": ["Mask A", "Item 2"], "Наличност": [5, 10]})
 
 
 def make_orders_df():
+    """Creates a sample orders DataFrame for testing."""
     return pd.DataFrame(
         {
             "Name": ["1001", "1002"],
@@ -27,6 +29,7 @@ def make_orders_df():
 
 
 def test_run_full_analysis_basic():
+    """Tests the basic in-memory execution of run_full_analysis."""
     stock_df = make_stock_df()
     orders_df = make_orders_df()
     # set threshold to 4 so final stock 3 will be flagged as Low Stock
@@ -141,14 +144,14 @@ def test_validate_csv_headers(tmp_path, file_content, required_cols, delimiter, 
 
 
 def test_validate_csv_headers_file_not_found():
-    """Tests header validation when the file does not exist."""
+    """Tests header validation behavior when the input file does not exist."""
     is_valid, missing = core.validate_csv_headers("non_existent_file.csv", ["any"], ",")
     assert not is_valid
     assert "File not found" in missing[0]
 
 
 def test_validate_csv_headers_generic_exception(mocker):
-    """Tests header validation when pandas raises an unexpected exception."""
+    """Tests header validation behavior when pandas raises an unexpected exception."""
     mocker.patch("pandas.read_csv", side_effect=Exception("Unexpected error"))
     is_valid, missing = core.validate_csv_headers("any_file.csv", ["any"], ",")
     assert not is_valid
@@ -156,7 +159,7 @@ def test_validate_csv_headers_generic_exception(mocker):
 
 
 def test_run_full_analysis_file_not_found(mocker):
-    """Tests run_full_analysis when input files do not exist."""
+    """Tests run_full_analysis behavior when input files do not exist."""
     mocker.patch("os.path.exists", return_value=False)
     success, msg, _, _ = core.run_full_analysis("fake", "fake", "fake", ";", {})
     assert not success
@@ -164,7 +167,7 @@ def test_run_full_analysis_file_not_found(mocker):
 
 
 def test_run_full_analysis_validation_fails(mocker):
-    """Tests run_full_analysis when dataframe validation fails."""
+    """Tests run_full_analysis behavior when DataFrame validation fails."""
     # This mocks the internal _validate_dataframes function to return errors
     mocker.patch("shopify_tool.core._validate_dataframes", return_value=["Missing column 'X'"])
     success, msg, _, _ = core.run_full_analysis(
@@ -175,7 +178,7 @@ def test_run_full_analysis_validation_fails(mocker):
 
 
 def test_create_packing_list_report_exception(mocker):
-    """Tests that create_packing_list_report handles exceptions gracefully."""
+    """Tests exception handling in the create_packing_list_report function."""
     mocker.patch("shopify_tool.packing_lists.create_packing_list", side_effect=Exception("Disk full"))
     analysis_df = pd.DataFrame()
     report_config = {"name": "FailList", "output_filename": "/tmp/fail.xlsx"}
@@ -185,7 +188,7 @@ def test_create_packing_list_report_exception(mocker):
 
 
 def test_create_stock_export_report_exception(mocker):
-    """Tests that create_stock_export_report handles exceptions gracefully."""
+    """Tests exception handling in the create_stock_export_report function."""
     mocker.patch("shopify_tool.stock_export.create_stock_export", side_effect=Exception("Template corrupt"))
     analysis_df = pd.DataFrame()
     report_config = {"name": "FailExport", "template": "bad.xls"}
@@ -195,7 +198,7 @@ def test_create_stock_export_report_exception(mocker):
 
 
 def test_validate_dataframes_with_missing_columns():
-    """Tests the internal _validate_dataframes function."""
+    """Tests the internal _validate_dataframes helper function."""
     orders_df = pd.DataFrame({"Name": [1]})
     stock_df = pd.DataFrame({"Артикул": ["A"]})
     config = {
@@ -208,7 +211,7 @@ def test_validate_dataframes_with_missing_columns():
 
 
 def test_run_full_analysis_with_rules(mocker):
-    """Tests that the rule engine is applied during a full analysis."""
+    """Tests that the rule engine is correctly called during a full analysis."""
     mock_engine_apply = mocker.patch("shopify_tool.rules.RuleEngine.apply")
     config = {
         "test_stock_df": make_stock_df(),
@@ -220,7 +223,7 @@ def test_run_full_analysis_with_rules(mocker):
 
 
 def test_run_full_analysis_updates_history(tmp_path, mocker):
-    """Tests that a successful run with fulfillable orders updates the history CSV."""
+    """Tests that a successful analysis correctly updates the fulfillment history file."""
     # Setup files
     output_dir = tmp_path / "output"
     output_dir.mkdir()
@@ -251,7 +254,7 @@ def test_run_full_analysis_updates_history(tmp_path, mocker):
 
 
 def test_create_packing_list_creates_dir(tmp_path):
-    """Tests that create_packing_list_report creates the output directory if it doesn't exist."""
+    """Tests that the report generation function creates the output directory if needed."""
     output_dir = tmp_path / "non_existent_dir"
     output_file = output_dir / "report.xlsx"
     report_config = {"name": "Test", "output_filename": str(output_file)}

@@ -32,10 +32,7 @@ def test_pandas_model_data_retrieval(sample_dataframe):
     assert model.data(index) == 'B'
 
 def test_column_reordering_in_model(sample_dataframe):
-    """
-    Tests that the set_column_order_and_visibility method correctly
-    reorders the internal dataframe in the PandasModel.
-    """
+    """Tests that the column order can be changed in the model."""
     model = PandasModel(sample_dataframe)
 
     # Define a new column order

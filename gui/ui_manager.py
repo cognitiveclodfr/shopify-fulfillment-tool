@@ -9,14 +9,37 @@ from .pandas_model import PandasModel
 
 
 class UIManager:
-    """Handles the creation and layout of all UI widgets for the main window."""
+    """Handles the creation, layout, and state of all UI widgets.
+
+    This class is responsible for building the graphical user interface of the
+    main window. It creates all the widgets (buttons, labels, tables, etc.),
+    arranges them in layouts and group boxes, and provides methods to update
+    their state (e.g., enabling/disabling buttons, populating tables).
+
+    It decouples the raw widget creation and layout logic from the main
+    application logic in `MainWindow`.
+
+    Attributes:
+        mw (MainWindow): A reference to the main window instance.
+        log (logging.Logger): A logger for this class.
+    """
 
     def __init__(self, main_window):
+        """Initializes the UIManager.
+
+        Args:
+            main_window (MainWindow): The main window instance that this
+                manager will build the UI for.
+        """
         self.mw = main_window
         self.log = logging.getLogger(__name__)
 
     def create_widgets(self):
-        """Create and layout all widgets in the main window."""
+        """Creates and lays out all widgets in the main window.
+
+        This is the main entry point for building the UI. It constructs the
+        entire widget hierarchy for the `MainWindow`.
+        """
         self.log.info("Creating UI widgets.")
         central_widget = QWidget()
         self.mw.setCentralWidget(central_widget)
@@ -32,7 +55,7 @@ class UIManager:
         self.log.info("UI widgets created successfully.")
 
     def _create_session_group(self):
-        """Creates the 'Session' group box."""
+        """Creates the 'Session' QGroupBox."""
         group = QGroupBox("Session")
         layout = QHBoxLayout()
         group.setLayout(layout)
@@ -47,7 +70,7 @@ class UIManager:
         return group
 
     def _create_files_group(self):
-        """Creates the 'Load Data' group box."""
+        """Creates the 'Load Data' QGroupBox."""
         group = QGroupBox("Load Data")
         layout = QGridLayout()
         group.setLayout(layout)
@@ -74,14 +97,14 @@ class UIManager:
         return group
 
     def _create_actions_layout(self):
-        """Creates the layout containing the 'Reports' and 'Actions' group boxes."""
+        """Creates the QHBoxLayout containing the 'Reports' and 'Actions' groups."""
         layout = QHBoxLayout()
         layout.addWidget(self._create_reports_group(), 1)
         layout.addWidget(self._create_main_actions_group(), 3)
         return layout
 
     def _create_reports_group(self):
-        """Creates the 'Reports' group box."""
+        """Creates the 'Reports' QGroupBox."""
         group = QGroupBox("Reports")
         layout = QVBoxLayout()
         group.setLayout(layout)
@@ -104,7 +127,7 @@ class UIManager:
         return group
 
     def _create_main_actions_group(self):
-        """Creates the 'Actions' group box with the main run button."""
+        """Creates the 'Actions' QGroupBox containing the main 'Run' button."""
         group = QGroupBox("Actions")
         layout = QGridLayout()
         group.setLayout(layout)
@@ -125,7 +148,7 @@ class UIManager:
         return group
 
     def _create_tab_view(self):
-        """Creates the main tab widget for displaying data and logs."""
+        """Creates the main QTabWidget for displaying data and logs."""
         tab_view = QTabWidget()
         self.mw.execution_log_edit = QPlainTextEdit()
         self.mw.execution_log_edit.setReadOnly(True)
@@ -144,7 +167,7 @@ class UIManager:
         return tab_view
 
     def _create_activity_log_tab(self):
-        """Creates the 'Activity Log' tab with a table."""
+        """Creates the 'Activity Log' tab with its QTableWidget."""
         tab = QWidget()
         layout = QVBoxLayout(tab)
         self.mw.activity_log_table = QTableWidget()
@@ -155,7 +178,7 @@ class UIManager:
         return tab
 
     def _create_data_view_tab(self):
-        """Creates the 'Analysis Data' tab with frozen and main tables."""
+        """Creates the 'Analysis Data' tab, including the filter controls and table view."""
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
@@ -183,7 +206,11 @@ class UIManager:
         return tab
 
     def create_statistics_tab(self, tab_widget):
-        """Creates the UI elements for the Statistics tab."""
+        """Creates and lays out the UI elements for the 'Statistics' tab.
+
+        Args:
+            tab_widget (QWidget): The parent widget (the tab) to populate.
+        """
         layout = QGridLayout(tab_widget)
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.mw.stats_labels = {}
@@ -211,7 +238,16 @@ class UIManager:
         self.log.info("Statistics tab created.")
 
     def set_ui_busy(self, is_busy):
-        """Enable or disable UI elements based on busy status."""
+        """Enables or disables key UI elements based on application state.
+
+        This is used to prevent user interaction while a long-running process
+        (like the main analysis) is active. It also enables report buttons
+        only when data is loaded.
+
+        Args:
+            is_busy (bool): If True, disables interactive widgets. If False,
+                enables them based on the current application state.
+        """
         self.mw.run_analysis_button.setEnabled(not is_busy)
         is_data_loaded = not self.mw.analysis_results_df.empty
         self.mw.packing_list_button.setEnabled(not is_busy and is_data_loaded)
@@ -220,7 +256,15 @@ class UIManager:
         self.log.debug(f"UI busy state set to: {is_busy}")
 
     def update_results_table(self, data_df):
-        """Updates the table views with new data."""
+        """Populates the main results table with new data from a DataFrame.
+
+        It sets up a `PandasModel` and a `QSortFilterProxyModel` to efficiently
+        display and filter the potentially large dataset of analysis results.
+
+        Args:
+            data_df (pd.DataFrame): The DataFrame containing the analysis
+                results to display.
+        """
         self.log.info("Updating results table with new data.")
         if data_df.empty:
             self.log.warning("Received empty dataframe, clearing tables.")

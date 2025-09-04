@@ -7,10 +7,12 @@ from shopify_tool.analysis import run_analysis
 
 
 def make_stock_df():
+    """Creates a sample stock DataFrame for testing."""
     return pd.DataFrame({"Артикул": ["A", "C"], "Име": ["Item A", "Item C"], "Наличност": [2, 0]})
 
 
 def make_orders_df():
+    """Creates a sample orders DataFrame for testing."""
     return pd.DataFrame(
         {
             "Name": ["O1", "O2", "O3"],
@@ -25,6 +27,7 @@ def make_orders_df():
 
 
 def test_summary_missing_and_stats():
+    """Tests the generation of missing summary and stats with complex scenarios."""
     stock_df = make_stock_df()
     orders_df = make_orders_df()
     history_df = pd.DataFrame({"Order_Number": []})
@@ -44,6 +47,7 @@ def test_summary_missing_and_stats():
 
 
 def test_repeat_system_note():
+    """Tests that a 'Repeat' system note is correctly added for historical orders."""
     stock_df = make_stock_df()
     orders_df = make_orders_df()
     history_df = pd.DataFrame({"Order_Number": ["O3"]})

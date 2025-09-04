@@ -3,13 +3,16 @@ import numpy as np
 
 
 def _generalize_shipping_method(method):
-    """
-    Standardizes raw shipping method names to a consistent format.
+    """Standardizes raw shipping method names to a consistent format.
 
-    For example, 'dhl express' becomes 'DHL'.
+    Takes a raw shipping method string, converts it to lowercase, and maps it
+    to a standardized provider name (e.g., 'dhl express' becomes 'DHL').
+    If the method is not recognized, it returns a title-cased version of the
+    input. Handles NaN values by returning 'Unknown'.
 
     Args:
-        method (str or float): The raw shipping method from the orders file.
+        method (str | float): The raw shipping method from the orders file.
+            Can be a float (NaN) for empty values.
 
     Returns:
         str: The standardized shipping provider name.
@@ -27,26 +30,45 @@ def _generalize_shipping_method(method):
 
 
 def run_analysis(stock_df, orders_df, history_df):
-    """
-    Performs the core fulfillment analysis and simulation.
+    """Performs the core fulfillment analysis and simulation.
 
-    This function takes cleaned stock, order, and history data, simulates the
-    fulfillment process by prioritizing multi-item orders, and calculates
-    the final stock levels. It does not perform any file I/O.
+    This function is the heart of the fulfillment logic. It takes raw data,
+    cleans it, and simulates the stock allocation process.
+
+    The process includes:
+    1.  Cleaning and standardizing columns in orders and stock DataFrames.
+    2.  Prioritizing orders for fulfillment, typically processing multi-item
+        orders first to maximize the number of complete orders shipped.
+    3.  Iterating through prioritized orders, checking stock availability, and
+        allocating stock for fulfillable orders.
+    4.  Calculating the final stock levels after the simulation.
+    5.  Enriching the data with additional information like shipping provider,
+        order type (Single/Multi), and repeat order status.
+    6.  Generating summary reports for fulfilled and missing items.
+    7.  Calculating final statistics.
+
+    This function operates purely on DataFrames and does not perform any
+    file I/O.
 
     Args:
         stock_df (pd.DataFrame): DataFrame with stock levels for each SKU.
-        orders_df (pd.DataFrame): DataFrame with all order line items.
-        history_df (pd.DataFrame): DataFrame with previously fulfilled order numbers.
+            Requires columns 'Артикул' (SKU) and 'Наличност' (Stock).
+        orders_df (pd.DataFrame): DataFrame with all order line items from
+            Shopify. Requires 'Name' (Order Number), 'Lineitem sku', and
+            'Lineitem quantity'.
+        history_df (pd.DataFrame): DataFrame with previously fulfilled order
+            numbers. Requires an 'Order_Number' column.
 
     Returns:
-        tuple: A tuple containing four elements:
+        tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
+            A tuple containing four elements:
             - final_df (pd.DataFrame): The main DataFrame with detailed results
-              for every line item, including fulfillment status.
-            - summary_present_df (pd.DataFrame): A summary of all items that
-              will be fulfilled.
-            - summary_missing_df (pd.DataFrame): A summary of items that could
-              not be fulfilled due to lack of stock.
+              for every line item, including the calculated
+              'Order_Fulfillment_Status'.
+            - summary_present_df (pd.DataFrame): A summary of all SKUs that
+              will be fulfilled, aggregated by quantity.
+            - summary_missing_df (pd.DataFrame): A summary of SKUs in
+              unfulfillable orders that were out of stock.
             - stats (dict): A dictionary containing key statistics about the
               fulfillment analysis (e.g., total orders completed).
     """
@@ -188,14 +210,26 @@ def run_analysis(stock_df, orders_df, history_df):
 
 
 def recalculate_statistics(df):
-    """
-    Calculates statistics based on the provided analysis DataFrame.
+    """Calculates statistics based on the provided analysis DataFrame.
+
+    Aggregates data from the main analysis DataFrame to produce a summary
+    of key metrics, such as the number of completed orders, total items,
+    and a breakdown of orders per shipping courier.
 
     Args:
-        df (pd.DataFrame): The main analysis DataFrame.
+        df (pd.DataFrame): The main analysis DataFrame, which must contain
+            'Order_Fulfillment_Status', 'Order_Number', 'Quantity',
+            'Shipping_Provider', and 'System_note' columns.
 
     Returns:
-        dict: A dictionary containing key statistics.
+        dict: A dictionary containing key statistics, including:
+            - 'total_orders_completed' (int)
+            - 'total_orders_not_completed' (int)
+            - 'total_items_to_write_off' (int)
+            - 'total_items_not_to_write_off' (int)
+            - 'couriers_stats' (list[dict] | None): A list of dictionaries,
+              each representing a courier's stats, or None if no orders
+              were completed.
     """
     stats = {}
     completed_orders_df = df[df["Order_Fulfillment_Status"] == "Fulfillable"].copy()
@@ -225,18 +259,31 @@ def recalculate_statistics(df):
 
 
 def toggle_order_fulfillment(df, order_number):
-    """
-    Manually toggles the fulfillment status of an order and recalculates stock.
+    """Manually toggles the fulfillment status of an order and recalculates stock.
+
+    This function allows a user to manually override the automated fulfillment
+    decision for a single order.
+
+    - If an order is 'Fulfillable', it will be changed to 'Not Fulfillable',
+      and the stock allocated to it will be returned to the pool (i.e.,
+      'Final_Stock' for the affected SKUs will be increased).
+    - If an order is 'Not Fulfillable', it will be changed to 'Fulfillable'.
+      This is a "force-fulfill" action. The function first checks if there is
+      enough 'Final_Stock' to cover the order. If not, it fails. If there is
+      enough stock, it deducts the required quantities from 'Final_Stock'.
+
+    The function operates on and returns a modified copy of the input DataFrame.
 
     Args:
         df (pd.DataFrame): The main analysis DataFrame.
         order_number (str): The order number to toggle.
 
     Returns:
-        tuple: A tuple containing:
+        tuple[bool, str | None, pd.DataFrame]: A tuple containing:
             - success (bool): True if the toggle was successful, False otherwise.
-            - error_message (str or None): An error message if success is False.
-            - updated_df (pd.DataFrame): The modified DataFrame.
+            - error_message (str | None): An error message if success is False.
+            - updated_df (pd.DataFrame): The modified DataFrame. If the toggle
+              fails, this is the original, unmodified DataFrame.
     """
     if df is None or order_number not in df["Order_Number"].values:
         return False, "Order number not found.", df

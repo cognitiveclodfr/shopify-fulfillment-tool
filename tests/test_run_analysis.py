@@ -7,6 +7,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 
 def make_test_data():
+    """Creates a sample set of DataFrames and config for testing run_analysis."""
     # Stock: 2 items, one with zero stock
     stock_df = pd.DataFrame({"Артикул": ["SKU1", "SKU2"], "Име": ["Product 1", "Product 2"], "Наличност": [5, 0]})
     # Orders: 2 orders, one fulfillable, one not
@@ -33,6 +34,7 @@ def make_test_data():
 
 
 def test_run_analysis_basic():
+    """Tests the basic execution of run_full_analysis in test mode."""
     from shopify_tool import core
 
     stock_df, orders_df, history_df, config = make_test_data()
