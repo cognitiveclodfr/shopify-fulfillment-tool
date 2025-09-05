@@ -307,63 +307,43 @@ def get_unique_column_values(df, column_name):
         return []
 
 
-def create_stock_export_report(analysis_df, report_config, templates_path, output_path):
-    """Generates a stock export report from a template.
-
-    Creates a stock export file (e.g., for a courier) based on a given
-    template. It filters the main analysis data according to the report
-    configuration and saves the output to a new file in the specified
-    output directory.
+def create_stock_export_report(analysis_df, report_config):
+    """Generates a single stock export report based on a configuration.
 
     Args:
         analysis_df (pd.DataFrame): The main analysis DataFrame.
-        report_config (dict): A dictionary from the main config defining the
-            report, including the template name and filters.
-        templates_path (str): The path to the directory containing template
-            files.
-        output_path (str): The path to the directory where the export file will
-            be saved.
+        report_config (dict): The configuration for the specific stock export.
 
     Returns:
-        tuple[bool, str]: A tuple containing:
-            - bool: True for success, False for failure.
-            - str: A message indicating the result (e.g., success message with
-              file path or an error description).
+        tuple[bool, str]: A tuple containing a success flag and a status message.
     """
-    report_name = report_config.get("name", "Unknown Report")
+    report_name = report_config.get("name", "Untitled Stock Export")
     try:
-        template_name = report_config["template"]
-        template_full_path = os.path.join(templates_path, template_name)
+        output_filename = report_config["output_filename"]
+        filters = report_config.get("filters")
 
-        datestamp = datetime.now().strftime("%Y-%m-%d")
-        name, ext = os.path.splitext(template_name)
-        output_filename = f"{name}_{datestamp}{ext}"
-
-        os.makedirs(output_path, exist_ok=True)
-        output_full_path = os.path.join(output_path, output_filename)
+        # Ensure the output directory exists
+        output_dir = os.path.dirname(output_filename)
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
 
         stock_export.create_stock_export(
-            analysis_df=analysis_df,
-            template_file=template_full_path,
-            output_file=output_full_path,
+            analysis_df,
+            output_filename,
             report_name=report_name,
-            filters=report_config.get("filters"),
+            filters=filters,
         )
-        success_message = f"Stock export '{report_name}' created successfully at '{output_full_path}'."
+        success_message = f"Stock export '{report_name}' created successfully at '{output_filename}'."
         return True, success_message
     except KeyError as e:
         error_message = f"Configuration error for stock export '{report_name}': Missing key {e}."
         logger.error(f"Config error for stock export '{report_name}': {e}", exc_info=True)
-        return False, error_message
-    except FileNotFoundError:
-        error_message = f"Template file not found for report '{report_name}'."
-        logger.error(f"Template not found for stock export '{report_name}'", exc_info=True)
         return False, error_message
     except PermissionError:
         error_message = "Permission denied. Could not write stock export."
         logger.error(f"Permission error creating stock export '{report_name}'", exc_info=True)
         return False, error_message
     except Exception as e:
-        error_message = f"Failed to create stock export '{report_name}'. See logs/app_errors.log for details."
+        error_message = f"Failed to create stock export '{report_name}'. See logs for details."
         logger.error(f"Error creating stock export '{report_name}': {e}", exc_info=True)
         return False, error_message
