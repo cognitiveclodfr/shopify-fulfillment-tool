@@ -9,7 +9,6 @@ from PySide6.QtWidgets import QMessageBox, QInputDialog
 from gui.worker import Worker
 from shopify_tool import core
 from shopify_tool.analysis import toggle_order_fulfillment
-from shopify_tool.utils import resource_path
 from gui.settings_window_pyside import SettingsWindow
 from gui.report_selection_dialog import ReportSelectionDialog
 from gui.report_builder_window_pyside import ReportBuilderWindow
