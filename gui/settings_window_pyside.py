@@ -94,9 +94,27 @@ class SettingsWindow(QDialog):
         self.config_data = json.loads(json.dumps(config))
         self.analysis_df = analysis_df if analysis_df is not None else pd.DataFrame()
 
+        # Ensure mappings sections exist with the correct structure
+        if not isinstance(self.config_data.get("column_mappings"), dict) or not all(
+            k in self.config_data["column_mappings"] for k in ["orders", "stock"]
+        ):
+            self.config_data["column_mappings"] = {
+                "orders": {
+                    "name": "Name",
+                    "sku": "Lineitem sku",
+                    "quantity": "Lineitem quantity",
+                    "shipping_provider": "Shipping Provider",
+                },
+                "stock": {"sku": "Артикул", "stock": "Наличност"},
+            }
+        if "courier_mappings" not in self.config_data:
+            self.config_data["courier_mappings"] = {}
+
         self.rule_widgets = []
         self.packing_list_widgets = []
         self.stock_export_widgets = []
+        self.column_mapping_widgets = {}
+        self.courier_mapping_widgets = []
 
         self.setWindowTitle("Application Settings")
         self.setMinimumSize(800, 700)
@@ -110,6 +128,7 @@ class SettingsWindow(QDialog):
         self.create_rules_tab()
         self.create_packing_lists_tab()
         self.create_stock_exports_tab()
+        self.create_mappings_tab()
 
         button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         button_box.accepted.connect(self.save_settings)
@@ -584,6 +603,88 @@ class SettingsWindow(QDialog):
         for f_config in config.get("filters", []):
             self.add_filter_row(widget_refs, self.FILTERABLE_COLUMNS, self.FILTER_OPERATORS, f_config)
 
+    def create_mappings_tab(self):
+        """Creates the 'Mappings' tab for column and courier name mappings."""
+        tab = QWidget()
+        main_layout = QVBoxLayout(tab)
+
+        # Column Mappings GroupBox
+        column_mappings_box = QGroupBox("Мапінг стовпців")
+        column_mappings_layout = QVBoxLayout(column_mappings_box)
+
+        # Orders Column Mappings
+        orders_box = QGroupBox("Orders CSV")
+        orders_layout = QFormLayout(orders_box)
+        self.column_mapping_widgets["orders"] = {}
+        for key, value in self.config_data["column_mappings"]["orders"].items():
+            label = QLabel(f"{key.replace('_', ' ').title()}:")
+            line_edit = QLineEdit(value)
+            orders_layout.addRow(label, line_edit)
+            self.column_mapping_widgets["orders"][key] = line_edit
+        column_mappings_layout.addWidget(orders_box)
+
+        # Stock Column Mappings
+        stock_box = QGroupBox("Stock CSV")
+        stock_layout = QFormLayout(stock_box)
+        self.column_mapping_widgets["stock"] = {}
+        for key, value in self.config_data["column_mappings"]["stock"].items():
+            label = QLabel(f"{key.replace('_', ' ').title()}:")
+            line_edit = QLineEdit(value)
+            stock_layout.addRow(label, line_edit)
+            self.column_mapping_widgets["stock"][key] = line_edit
+        column_mappings_layout.addWidget(stock_box)
+
+        main_layout.addWidget(column_mappings_box)
+
+        # Courier Mappings GroupBox
+        courier_mappings_box = QGroupBox("Мапінг кур'єрів")
+        courier_main_layout = QVBoxLayout(courier_mappings_box)
+
+        # Layout for the dynamic rows
+        self.courier_mappings_layout = QVBoxLayout()
+        courier_main_layout.addLayout(self.courier_mappings_layout)
+
+        add_courier_btn = QPushButton("Додати мапінг")
+        add_courier_btn.clicked.connect(lambda: self.add_courier_mapping_row())
+        courier_main_layout.addWidget(add_courier_btn, 0, Qt.AlignLeft)
+
+        main_layout.addWidget(courier_mappings_box)
+        main_layout.addStretch()
+
+        self.tab_widget.addTab(tab, "Мапінги")
+
+        # Populate initial courier mappings
+        for original, standardized in self.config_data.get("courier_mappings", {}).items():
+            self.add_courier_mapping_row(original, standardized)
+
+    def add_courier_mapping_row(self, original_name="", standardized_name=""):
+        """Adds a new row for a single courier mapping."""
+        row_widget = QWidget()
+        row_layout = QHBoxLayout(row_widget)
+
+        original_edit = QLineEdit(original_name)
+        original_edit.setPlaceholderText("Оригінальна назва")
+        standardized_edit = QLineEdit(standardized_name)
+        standardized_edit.setPlaceholderText("Стандартизована назва")
+        delete_btn = QPushButton("X")
+
+        row_layout.addWidget(original_edit, 1)
+        row_layout.addWidget(standardized_edit, 1)
+        row_layout.addWidget(delete_btn)
+
+        self.courier_mappings_layout.addWidget(row_widget)
+
+        row_refs = {
+            "widget": row_widget,
+            "original": original_edit,
+            "standardized": standardized_edit,
+        }
+        self.courier_mapping_widgets.append(row_refs)
+
+        delete_btn.clicked.connect(
+            lambda: self._delete_row_from_list(row_widget, self.courier_mapping_widgets, row_refs)
+        )
+
     def save_settings(self):
         """Saves all settings from the UI back into the config dictionary.
 
@@ -662,6 +763,20 @@ class SettingsWindow(QDialog):
                         item_data["template"] = item_w["template"].text()
                     new_items.append(item_data)
                 self.config_data[key] = new_items
+
+            # Mappings Tab
+            for key, widget in self.column_mapping_widgets["orders"].items():
+                self.config_data["column_mappings"]["orders"][key] = widget.text()
+            for key, widget in self.column_mapping_widgets["stock"].items():
+                self.config_data["column_mappings"]["stock"][key] = widget.text()
+
+            new_courier_mappings = {}
+            for row_ref in self.courier_mapping_widgets:
+                original = row_ref["original"].text().strip()
+                standardized = row_ref["standardized"].text().strip()
+                if original and standardized:
+                    new_courier_mappings[original] = standardized
+            self.config_data["courier_mappings"] = new_courier_mappings
 
             self.accept()
         except ValueError:
