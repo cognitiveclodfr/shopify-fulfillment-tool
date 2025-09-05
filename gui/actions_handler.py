@@ -198,8 +198,11 @@ class ActionsHandler(QObject):
                 report_config=report_config_copy,
             )
         elif report_type == "stock_exports":
-            relative_path = report_config.get("output_filename", "default_stock_export.xls")
-            output_file = os.path.join(self.mw.session_path, os.path.basename(relative_path))
+            base_filename = report_config.get("output_filename", "default_stock_export.xls")
+            datestamp = datetime.now().strftime("%Y-%m-%d")
+            name, ext = os.path.splitext(base_filename)
+            timestamped_filename = f"{name}_{datestamp}{ext}"
+            output_file = os.path.join(self.mw.session_path, os.path.basename(timestamped_filename))
             report_config_copy = report_config.copy()
             report_config_copy["output_filename"] = output_file
             worker = Worker(
