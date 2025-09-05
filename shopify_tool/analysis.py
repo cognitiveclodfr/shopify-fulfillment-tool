@@ -20,6 +20,8 @@ def _generalize_shipping_method(method):
     if pd.isna(method):
         return "Unknown"
     method = str(method).lower()
+    if not method:
+        return "Unknown"
     if "dhl" in method:
         return "DHL"
     if "dpd" in method:
