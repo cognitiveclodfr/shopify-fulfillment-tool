@@ -24,7 +24,7 @@ from shopify_tool.analysis import _generalize_shipping_method, run_analysis, tog
         ("unknown", "Unknown"),
         (None, "Unknown"),
         (pd.NA, "Unknown"),
-        ("", ""),  # An empty string should remain an empty string, or be handled as 'Unknown'
+        ("", "Unknown"),  # An empty string should be handled as 'Unknown'
     ],
 )
 def test_generalize_shipping_method(input_method, expected_output):
