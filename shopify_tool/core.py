@@ -287,6 +287,26 @@ def create_packing_list_report(analysis_df, report_config):
         return False, error_message
 
 
+def get_unique_column_values(df, column_name):
+    """Extracts unique, sorted, non-null values from a DataFrame column.
+
+    Args:
+        df (pd.DataFrame): The DataFrame to extract values from.
+        column_name (str): The name of the column to get unique values from.
+
+    Returns:
+        list[str]: A sorted list of unique string-converted values, or an
+                   empty list if the column doesn't exist or an error occurs.
+    """
+    if df.empty or column_name not in df.columns:
+        return []
+    try:
+        unique_values = df[column_name].dropna().unique().tolist()
+        return sorted([str(v) for v in unique_values])
+    except Exception:
+        return []
+
+
 def create_stock_export_report(analysis_df, report_config, templates_path, output_path):
     """Generates a stock export report from a template.
 
