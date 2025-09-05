@@ -1,87 +1,172 @@
-# Shopify Fulfillment Tool v8.1.8 - User Guide
+# Shopify Fulfillment Tool - Comprehensive User Guide
 
-## 1. Project Overview
+## 1. Introduction
 
-The **Shopify Fulfillment Tool** is a desktop application designed to streamline and automate the order fulfillment process for e-commerce stores running on Shopify.
+Welcome to the Shopify Fulfillment Tool! This powerful desktop application is designed to revolutionize your order fulfillment workflow. Built for efficiency and flexibility, it automates the tedious process of figuring out which orders can be shipped, allowing your warehouse team to focus on what they do best: packing and shipping.
 
-Its primary purpose is to analyze order and stock export files, determine which orders are fulfillable, and generate necessary documents like packing lists and courier export files. The graphical user interface (GUI) makes it accessible for warehouse staff without requiring command-line knowledge.
+The tool takes your raw Shopify order exports and your current stock levels, analyzes them, and produces a clear, interactive list of fulfillable orders. With its advanced features like the Rule Engine, customizable reports, and settings profiles, you can tailor the application to your specific business needs, whether you're a small boutique or a large warehouse.
 
-## 2. Key Features
+This guide will walk you through every feature, from initial setup to advanced automation, to help you get the most out of the tool.
 
-### What's New in v8.1.8
+## 2. Core Concepts
 
--   **Low Stock Alerts:** A new `Stock_Alert` column in the analysis table will automatically flag items that fall below a configurable threshold after fulfillment.
--   **Exclude SKUs from Packing Lists:** You can now specify a list of SKUs to be completely excluded from packing list reports, giving you more control over the output.
--   **Enhanced Statistics:** The "Statistics" tab is now more detailed, providing a breakdown of completed orders and repeat orders by courier.
--   **Improved Report Information:** The main `fulfillment_analysis.xlsx` report now includes a "Report Info" sheet that records the exact time the report was generated.
--   **Improved Test Coverage:** The project's automated tests have been significantly improved, with coverage increasing from 85% to over 95%, ensuring higher reliability and stability.
+Before diving into the step-by-step guide, it's important to understand a few core concepts that the application is built around.
 
-### What's New in v8.1.0
+| Concept             | Description                                                                                                                                                                                            |
+| :------------------ | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Session**         | Each time you run an analysis, you are working within a **Session**. All the reports and logs you generate are saved into a unique, timestamped folder for that session, keeping your work organized.         |
+| **Profiles**        | A **Profile** is a complete, saved collection of your settings. This includes your automation rules, report templates, and path configurations. You can create multiple profiles (e.g., "EU Warehouse," "US Warehouse") and switch between them instantly. This is the key to managing different workflows. |
+| **Rules**           | The **Rule Engine** is where you define your business logic. A rule is an "IF/THEN" statement. For example, **IF** an order's shipping country is "Germany," **THEN** add a "DE-WAREHOUSE" tag. This lets you automate tagging, prioritizing, and status changes. |
+| **Reports**         | A **Report** is a final, formatted output file, typically an Excel spreadsheet. The two main types are **Packing Lists** (for your warehouse team to pick items) and **Stock Exports** (for inventory management). You can create multiple, highly-customizable templates for each type. |
+| **Mappings**        | The **Mappings** feature makes the tool incredibly flexible. It allows you to "map" the column names from your specific CSV exports to the names the tool expects. You can also standardize courier names, so "DHL Express" and "dhl_de" can both be treated as "DHL." |
 
--   **Modernized UI:** The main analysis table has been updated with a cleaner, more modern look, improved fonts, and better row spacing for enhanced readability.
--   **New Data Columns:** The analysis table now includes two new columns:
-    -   `Total Price`: Displays the total price of the order, taken from the "Total" column of your Shopify export.
-    -   `System_note`: Shows system-generated tags, such as `Repeat` for orders from returning customers.
--   **Row Highlighting:** Rows with a `System_note` (e.g., 'Repeat' orders) are now automatically highlighted in yellow, making them easy to spot.
--   **Enhanced Context Menu:** You can now right-click a line item and select **"Copy SKU"** to quickly copy the product's SKU to your clipboard.
--   **Expanded Filtering:** `Order_Number` has been added as a filterable field in the Settings window for Rules, Packing Lists, and Stock Exports, allowing for more granular control.
+## 3. Getting Started: A Step-by-Step Guide
 
-### Core Features (v8.0.0)
+This section will walk you through setting up and using the application for the first time.
 
--   **Persistent Settings:** All your configurations for Rules, Packing Lists, and Stock Exports are now automatically saved in a user-specific directory.
--   **Session Management:** Automatically saves the current analysis state upon closing the app and prompts to restore it on the next launch.
--   **Advanced Rule Engine:** A powerful IF/THEN rule builder to automate workflows.
--   **Enhanced Interactive Data Table:**
-    -   **Frozen Column:** The `Order_Number` column is locked in place for easy reference.
-    -   **Column Management:** Show, hide, and reorder columns to create a personalized view.
-    -   **Context Menu:** A right-click menu provides quick access to common actions.
-    -   **Manual Override:** Double-click an order to toggle its fulfillment status.
--   **Advanced Logging:** A structured, color-coded log viewer with filtering and search capabilities.
--   **Flexible Report Generation:** Create custom packing lists and stock export files.
+### Step 1: Initial Launch and Profile Creation
 
-## 3. User Guide
+When you first launch the application, it creates a default set of configurations. Your settings are organized into **Profiles**. A profile stores all your rules, report templates, and path settings.
 
-### Step 1: Launching the Application & Managing Sessions
+The first thing you should do is create your own profile.
 
--   **Launch:** Run the `.exe` file. On first launch, the application will create a settings folder in your user directory (e.g., `C:\Users\YourUser\AppData\Roaming\ShopifyFulfillmentTool`) to store your configurations.
--   **Restoring a Session:** If you have a previously saved session, a dialog box will appear asking if you want to restore it. Click "Yes" to load your previous work.
--   **Creating a New Session:** If you start fresh, click the **"Create New Session"** button. The tool will create a unique, dated folder for all the reports generated during your work session.
+1.  In the main window, find the **Profiles** dropdown menu (it will initially show `default`).
+2.  Click the **"Manage Profiles"** button next to it.
+3.  In the Profile Manager window, click **"Add New..."**.
+4.  You will be prompted to enter a name. Let's call it `My_Warehouse`.
+    -   This new profile is created as a *copy* of the currently active profile (`default`).
+5.  Your new profile (`My_Warehouse`) is now active. All changes you make will be saved to this profile.
 
-### Step 2: Loading Data Files
+> **Pro Tip:** Use profiles to manage different workflows. For example, you could have separate profiles for different e-commerce stores, warehouses, or for handling domestic vs. international shipments. Each can have its own unique set of rules and report templates.
 
--   Click **"Load Orders File (.csv)"** to select your orders export file from Shopify.
--   Click **"Load Stock File (.csv)"** to select your current inventory/stock file.
--   Next to each file name, a status icon will appear. A green check (✓) means the file is valid. A red cross (✗) means required columns are missing; hover over the icon to see which ones.
+### Step 2: Configuring Mappings (Crucial for First Use!)
 
-### Step 3: Running the Analysis
+Before you can analyze your files, you must tell the tool where to find the data it needs. This is done in the **Mappings** tab in the Settings window.
 
--   Once both files are loaded and validated, the large **"Run Analysis"** button will become active. Click it to start the analysis.
--   The application will process the data, and the results will appear in the "Analysis Data" and "Statistics" tabs.
+1.  Click the **Settings button (⚙️)** to open the Settings window.
+2.  Go to the **"Mappings"** tab.
 
-### Step 4: Interacting with the Data Table
+#### Column Mappings
 
-The "Analysis Data" table is now highly interactive and includes new information:
+This section tells the tool which column in your CSV file corresponds to a piece of data it needs.
 
--   **New Columns:** You will now see `Total Price`, `System_note`, and `Stock_Alert` columns. Rows with system notes (like `Repeat`) will be highlighted in yellow. The `Stock_Alert` column will display 'Low Stock' for any item whose inventory falls below the threshold you define in the settings.
--   **Change Status (Double-Click):** Double-click any row of an order to toggle its fulfillment status between "Fulfillable" and "Not Fulfillable". Be aware that "force-fulfilling" an order with insufficient stock may result in negative final stock values for the affected items.
--   **Context Menu (Right-Click):** Right-click any row to open a context menu. It now includes **`Copy SKU`** in addition to `Change Status`, `Copy Order Number`, etc.
--   **Manage Columns:** Click the **"Manage Columns"** button above the table to show, hide, and reorder columns, including the new `Total Price`, `System_note`, and `Stock_Alert` columns.
+-   **Orders CSV:** You need to map the columns from your Shopify orders export. The tool needs to know the column names for the order number, SKU, quantity, and shipping provider. Fill in the text boxes with the exact header names from your CSV file.
+-   **Stock CSV:** You need to map the columns from your inventory file for the SKU and the available stock count.
 
-### Step 5: Configuring Rules, Reports, and Settings
+**Example:** If your stock file has a column named "Item Code" for the SKU and "Qty" for the stock level, your mapping would look like this:
+-   `Sku:` Item Code
+-   `Stock:` Qty
 
-1.  Click the **Settings button (⚙️)** in the bottom right of the main action panel.
-2.  The Settings window will open with four tabs: "General & Paths", "Rules", "Packing Lists", and "Stock Exports".
-3.  **General Settings:**
-    -   In the **"General & Paths"** tab, you can now set a **"Low Stock Threshold"**. If an item's final stock level drops below this number, it will be flagged in the `Stock_Alert` column.
-4.  **Packing List Settings:**
-    -   In the **"Packing Lists"** tab, when you add or edit a report, you will see a new field: **"Exclude SKUs"**.
-    -   Enter a comma-separated list of SKUs (e.g., `SKU001,SKU002,SKU003`) that you want to be completely ignored and left out of that specific packing list report.
-5.  When creating or editing rules and report filters, you can now select **`Order_Number`** and **`Total Price`** from the list of filterable fields.
-6.  Click **"Save and Close"**. Your changes will be saved permanently and will be available the next time you open the application.
+#### Courier Mappings
 
-### Step 6: Generating Reports
+This powerful feature lets you standardize the names of your shipping providers. Your store might use many variations (e.g., "DHL Express," "DHL DE," "dhlpaket"), but for reporting, you might want to group them all as "DHL."
 
--   After a successful analysis, the report buttons on the left of the main action panel become active.
--   Click **"Create Packing List"** or **"Create Stock Export"** to open a window with your configured reports.
--   Select the desired report. The generated file will be saved in the current session's output folder.
--   The main Excel export, `fulfillment_analysis.xlsx`, now contains a new sheet called **"Report Info"** which shows the exact date and time the report was created.
+1.  Click **"Add Mapping"**.
+2.  In the **"Original Name"** box, enter the name exactly as it appears in your orders file (e.g., "DHL Express").
+3.  In the **"Standardized Name"** box, enter the name you want to use in your reports (e.g., "DHL").
+4.  Repeat this for all variations.
+
+After configuring your mappings, click **"Save"** at the bottom of the Settings window.
+
+### Step 3: General Settings
+
+Navigate to the **"General & Paths"** tab in the Settings window. Here you can configure:
+
+-   **Stock CSV Delimiter:** The character that separates columns in your stock file. This is usually a comma (`,`) or a semicolon (`;`).
+-   **Low Stock Threshold:** Set a number here (e.g., `10`). If fulfilling an order causes an item's stock to drop below this number, it will be flagged with a "Low Stock" alert in the analysis table.
+-   **Paths:** You can optionally specify default folders for your report templates and stock export outputs.
+
+### Step 4: Loading Data and Running the Analysis
+
+Now you are ready to run your first analysis.
+
+1.  **Load Files:**
+    -   Back in the main window, click **"Load Orders File (.csv)"** and select your Shopify orders export.
+    -   Click **"Load Stock File (.csv)"** and select your inventory file.
+    -   A green check (✓) next to the filename means the file has loaded and the mapped columns were found. A red cross (✗) means some mapped columns are missing.
+
+2.  **Run Analysis:**
+    -   Once both files are loaded successfully, the large **"Run Analysis"** button will become active. Click it.
+    -   The tool will perform the fulfillment simulation. The results will appear in the "Analysis Data" and "Statistics" tabs.
+
+### Step 5: Interacting with the Results
+
+The **"Analysis Data"** tab contains a detailed, interactive table of your orders.
+
+-   **Fulfillment Status:** The `Order_Fulfillment_Status` column shows you which orders are "Fulfillable," "Not Fulfillable" (due to stock), or have a custom status you've set with rules.
+-   **Manual Override:** You can double-click any row of an order to manually change its fulfillment status. For example, you can force-fulfill an order that's out of stock if you know you have more inventory arriving.
+-   **Column Management:** Click the **"Manage Columns"** button to show, hide, or reorder columns to create your perfect view.
+-   **Right-Click Menu:** Right-click on any row for quick actions like copying the order number or SKU.
+-   **Highlighted Rows:** Rows with a `System_note` (like `Repeat` for a returning customer) will be highlighted in yellow, making them easy to spot.
+
+## 4. In-Depth Guide: The Rule Engine
+
+The Rule Engine is where you can encode your business's unique logic to automate order processing. To configure rules, go to **Settings (⚙️) > Rules**.
+
+Each rule consists of **Conditions** (the "IF" part) and **Actions** (the "THEN" part). You can specify whether **ALL** conditions must be true or if **ANY** one of them is enough to trigger the actions.
+
+### Rule Conditions
+
+| Operator            | Description                                                                    | Example Usage                                |
+| :------------------ | :----------------------------------------------------------------------------- | :------------------------------------------- |
+| `equals`            | The field value is exactly the same as the specified value.                    | `Shipping_Country` equals `Germany`          |
+| `does not equal`    | The field value is not the same as the specified value.                        | `Shipping_Provider` does not equal `DHL`     |
+| `contains`          | The field value contains the specified text (not case-sensitive).              | `SKU` contains `-FRAGILE`                    |
+| `does not contain`  | The field value does not contain the specified text (not case-sensitive).      | `Customer_Name` does not contain `TEST`      |
+| `is greater than`   | The field value (must be a number) is greater than the specified value.        | `Total Price` is greater than `200`          |
+| `is less than`      | The field value (must be a number) is less than the specified value.           | `Weight` is less than `0.5`                  |
+| `starts with`       | The field value begins with the specified text.                                | `Order_Number` starts with `#EU`             |
+| `ends with`         | The field value ends with the specified text.                                  | `SKU` ends with `.SAMPLE`                    |
+| `is empty`          | The field has no value (it is blank).                                          | `Discount_Code` is empty                     |
+| `is not empty`      | The field has any value (it is not blank).                                     | `Notes` is not empty                         |
+
+### Rule Actions
+
+| Action                  | Description                                                                                                                                                                                                                                                                                                                                                     |
+| :---------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`ADD_TAG`**             | Adds a custom tag to the `Status_Note` column. Useful for flagging orders for manual review.                                                                                                                                                                                                                                                                     |
+| **`SET_STATUS`**          | Changes the `Order_Fulfillment_Status`. For example, you could automatically set certain orders to "On Hold." **Note:** This overrides the default fulfillment logic.                                                                                                                                                                                             |
+| **`SET_PRIORITY`**        | Sets the `Priority` of the order (e.g., to "High"). This can be used with report filters to create high-priority packing lists.                                                                                                                                                                                                                                  |
+| **`EXCLUDE_FROM_REPORT`** | Hides the order from all generated reports. The order remains visible in the main table.                                                                                                                                                                                                                                                                          |
+| **`EXCLUDE_SKU`**         | A specialized action that sets the quantity of a specific SKU within a matching order to zero, effectively removing it from fulfillment for that order. **Use with caution,** as it can lead to partial shipments. The SKU to exclude is specified in the "Value" field of the action. |
+
+## 5. In-Depth Guide: Reports and Exports
+
+You can create templates for two types of reports in the Settings window: **Packing Lists** and **Stock Exports**.
+
+### Report Configuration
+
+When creating a report template, you can define:
+- **Name:** A descriptive name (e.g., "DHL Express Packing List").
+- **Output Filename:** The name of the generated file.
+- **Filters:** Conditions to determine which orders are included in the report.
+- **Exclude SKUs (Packing Lists Only):** A comma-separated list of SKUs to completely ignore for a specific packing list.
+
+### Report Filters
+
+Filters in reports use a different, more direct set of operators than the Rule Engine.
+
+| Operator       | Description                                                                          | Example Usage                                           |
+| :------------- | :----------------------------------------------------------------------------------- | :------------------------------------------------------ |
+| `==`           | **Equals**: The field value must exactly match the specified value.                  | `Shipping_Provider` == `DHL`                            |
+| `!=`           | **Does Not Equal**: The field value must not match.                                  | `Destination_Country` != `Spain`                        |
+| `in`           | **Is In**: The field value must be one of the values in a comma-separated list.      | `Order_Type` in `Single,Multi`                          |
+| `not in`       | **Is Not In**: The field value must not be in the comma-separated list.              | `SKU` not in `PROMO-ITEM,GIFT-CARD`                     |
+| `contains`     | **Contains**: The field value must contain the specified text (case-sensitive).      | `Tags` contains `VIP`                                   |
+
+### Generating a Report
+
+1.  After a successful analysis, click **"Create Packing List"** or **"Create Stock Export"**.
+2.  A dialog will appear showing your configured report templates.
+3.  Select a report and click "Generate". The file will be saved in the current session's output folder.
+
+## 6. Advanced Topics & FAQ
+
+**How do I handle orders with both fragile and non-fragile items?**
+- Create a rule that adds a "FRAGILE" tag if an order contains a fragile SKU. Then, create two packing lists: one that *includes* only orders with the "FRAGILE" tag, and another that *excludes* them. This lets you process them in separate batches.
+
+**Can I prepare a report for a specific courier?**
+- Yes. Create a new Packing List template. Add a filter where `Shipping_Provider` == `[Courier Name]`. When you generate this report, it will only contain orders for that courier.
+
+**What's the difference between `System_note` and `Status_Note`?**
+- `System_note` is for tags added automatically by the application itself (e.g., `Repeat` for returning customers). `Status_Note` is for tags you add yourself using the `ADD_TAG` action in the Rule Engine. This keeps system information separate from your custom workflows.
