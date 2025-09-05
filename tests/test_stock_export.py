@@ -41,7 +41,10 @@ def test_create_stock_export_success(tmp_path, sample_analysis_df):
     expected_data = {"Артикул": ["SKU-A", "SKU-B"], "Наличност": [7, 3]}
     expected_df = pd.DataFrame(expected_data)
 
-    pd.testing.assert_frame_equal(result_df.sort_values(by="Артикул").reset_index(drop=True), expected_df.sort_values(by="Артикул").reset_index(drop=True))
+    pd.testing.assert_frame_equal(
+        result_df.sort_values(by="Артикул").reset_index(drop=True),
+        expected_df.sort_values(by="Артикул").reset_index(drop=True),
+    )
 
 
 def test_create_stock_export_with_filters(tmp_path, sample_analysis_df):

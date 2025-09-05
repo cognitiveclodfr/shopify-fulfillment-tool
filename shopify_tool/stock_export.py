@@ -101,7 +101,9 @@ def create_stock_export(analysis_df, output_file, report_name="Stock Export", fi
                         sheet.write(row_num + 1, col_num, value)
 
                 workbook.save(output_file)
-                logger.info(f"Stock export '{report_name}' created successfully at '{output_file}' using direct xlwt save.")
+                logger.info(
+                    f"Stock export '{report_name}' created successfully at '{output_file}' using direct xlwt save."
+                )
             else:
                 raise e
 
