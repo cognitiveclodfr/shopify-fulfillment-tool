@@ -1,40 +1,29 @@
-import os
-import xlrd
 import logging
-from xlutils.copy import copy
+import pandas as pd
 
 logger = logging.getLogger("ShopifyToolLogger")
 
 
-def create_stock_export(analysis_df, template_file, output_file, report_name="Stock Export", filters=None):
-    """Creates a stock export file by populating an existing .xls template.
+def create_stock_export(analysis_df, output_file, report_name="Stock Export", filters=None):
+    """Creates a stock export .xls file from scratch.
 
-    This function is designed to generate stock export files required by couriers
-    or other systems. It works by taking an existing Excel template file (.xls),
-    populating it with summarized stock data, and saving it as a new file.
+    This function generates a stock export file programmatically using pandas,
+    eliminating the need for a physical template file. The structure is
+    hard-coded to ensure consistency.
 
     Key steps in the process:
     1.  **Filtering**: It filters the main analysis DataFrame to include only
         'Fulfillable' orders that match the provided filter criteria.
     2.  **Summarization**: It summarizes the filtered data, calculating the total
         quantity for each unique SKU.
-    3.  **Template Population**: It opens the specified .xls template file, copies
-        it, and writes the summarized SKU and quantity data into the first sheet
-        of the copy, starting from the second row.
-    4.  **Static Data**: It also writes a static value ("бройка") in the third
-        column, as required by the export format.
-    5.  **Saving**: The populated template is saved to the specified output file path.
-
-    Note: This function relies on `xlrd` and `xlutils`, which are designed for
-    the older .xls format, not .xlsx.
+    3.  **DataFrame Creation**: It creates a new DataFrame with the required
+        columns: 'Артикул' (for SKU) and 'Наличност' (for quantity).
+    4.  **Saving**: The new DataFrame is saved to the specified .xls output file.
 
     Args:
         analysis_df (pd.DataFrame): The main DataFrame from the fulfillment
             analysis.
-        template_file (str): The full path to the .xls template file. This file
-            must exist and be readable.
-        output_file (str): The full path where the new, populated .xls file will
-            be saved.
+        output_file (str): The full path where the new .xls file will be saved.
         report_name (str, optional): The name of the report, used for logging.
             Defaults to "Stock Export".
         filters (list[dict], optional): A list of dictionaries defining filter
@@ -42,10 +31,6 @@ def create_stock_export(analysis_df, template_file, output_file, report_name="St
     """
     try:
         logger.info(f"--- Creating report: '{report_name}' ---")
-
-        if not os.path.exists(template_file) or os.path.getsize(template_file) == 0:
-            logger.error(f"Template file '{template_file}' not found or is empty.")
-            return
 
         # Build the query string to filter the DataFrame
         query_parts = ["Order_Fulfillment_Status == 'Fulfillable'"]
@@ -73,37 +58,52 @@ def create_stock_export(analysis_df, template_file, output_file, report_name="St
 
         if filtered_items.empty:
             logger.warning(f"Report '{report_name}': No items found matching the criteria.")
-            return
+            # Still create an empty file with headers
+            export_df = pd.DataFrame(columns=["Артикул", "Наличност"])
+        else:
+            # Summarize quantities by SKU
+            sku_summary = filtered_items.groupby("SKU")["Quantity"].sum().astype(int).reset_index()
+            sku_summary = sku_summary[sku_summary["Quantity"] > 0]
 
-        # Summarize quantities by SKU
-        sku_summary = filtered_items.groupby("SKU")["Quantity"].sum().astype(int).reset_index()
-        sku_summary = sku_summary[sku_summary["Quantity"] > 0]
+            if sku_summary.empty:
+                logger.warning(f"Report '{report_name}': No items with a positive quantity to export.")
+                export_df = pd.DataFrame(columns=["Артикул", "Наличност"])
+            else:
+                logger.info(f"Found {len(sku_summary)} unique SKUs to write for report '{report_name}'.")
+                # Create the final DataFrame in the required format
+                export_df = pd.DataFrame(
+                    {
+                        "Артикул": sku_summary["SKU"],
+                        "Наличност": sku_summary["Quantity"],
+                    }
+                )
 
-        if sku_summary.empty:
-            logger.warning(f"Report '{report_name}': No items with a positive quantity to export.")
-            return
-
-        logger.info(f"Found {len(sku_summary)} unique SKUs to write for report '{report_name}'.")
-
+        # Save to an .xls file
         try:
-            # Open the template file for reading
-            rb = xlrd.open_workbook(template_file, formatting_info=True)
-        except xlrd.biffh.XLRDError as e:
-            logger.error(f"Cannot read template file '{template_file}'. The file may be corrupt. Details: {e}")
-            return
+            with pd.ExcelWriter(output_file, engine="xlwt") as writer:
+                export_df.to_excel(writer, index=False, sheet_name="Sheet1")
+            logger.info(f"Stock export '{report_name}' created successfully at '{output_file}'.")
+        except Exception as e:
+            # Fallback for environments where xlwt might not be properly registered
+            if "No Excel writer 'xlwt'" in str(e):
+                logger.warning("Pandas failed to find 'xlwt' engine. Trying direct save with xlwt.")
+                import xlwt
+                workbook = xlwt.Workbook()
+                sheet = workbook.add_sheet('Sheet1')
 
-        # Create a writable copy of the template
-        wb = copy(rb)
-        sheet_to_write = wb.get_sheet(0)
+                # Write header
+                for col_num, value in enumerate(export_df.columns):
+                    sheet.write(0, col_num, value)
 
-        # Write the summarized data into the sheet
-        for index, row in sku_summary.iterrows():
-            sheet_to_write.write(index + 1, 0, row["SKU"])
-            sheet_to_write.write(index + 1, 1, row["Quantity"])
-            sheet_to_write.write(index + 1, 2, "бройка")  # This is a specific required value.
+                # Write data
+                for row_num, row in export_df.iterrows():
+                    for col_num, value in enumerate(row):
+                        sheet.write(row_num + 1, col_num, value)
 
-        wb.save(output_file)
-        logger.info(f"Stock export '{report_name}' created successfully.")
+                workbook.save(output_file)
+                logger.info(f"Stock export '{report_name}' created successfully at '{output_file}' using direct xlwt save.")
+            else:
+                raise e
 
     except Exception as e:
         logger.error(f"Error while creating stock export '{report_name}': {e}")

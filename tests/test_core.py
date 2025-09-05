@@ -67,20 +67,13 @@ def test_full_run_with_file_io(tmp_path):
     orders_file = tmp_path / "orders.csv"
     orders_df.to_csv(orders_file, index=False)
 
-    # Create a dummy template for the stock export
-    dummy_template_path = templates_dir / "dummy_template.xls"
-    # Create a valid, empty .xls file that xlrd can read
-    workbook = xlwt.Workbook()
-    workbook.add_sheet("Sheet1")
-    workbook.save(dummy_template_path)
-
     # 3. Create a config dictionary pointing to our temp files
     config = {
         "settings": {"stock_csv_delimiter": ";", "low_stock_threshold": 4},
         "column_mappings": {"orders_required": ["Name", "Lineitem sku"], "stock_required": ["Артикул", "Наличност"]},
         "rules": [],
         "packing_lists": [{"name": "Test Packing List", "output_filename": "test_packing_list.xlsx", "filters": []}],
-        "stock_exports": [{"name": "Test Stock Export", "template": "dummy_template.xls", "filters": []}],
+        "stock_exports": [{"name": "Test Stock Export", "output_filename": "test_stock_export.xls", "filters": []}],
     }
 
     # 4. Run the main analysis function
@@ -96,24 +89,19 @@ def test_full_run_with_file_io(tmp_path):
     # 6. Run report generation functions
     # Packing List
     packing_report_config = config["packing_lists"][0]
-    # IMPORTANT: core.py now expects the output_filename to be a full path
-    # But settings window saves a relative path. The logic in gui_main combines them.
-    # We must replicate that logic here for the test.
     packing_report_config["output_filename"] = str(output_dir / packing_report_config["output_filename"])
-
     pack_success, pack_msg = core.create_packing_list_report(final_df, packing_report_config)
     assert pack_success
     assert os.path.exists(packing_report_config["output_filename"])
 
     # Stock Export
     export_report_config = config["stock_exports"][0]
+    export_report_config["output_filename"] = str(output_dir / export_report_config["output_filename"])
     export_success, export_msg = core.create_stock_export_report(
-        final_df, export_report_config, str(templates_dir), str(output_dir)
+        final_df, export_report_config
     )
     assert export_success
-    # The output filename is generated dynamically, so we need to find it
-    output_files = os.listdir(output_dir)
-    assert any("dummy_template" in f for f in output_files)
+    assert os.path.exists(export_report_config["output_filename"])
 
 
 def test_normalize_unc_path():
@@ -189,10 +177,10 @@ def test_create_packing_list_report_exception(mocker):
 
 def test_create_stock_export_report_exception(mocker):
     """Tests exception handling in the create_stock_export_report function."""
-    mocker.patch("shopify_tool.stock_export.create_stock_export", side_effect=Exception("Template corrupt"))
+    mocker.patch("shopify_tool.stock_export.create_stock_export", side_effect=Exception("Disk full"))
     analysis_df = pd.DataFrame()
-    report_config = {"name": "FailExport", "template": "bad.xls"}
-    success, msg = core.create_stock_export_report(analysis_df, report_config, "/tmp", "/tmp")
+    report_config = {"name": "FailExport", "output_filename": "/tmp/bad.xls"}
+    success, msg = core.create_stock_export_report(analysis_df, report_config)
     assert not success
     assert "Failed to create stock export" in msg
 

@@ -569,14 +569,14 @@ class SettingsWindow(QDialog):
                 stock export. If None, creates a new, blank one.
         """
         if not isinstance(config, dict):
-            config = {"name": "", "template": "", "filters": []}
+            config = {"name": "", "output_filename": "", "filters": []}
         se_box = QGroupBox()
         se_layout = QVBoxLayout(se_box)
         form_layout = QFormLayout()
         name_edit = QLineEdit(config.get("name", ""))
-        template_edit = QLineEdit(config.get("template", ""))
+        filename_edit = QLineEdit(config.get("output_filename", ""))
         form_layout.addRow("Name:", name_edit)
-        form_layout.addRow("Template Filename:", template_edit)
+        form_layout.addRow("Output Filename:", filename_edit)
         se_layout.addLayout(form_layout)
         filters_box = QGroupBox("Filters")
         filters_layout = QVBoxLayout(filters_box)
@@ -591,7 +591,7 @@ class SettingsWindow(QDialog):
         widget_refs = {
             "group_box": se_box,
             "name": name_edit,
-            "template": template_edit,
+            "filename": filename_edit,
             "filters_layout": filters_rows_layout,
             "filters": [],
         }
