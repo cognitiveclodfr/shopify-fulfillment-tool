@@ -105,7 +105,7 @@ class SettingsWindow(QDialog):
                     "quantity": "Lineitem quantity",
                     "shipping_provider": "Shipping Provider",
                 },
-                "stock": {"sku": "SKU", "stock": "Stock"},
+                "stock": {"sku": "Артикул", "stock": "Наличност"},
             }
         if "courier_mappings" not in self.config_data:
             self.config_data["courier_mappings"] = {}
