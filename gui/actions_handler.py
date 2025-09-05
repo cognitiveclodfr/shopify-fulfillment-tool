@@ -89,14 +89,14 @@ class ActionsHandler(QObject):
             return
         self.mw.ui_manager.set_ui_busy(True)
         self.log.info("Starting analysis thread.")
-        stock_delimiter = self.mw.config["settings"]["stock_csv_delimiter"]
+        stock_delimiter = self.mw.active_profile_config["settings"]["stock_csv_delimiter"]
         worker = Worker(
             core.run_full_analysis,
             self.mw.stock_file_path,
             self.mw.orders_file_path,
             self.mw.session_path,
             stock_delimiter,
-            self.mw.config,
+            self.mw.active_profile_config,
         )
         worker.signals.result.connect(self.on_analysis_complete)
         worker.signals.error.connect(self.on_task_error)
@@ -139,22 +139,22 @@ class ActionsHandler(QObject):
         QMessageBox.critical(self.mw, "Task Exception", msg)
 
     def open_settings_window(self):
-        """Opens the settings dialog window.
+        """Opens the settings dialog window for the active profile.
 
-        If the settings are saved in the dialog, it updates the main window's
-        config object and writes the changes to the `config.json` file.
+        If the settings are saved in the dialog, it updates the active profile's
+        configuration in the main config object and saves it to file.
         """
-        dialog = SettingsWindow(self.mw, self.mw.config, self.mw.analysis_results_df)
+        dialog = SettingsWindow(self.mw, self.mw.active_profile_config, self.mw.analysis_results_df)
         if dialog.exec():
-            self.mw.config = dialog.config_data
-            try:
-                with open(self.mw.config_path, "w", encoding="utf-8") as f:
-                    json.dump(self.mw.config, f, indent=2, ensure_ascii=False)
-                self.mw.log_activity("Settings", "Settings saved successfully.")
-                self.log.info("Settings saved.")
-            except Exception as e:
-                self.log.error(f"Failed to save settings: {e}", exc_info=True)
-                QMessageBox.critical(self.mw, "Error", f"Failed to write settings to file: {e}")
+            # Update the active profile's config with the data from the dialog
+            self.mw.config["profiles"][self.mw.active_profile_name] = dialog.config_data
+            self.mw._save_config()  # Use the centralized save method
+
+            # Refresh the active config in the main window
+            self.mw.active_profile_config = dialog.config_data
+
+            self.mw.log_activity("Settings", f"Settings for profile '{self.mw.active_profile_name}' saved.")
+            self.log.info(f"Settings for profile '{self.mw.active_profile_name}' saved.")
 
     def open_report_selection_dialog(self, report_type):
         """Opens a dialog to select and generate a pre-configured report.
@@ -163,9 +163,9 @@ class ActionsHandler(QObject):
             report_type (str): The key for the report configuration list in
                 the main config (e.g., "packing_lists", "stock_exports").
         """
-        reports_config = self.mw.config.get(report_type, [])
+        reports_config = self.mw.active_profile_config.get(report_type, [])
         if not reports_config:
-            msg = f"No {report_type.replace('_', ' ')} configured in settings."
+            msg = f"No {report_type.replace('_', ' ')} configured in the active profile ('{self.mw.active_profile_name}')."
             QMessageBox.information(self.mw, "No Reports", msg)
             return
         dialog = ReportSelectionDialog(report_type, reports_config, self.mw)
@@ -199,7 +199,7 @@ class ActionsHandler(QObject):
                 report_config=report_config_copy,
             )
         elif report_type == "stock_exports":
-            templates_path = resource_path(self.mw.config["paths"]["templates"])
+            templates_path = resource_path(self.mw.active_profile_config["paths"]["templates"])
             worker = Worker(
                 core.create_stock_export_report,
                 analysis_df=self.mw.analysis_results_df,

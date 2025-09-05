@@ -129,22 +129,32 @@ class UIManager:
     def _create_main_actions_group(self):
         """Creates the 'Actions' QGroupBox containing the main 'Run' button."""
         group = QGroupBox("Actions")
-        layout = QGridLayout()
-        group.setLayout(layout)
+        main_layout = QVBoxLayout(group)
 
+        # Profile selection
+        profile_layout = QHBoxLayout()
+        profile_layout.addWidget(QLabel("Active Profile:"))
+        self.mw.profile_combo = QComboBox()
+        self.mw.profile_combo.setMinimumWidth(150)
+        self.mw.manage_profiles_btn = QPushButton("Manage...")
+        profile_layout.addWidget(self.mw.profile_combo, 1)
+        profile_layout.addWidget(self.mw.manage_profiles_btn)
+        main_layout.addLayout(profile_layout)
+
+        # Main action buttons
+        actions_layout = QHBoxLayout()
         self.mw.run_analysis_button = QPushButton("Run Analysis")
         self.mw.run_analysis_button.setMinimumHeight(60)
         self.mw.run_analysis_button.setEnabled(False)
         self.mw.run_analysis_button.setToolTip("Start the fulfillment analysis based on the loaded files.")
 
-        self.mw.settings_button = QPushButton("⚙️")
-        self.mw.settings_button.setFixedSize(40, 40)
-        self.mw.settings_button.setToolTip("Open the application settings window.")
+        self.mw.settings_button = QPushButton("Open Profile Settings")
+        self.mw.settings_button.setToolTip("Open the settings window for the active profile.")
 
-        layout.addWidget(self.mw.run_analysis_button, 0, 0, 1, 2)
-        layout.addWidget(self.mw.settings_button, 1, 1, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
-        layout.setRowStretch(0, 1)
-        layout.setColumnStretch(0, 1)
+        actions_layout.addWidget(self.mw.run_analysis_button, 1)
+        actions_layout.addWidget(self.mw.settings_button)
+        main_layout.addLayout(actions_layout)
+
         return group
 
     def _create_tab_view(self):
