@@ -1,3 +1,9 @@
+"""Provides a dialog for managing settings profiles.
+
+This module defines the `ProfileManagerDialog` class, which provides the user
+interface for managing their settings profiles (add, rename, delete).
+"""
+
 from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -23,11 +29,11 @@ class ProfileManagerDialog(QDialog):
         list_widget (QListWidget): The widget that displays the list of
             available profiles.
     """
-    def __init__(self, parent):
+    def __init__(self, parent: "MainWindow") -> None:
         """Initializes the ProfileManagerDialog.
 
         Args:
-            parent (MainWindow): The main window instance.
+            parent: The main window instance.
         """
         super().__init__(parent)
         self.parent = parent
@@ -55,7 +61,7 @@ class ProfileManagerDialog(QDialog):
 
         self.list_widget.setCurrentRow(0)
 
-    def populate_profiles(self):
+    def populate_profiles(self) -> None:
         """Clears and repopulates the list of profiles from the main config."""
         self.list_widget.clear()
         profile_names = sorted(self.parent.config.get("profiles", {}).keys())
@@ -63,7 +69,7 @@ class ProfileManagerDialog(QDialog):
             item = QListWidgetItem(name)
             self.list_widget.addItem(item)
 
-    def add_profile(self):
+    def add_profile(self) -> None:
         """Handles the 'Add New' button click.
 
         Prompts the user for a new profile name and calls the main window's
@@ -78,7 +84,7 @@ class ProfileManagerDialog(QDialog):
                 # Optionally, switch to the new profile
                 self.parent.set_active_profile(new_name)
 
-    def rename_profile(self):
+    def rename_profile(self) -> None:
         """Handles the 'Rename' button click.
 
         Prompts the user for a new name for the selected profile and calls
@@ -96,7 +102,7 @@ class ProfileManagerDialog(QDialog):
                 self.populate_profiles()
                 self.parent.update_profile_combo()
 
-    def delete_profile(self):
+    def delete_profile(self) -> None:
         """Handles the 'Delete' button click.
 
         Asks for confirmation and then calls the main window's

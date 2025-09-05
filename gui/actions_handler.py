@@ -1,3 +1,12 @@
+"""Handles application logic triggered by user actions from the UI.
+
+This module defines the `ActionsHandler` class, which acts as an intermediary
+between the `MainWindow` (the UI) and the backend `shopify_tool` modules. It
+contains slots that are connected to UI widget signals (e.g., button clicks).
+When a signal is received, the handler executes the corresponding application
+logic, such as running an analysis, generating a report, or modifying data.
+"""
+
 import os
 import logging
 from datetime import datetime
@@ -37,18 +46,18 @@ class ActionsHandler(QObject):
 
     data_changed = Signal()
 
-    def __init__(self, main_window):
+    def __init__(self, main_window: "MainWindow") -> None:
         """Initializes the ActionsHandler.
 
         Args:
-            main_window (MainWindow): The main window instance that this
-                handler will manage actions for.
+            main_window: The main window instance that this handler will
+                manage actions for.
         """
         super().__init__()
         self.mw = main_window
         self.log = logging.getLogger(__name__)
 
-    def create_new_session(self):
+    def create_new_session(self) -> None:
         """Creates a new, unique, date-stamped session folder for output files.
 
         This folder is used as the destination for all reports generated
@@ -75,7 +84,7 @@ class ActionsHandler(QObject):
             self.log.error(f"Failed to create new session: {e}", exc_info=True)
             QMessageBox.critical(self.mw, "Session Error", f"Could not create a new session folder.\nError: {e}")
 
-    def run_analysis(self):
+    def run_analysis(self) -> None:
         """Triggers the main fulfillment analysis in a background thread.
 
         It creates a `Worker` to run the `core.run_full_analysis` function,
@@ -101,7 +110,7 @@ class ActionsHandler(QObject):
         worker.signals.finished.connect(lambda: self.mw.ui_manager.set_ui_busy(False))
         self.mw.threadpool.start(worker)
 
-    def on_analysis_complete(self, result):
+    def on_analysis_complete(self, result: tuple) -> None:
         """Handles the 'result' signal from the analysis worker thread.
 
         If the analysis was successful, it updates the main DataFrame,
@@ -109,7 +118,7 @@ class ActionsHandler(QObject):
         activity. If it failed, it displays a critical error message.
 
         Args:
-            result (tuple): The tuple returned by `core.run_full_analysis`.
+            result: The tuple returned by `core.run_full_analysis`.
         """
         self.log.info("Analysis thread finished.")
         success, result_msg, df, stats = result
@@ -122,25 +131,25 @@ class ActionsHandler(QObject):
             self.log.error(f"Analysis failed: {result_msg}")
             QMessageBox.critical(self.mw, "Analysis Error", f"An error occurred during analysis:\n{result_msg}")
 
-    def on_task_error(self, error):
+    def on_task_error(self, error: tuple) -> None:
         """Handles the 'error' signal from any worker thread.
 
         Logs the exception and displays a critical error message to the user.
 
         Args:
-            error (tuple): A tuple containing the exception type, value, and
-                traceback.
+            error: A tuple containing the exception type, value, and traceback.
         """
         exctype, value, tb = error
         self.log.error(f"An unexpected error occurred in a background task: {value}\n{tb}", exc_info=True)
         msg = f"An unexpected error occurred in a background task:\n{value}\n\nTraceback:\n{tb}"
         QMessageBox.critical(self.mw, "Task Exception", msg)
 
-    def open_settings_window(self):
+    def open_settings_window(self) -> None:
         """Opens the settings dialog window for the active profile.
 
-        If the settings are saved in the dialog, it updates the active profile's
-        configuration in the main config object and saves it to file.
+        If the settings are saved in the dialog, it updates the active
+        profile's configuration in the main config object and saves it to
+        file.
         """
         dialog = SettingsWindow(self.mw, self.mw.active_profile_config, self.mw.analysis_results_df)
         if dialog.exec():
@@ -154,12 +163,12 @@ class ActionsHandler(QObject):
             self.mw.log_activity("Settings", f"Settings for profile '{self.mw.active_profile_name}' saved.")
             self.log.info(f"Settings for profile '{self.mw.active_profile_name}' saved.")
 
-    def open_report_selection_dialog(self, report_type):
+    def open_report_selection_dialog(self, report_type: str) -> None:
         """Opens a dialog to select and generate a pre-configured report.
 
         Args:
-            report_type (str): The key for the report configuration list in
-                the main config (e.g., "packing_lists", "stock_exports").
+            report_type: The key for the report configuration list in the main
+                config (e.g., "packing_lists", "stock_exports").
         """
         reports_config = self.mw.active_profile_config.get(report_type, [])
         if not reports_config:
@@ -171,16 +180,15 @@ class ActionsHandler(QObject):
         dialog.reportSelected.connect(lambda rc: self.run_report_logic(report_type, rc))
         dialog.exec()
 
-    def run_report_logic(self, report_type, report_config):
+    def run_report_logic(self, report_type: str, report_config: dict) -> None:
         """Triggers the report generation in a background thread.
 
         Based on the `report_type`, it creates a `Worker` to run the
         appropriate report generation function from the `core` module.
 
         Args:
-            report_type (str): The type of report to generate.
-            report_config (dict): The specific configuration for the selected
-                report.
+            report_type: The type of report to generate.
+            report_config: The specific configuration for the selected report.
         """
         if not self.mw.session_path:
             QMessageBox.critical(self.mw, "Session Error", "Please create a new session before generating reports.")
@@ -214,13 +222,13 @@ class ActionsHandler(QObject):
         worker.signals.error.connect(self.on_task_error)
         self.mw.threadpool.start(worker)
 
-    def on_report_generation_complete(self, result):
+    def on_report_generation_complete(self, result: tuple) -> None:
         """Handles the 'result' signal from a report generation worker.
 
         Logs the outcome and shows a message to the user on success or failure.
 
         Args:
-            result (tuple): The tuple returned by the report generation function.
+            result: The tuple returned by the report generation function.
         """
         success, message = result
         if success:
@@ -230,14 +238,14 @@ class ActionsHandler(QObject):
             self.log.error(f"Report generation failed: {message}")
             QMessageBox.critical(self.mw, "Error", message)
 
-    def toggle_fulfillment_status_for_order(self, order_number):
+    def toggle_fulfillment_status_for_order(self, order_number: str) -> None:
         """Toggles the fulfillment status of all items in a given order.
 
         Calls the `analysis.toggle_order_fulfillment` function and updates
         the UI if the change is successful.
 
         Args:
-            order_number (str): The order number to modify.
+            order_number: The order number to modify.
         """
         success, result, updated_df = toggle_order_fulfillment(self.mw.analysis_results_df, order_number)
         if success:
@@ -250,19 +258,21 @@ class ActionsHandler(QObject):
             self.log.warning(f"Failed to toggle status for order {order_number}: {result}")
             QMessageBox.critical(self.mw, "Error", result)
 
-    def open_report_builder_window(self):
+    def open_report_builder_window(self) -> None:
         """Opens the custom report builder dialog window."""
         if self.mw.analysis_results_df.empty:
-            QMessageBox.warning(self.mw, "No Data", "Please run an analysis before using the Report Builder.")
+            QMessageBox.warning(
+                self.mw, "No Data", "Please run an analysis before using the Report Builder."
+            )
             return
         dialog = ReportBuilderWindow(self.mw.analysis_results_df, self.mw)
         dialog.exec()
 
-    def add_tag_manually(self, order_number):
+    def add_tag_manually(self, order_number: str) -> None:
         """Opens a dialog to add a manual tag to an order's 'Status_Note'.
 
         Args:
-            order_number (str): The order number to add the tag to.
+            order_number: The order number to add the tag to.
         """
         tag_to_add, ok = QInputDialog.getText(self.mw, "Add Manual Tag", "Enter tag to add:")
         if ok and tag_to_add:
@@ -283,11 +293,11 @@ class ActionsHandler(QObject):
             self.data_changed.emit()
             self.mw.log_activity("Manual Tag", f"Added note '{tag_to_add}' to order {order_number}.")
 
-    def remove_item_from_order(self, row_index):
+    def remove_item_from_order(self, row_index: int) -> None:
         """Removes a single item (a row) from the analysis DataFrame.
 
         Args:
-            row_index (int): The integer index of the row to remove.
+            row_index: The integer index of the row to remove.
         """
         order_number = self.mw.analysis_results_df.iloc[row_index]["Order_Number"]
         sku = self.mw.analysis_results_df.iloc[row_index]["SKU"]
@@ -304,11 +314,11 @@ class ActionsHandler(QObject):
             self.data_changed.emit()
             self.mw.log_activity("Data Edit", f"Removed item {sku} from order {order_number}.")
 
-    def remove_entire_order(self, order_number):
+    def remove_entire_order(self, order_number: str) -> None:
         """Removes all rows associated with a given order number.
 
         Args:
-            order_number (str): The order number to remove completely.
+            order_number: The order number to remove completely.
         """
         reply = QMessageBox.question(
             self.mw,

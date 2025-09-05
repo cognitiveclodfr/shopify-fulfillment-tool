@@ -1,10 +1,23 @@
+"""Module for generating stock export files in Excel format.
+
+This module provides the functionality to create stock export reports based on
+the main analysis DataFrame. It filters the data, summarizes the quantities
+for each SKU, and saves the result in a simple .xls file format suitable for
+import into other systems.
+"""
+
 import logging
 import pandas as pd
 
 logger = logging.getLogger("ShopifyToolLogger")
 
 
-def create_stock_export(analysis_df, output_file, report_name="Stock Export", filters=None):
+def create_stock_export(
+    analysis_df: pd.DataFrame,
+    output_file: str,
+    report_name: str = "Stock Export",
+    filters: list[dict] | None = None,
+) -> None:
     """Creates a stock export .xls file from scratch.
 
     This function generates a stock export file programmatically using pandas,
@@ -12,22 +25,22 @@ def create_stock_export(analysis_df, output_file, report_name="Stock Export", fi
     hard-coded to ensure consistency.
 
     Key steps in the process:
-    1.  **Filtering**: It filters the main analysis DataFrame to include only
-        'Fulfillable' orders that match the provided filter criteria.
-    2.  **Summarization**: It summarizes the filtered data, calculating the total
-        quantity for each unique SKU.
-    3.  **DataFrame Creation**: It creates a new DataFrame with the required
-        columns: 'Артикул' (for SKU) and 'Наличност' (for quantity).
-    4.  **Saving**: The new DataFrame is saved to the specified .xls output file.
+        1. **Filtering**: It filters the main analysis DataFrame to include
+           only 'Fulfillable' orders that match the provided filter criteria.
+        2. **Summarization**: It summarizes the filtered data, calculating the
+           total quantity for each unique SKU.
+        3. **DataFrame Creation**: It creates a new DataFrame with the required
+           columns: 'Артикул' (for SKU) and 'Наличност' (for quantity).
+        4. **Saving**: The new DataFrame is saved to the specified .xls output
+           file.
 
     Args:
-        analysis_df (pd.DataFrame): The main DataFrame from the fulfillment
-            analysis.
-        output_file (str): The full path where the new .xls file will be saved.
-        report_name (str, optional): The name of the report, used for logging.
-            Defaults to "Stock Export".
-        filters (list[dict], optional): A list of dictionaries defining filter
-            conditions to apply before summarizing the data. Defaults to None.
+        analysis_df: The main DataFrame from the fulfillment analysis.
+        output_file: The full path where the new .xls file will be saved.
+        report_name: The name of the report, used for logging. Defaults to
+            "Stock Export".
+        filters: A list of dictionaries defining filter conditions to apply
+            before summarizing the data. Defaults to None.
     """
     try:
         logger.info(f"--- Creating report: '{report_name}' ---")

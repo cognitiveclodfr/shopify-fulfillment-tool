@@ -1,3 +1,10 @@
+"""Exhaustive unit tests for the analysis module.
+
+This module contains more complex, scenario-based tests for the
+`shopify_tool/analysis.py` module, covering edge cases and interactions
+between different parts of the analysis logic.
+"""
+
 import sys
 import os
 import pandas as pd
@@ -6,13 +13,23 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from shopify_tool.analysis import run_analysis
 
 
-def make_stock_df():
-    """Creates a sample stock DataFrame for testing."""
-    return pd.DataFrame({"Артикул": ["A", "C"], "Име": ["Item A", "Item C"], "Наличност": [2, 0]})
+def make_stock_df() -> pd.DataFrame:
+    """Creates a sample stock DataFrame for testing.
+
+    Returns:
+        A sample stock DataFrame.
+    """
+    return pd.DataFrame(
+        {"Артикул": ["A", "C"], "Име": ["Item A", "Item C"], "Наличност": [2, 0]}
+    )
 
 
-def make_orders_df():
-    """Creates a sample orders DataFrame for testing."""
+def make_orders_df() -> pd.DataFrame:
+    """Creates a sample orders DataFrame for testing.
+
+    Returns:
+        A sample orders DataFrame.
+    """
     return pd.DataFrame(
         {
             "Name": ["O1", "O2", "O3"],
@@ -26,8 +43,13 @@ def make_orders_df():
     )
 
 
-def test_summary_missing_and_stats():
-    """Tests the generation of missing summary and stats with complex scenarios."""
+def test_summary_missing_and_stats() -> None:
+    """Tests the generation of missing summary and stats with complex scenarios.
+
+    This test uses a combination of in-stock, out-of-stock, and unlisted
+    items to ensure that the `summary_missing_df` and the final statistics
+    are calculated correctly.
+    """
     stock_df = make_stock_df()
     orders_df = make_orders_df()
     history_df = pd.DataFrame({"Order_Number": []})
@@ -46,7 +68,7 @@ def test_summary_missing_and_stats():
     assert "couriers_stats" in stats
 
 
-def test_repeat_system_note():
+def test_repeat_system_note() -> None:
     """Tests that a 'Repeat' system note is correctly added for historical orders."""
     stock_df = make_stock_df()
     orders_df = make_orders_df()

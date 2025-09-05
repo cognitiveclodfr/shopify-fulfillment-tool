@@ -1,3 +1,10 @@
+"""Provides a dialog for building and saving custom reports.
+
+This module defines the `ReportBuilderWindow` class, which allows users to
+create custom reports from the analysis data by selecting columns and applying
+filters.
+"""
+
 from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -30,12 +37,14 @@ class ReportBuilderWindow(QDialog):
                             widgets used to select them.
     """
 
-    def __init__(self, dataframe, parent=None):
+    def __init__(
+        self, dataframe: pd.DataFrame, parent: QWidget | None = None
+    ) -> None:
         """Initializes the ReportBuilderWindow.
 
         Args:
-            dataframe (pd.DataFrame): The source DataFrame for the report.
-            parent (QWidget, optional): The parent widget. Defaults to None.
+            dataframe: The source DataFrame for the report.
+            parent: The parent widget. Defaults to None.
         """
         super().__init__(parent)
         self.df = dataframe
@@ -82,7 +91,7 @@ class ReportBuilderWindow(QDialog):
         # --- Connections ---
         self.generate_btn.clicked.connect(self.generate_custom_report)
 
-    def generate_custom_report(self):
+    def generate_custom_report(self) -> None:
         """Generates and saves the custom report based on user selections.
 
         This method is triggered when the 'Generate' button is clicked. It

@@ -1,3 +1,11 @@
+"""Provides a generic, reusable worker thread for running background tasks.
+
+This module defines the `Worker` and `WorkerSignals` classes, which are used
+to run any function in a separate thread using a `QThreadPool`. This is
+essential for keeping the GUI responsive during long-running operations like
+file I/O or data analysis.
+"""
+
 import sys
 import traceback
 from PySide6.QtCore import QObject, QRunnable, Signal, Slot
@@ -34,11 +42,11 @@ class Worker(QRunnable):
                                  worker can emit.
     """
 
-    def __init__(self, fn, *args, **kwargs):
+    def __init__(self, fn: callable, *args, **kwargs) -> None:
         """Initializes the Worker.
 
         Args:
-            fn (callable): The function to execute in the background.
+            fn: The function to execute in the background.
             *args: Positional arguments to pass to the function.
             **kwargs: Keyword arguments to pass to the function.
         """
@@ -50,7 +58,7 @@ class Worker(QRunnable):
         self.signals = WorkerSignals()
 
     @Slot()
-    def run(self):
+    def run(self) -> None:
         """Executes the target function in the background thread.
 
         This method is automatically called when the QRunnable is started by a

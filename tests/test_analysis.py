@@ -1,3 +1,10 @@
+"""Unit tests for the analysis module of the Shopify Fulfillment Tool.
+
+This module contains tests for the core data processing and analysis logic
+found in `shopify_tool/analysis.py`. It uses pytest for test organization
+and execution.
+"""
+
 import pytest
 import pandas as pd
 import sys
@@ -27,23 +34,30 @@ from shopify_tool.analysis import _generalize_shipping_method, run_analysis, tog
         ("", "Unknown"),  # An empty string should be handled as 'Unknown'
     ],
 )
-def test_generalize_shipping_method(input_method, expected_output):
-    """
-    Tests the _generalize_shipping_method function with various inputs.
+def test_generalize_shipping_method(input_method: str | None, expected_output: str) -> None:
+    """Tests the _generalize_shipping_method function with various inputs.
 
     Args:
-        input_method (str or None): The raw shipping method string to test.
-        expected_output (str): The expected standardized string.
+        input_method: The raw shipping method string to test.
+        expected_output: The expected standardized string.
     """
     # The assert statement checks if the function's output matches the expected output.
     # If they don't match, pytest will report a failure.
     assert _generalize_shipping_method(input_method) == expected_output
 
 
-def test_fulfillment_prioritization_logic():
-    """Tests that the fulfillment logic correctly prioritizes multi-item orders."""
+def test_fulfillment_prioritization_logic() -> None:
+    """Tests that the fulfillment logic correctly prioritizes multi-item orders.
+
+    This test sets up a scenario where there is limited stock of a single
+    product, enough to fulfill two multi-item orders but not enough for any
+    additional single-item orders. It verifies that the analysis function
+    correctly allocates stock to the multi-item orders first, leaving the
+    single-item orders as 'Not Fulfillable'.
+    """
     # Create a stock of 4 for a single SKU. This is the key to the test.
-    # It's enough to fulfill the two multi-item orders (2+2=4), but not any of the single-item orders.
+    # It's enough to fulfill the two multi-item orders (2+2=4), but not any
+    # of the single-item orders.
     stock_df = pd.DataFrame({"Артикул": ["SKU-1"], "Име": ["Test Product"], "Наличност": [4]})
 
     # Create four orders for the same SKU with different priorities
@@ -79,8 +93,13 @@ def test_fulfillment_prioritization_logic():
     assert status_map["1004"] == "Not Fulfillable"  # Priority 4
 
 
-def test_summary_missing_report():
-    """Tests that the missing items summary is correctly generated."""
+def test_summary_missing_report() -> None:
+    """Tests that the missing items summary is correctly generated.
+
+    This test checks if the `summary_missing_df` output of the `run_analysis`
+    function accurately reports on items that could not be fulfilled due to
+    insufficient stock.
+    """
     stock_df = pd.DataFrame({"Артикул": ["SKU-1"], "Име": ["P1"], "Наличност": [5]})
     orders_df = pd.DataFrame(
         {
@@ -104,8 +123,17 @@ def test_summary_missing_report():
 
 
 @pytest.fixture
-def sample_analysis_df():
-    """Provides a sample analysis DataFrame fixture for testing."""
+def sample_analysis_df() -> pd.DataFrame:
+    """Provides a sample analysis DataFrame fixture for testing.
+
+    This fixture creates a sample DataFrame that mimics the output of the
+    `run_analysis` function. It includes multiple orders, SKUs, and fulfillment
+    statuses to serve as a baseline for tests that modify this data, such as
+    the `toggle_order_fulfillment` tests.
+
+    Returns:
+        A sample pandas DataFrame for testing.
+    """
     df = pd.DataFrame(
         {
             "Order_Number": ["1001", "1001", "1002"],
@@ -124,8 +152,15 @@ def sample_analysis_df():
 class TestToggleOrderFulfillment:
     """Groups tests for the toggle_order_fulfillment function."""
 
-    def test_toggle_fulfillable_to_not_fulfillable(self, sample_analysis_df):
-        """Tests changing an order from 'Fulfillable' to 'Not Fulfillable'."""
+    def test_toggle_fulfillable_to_not_fulfillable(
+        self, sample_analysis_df: pd.DataFrame
+    ) -> None:
+        """Tests changing an order from 'Fulfillable' to 'Not Fulfillable'.
+
+        This test verifies that when a 'Fulfillable' order is toggled, its
+        status changes to 'Not Fulfillable' and the stock quantities for the
+        items in that order are correctly returned to the 'Final_Stock' pool.
+        """
         df = sample_analysis_df.copy()
 
         # Un-fulfill order 1001 (contains SKU-A:1, SKU-B:2)
@@ -138,7 +173,9 @@ class TestToggleOrderFulfillment:
         assert all(updated_df[updated_df["SKU"] == "SKU-B"]["Final_Stock"] == 10)
         assert all(updated_df[updated_df["Order_Number"] == "1001"]["Order_Fulfillment_Status"] == "Not Fulfillable")
 
-    def test_toggle_not_fulfillable_to_fulfillable_success(self, sample_analysis_df):
+    def test_toggle_not_fulfillable_to_fulfillable_success(
+        self, sample_analysis_df: pd.DataFrame
+    ) -> None:
         """Tests successfully changing an order to 'Fulfillable' when stock is sufficient."""
         df = sample_analysis_df.copy()
         # Stock for SKU-A is 6. Order 1002 needs 3. This should succeed.
@@ -150,7 +187,9 @@ class TestToggleOrderFulfillment:
         assert all(updated_df[updated_df["SKU"] == "SKU-A"]["Final_Stock"] == 3)
         assert all(updated_df[updated_df["Order_Number"] == "1002"]["Order_Fulfillment_Status"] == "Fulfillable")
 
-    def test_toggle_not_fulfillable_to_fulfillable_fail_no_stock(self, sample_analysis_df):
+    def test_toggle_not_fulfillable_to_fulfillable_fail_no_stock(
+        self, sample_analysis_df: pd.DataFrame
+    ) -> None:
         """Tests that changing an order to 'Fulfillable' fails when stock is insufficient."""
         df = sample_analysis_df.copy()
         # Order 1002 needs 3 of SKU-A, but let's set the stock to 2

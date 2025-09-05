@@ -1,3 +1,9 @@
+"""Unit tests for the utility functions.
+
+This module contains tests for the helper functions in `shopify_tool/utils.py`,
+such as path handling for different operating systems and execution environments.
+"""
+
 import os
 import sys
 
@@ -5,9 +11,11 @@ import sys
 from shopify_tool import utils
 
 
-def test_get_persistent_data_path_windows(mocker):
-    """
-    Tests the persistent data path on Windows using APPDATA.
+def test_get_persistent_data_path_windows(mocker) -> None:
+    """Tests the persistent data path on Windows using APPDATA.
+
+    Args:
+        mocker: The pytest-mock fixture for mocking objects.
     """
     mocker.patch("os.name", "nt")
     mocker.patch("os.getenv", return_value="/appdata")
@@ -21,9 +29,11 @@ def test_get_persistent_data_path_windows(mocker):
     assert path == os.path.join(expected_dir, "test.json")
 
 
-def test_get_persistent_data_path_other_os(mocker):
-    """
-    Tests the persistent data path on non-Windows OS using home directory.
+def test_get_persistent_data_path_other_os(mocker) -> None:
+    """Tests the persistent data path on non-Windows OS using home directory.
+
+    Args:
+        mocker: The pytest-mock fixture for mocking objects.
     """
     mocker.patch("os.name", "posix")
     mocker.patch("os.getenv", return_value=None)
@@ -38,9 +48,11 @@ def test_get_persistent_data_path_other_os(mocker):
     assert path == os.path.join(expected_dir, "test.json")
 
 
-def test_get_persistent_data_path_os_error(mocker):
-    """
-    Tests that the function falls back to the current directory on OSError.
+def test_get_persistent_data_path_os_error(mocker) -> None:
+    """Tests that the function falls back to the current directory on OSError.
+
+    Args:
+        mocker: The pytest-mock fixture for mocking objects.
     """
     mocker.patch("os.getenv", return_value="/appdata")
     mocker.patch("os.makedirs", side_effect=OSError("Permission denied"))
@@ -53,9 +65,11 @@ def test_get_persistent_data_path_os_error(mocker):
     assert path == os.path.join(".", "test.json")
 
 
-def test_resource_path_dev_mode(mocker):
-    """
-    Tests that the resource path is correct in a development environment.
+def test_resource_path_dev_mode(mocker) -> None:
+    """Tests that the resource path is correct in a development environment.
+
+    Args:
+        mocker: The pytest-mock fixture for mocking objects.
     """
     mocker.patch("os.path.abspath", return_value="/dev/path")
     mocker.patch("os.path.join", side_effect=os.path.join)
@@ -68,9 +82,11 @@ def test_resource_path_dev_mode(mocker):
     assert path == os.path.join("/dev/path", "data/file.txt")
 
 
-def test_resource_path_pyinstaller_mode(mocker):
-    """
-    Tests that the resource path is correct in a PyInstaller bundle.
+def test_resource_path_pyinstaller_mode(mocker) -> None:
+    """Tests that the resource path is correct in a PyInstaller bundle.
+
+    Args:
+        mocker: The pytest-mock fixture for mocking objects.
     """
     mocker.patch("os.path.join", side_effect=os.path.join)
     # Mock the PyInstaller-specific attribute

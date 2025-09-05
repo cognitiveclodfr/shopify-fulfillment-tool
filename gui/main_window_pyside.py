@@ -1,3 +1,10 @@
+"""The main window and entry point for the Shopify Fulfillment Tool application.
+
+This module defines the `MainWindow` class, which encapsulates the main user
+interface and orchestrates the interactions between the UI elements, the data
+processing backend, and various handlers for files, actions, and UI management.
+"""
+
 import sys
 import os
 import json
@@ -48,7 +55,7 @@ class MainWindow(QMainWindow):
             analysis or generating reports.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initializes the MainWindow, sets up UI, and connects signals."""
         super().__init__()
         self.setWindowTitle("Shopify Fulfillment Tool (PySide6 Refactored)")
@@ -93,11 +100,11 @@ class MainWindow(QMainWindow):
         self.load_session()
         self.update_profile_combo()
 
-    def _init_and_load_config(self):
+    def _init_and_load_config(self) -> None:
         """Initializes and loads the application configuration.
 
-        Ensures a 'config.json' exists, handles migration to the new profile-based
-        structure, and loads the active profile.
+        Ensures a 'config.json' exists, handles migration to the new
+        profile-based structure, and loads the active profile.
         """
         default_config_path = resource_path("config.json")
 
@@ -178,7 +185,7 @@ class MainWindow(QMainWindow):
         self.active_profile_config = self.config["profiles"][self.active_profile_name]
         logging.info(f"Loaded profile: {self.active_profile_name}")
 
-    def _save_config(self):
+    def _save_config(self) -> None:
         """Saves the entire configuration object to config.json."""
         try:
             with open(self.config_path, "w", encoding="utf-8") as f:
@@ -186,9 +193,11 @@ class MainWindow(QMainWindow):
             logging.info("Configuration saved successfully.")
         except Exception as e:
             logging.error(f"Failed to save settings: {e}", exc_info=True)
-            QMessageBox.critical(self, "Error", f"Failed to write settings to file: {e}")
+            QMessageBox.critical(
+                self, "Error", f"Failed to write settings to file: {e}"
+            )
 
-    def setup_logging(self):
+    def setup_logging(self) -> None:
         """Sets up the Qt-based logging handler.
 
         Initializes a `QtLogHandler` that emits a signal whenever a log
@@ -201,7 +210,7 @@ class MainWindow(QMainWindow):
         logging.getLogger().setLevel(logging.INFO)
         self.log_handler.log_message_received.connect(self.execution_log_edit.appendPlainText)
 
-    def connect_signals(self):
+    def connect_signals(self) -> None:
         """Connects all UI widget signals to their corresponding slots.
 
         This method centralizes all signal-slot connections for the main
@@ -243,12 +252,12 @@ class MainWindow(QMainWindow):
         self.case_sensitive_checkbox.stateChanged.connect(self.filter_table)
         self.clear_filter_button.clicked.connect(self.clear_filter)
 
-    def clear_filter(self):
+    def clear_filter(self) -> None:
         """Clears the filter input text box."""
         self.filter_input.clear()
 
     # --- Profile Management ---
-    def update_profile_combo(self):
+    def update_profile_combo(self) -> None:
         """Updates the profile dropdown with the current list of profiles."""
         self.profile_combo.blockSignals(True)
         self.profile_combo.clear()
@@ -257,7 +266,7 @@ class MainWindow(QMainWindow):
         self.profile_combo.setCurrentText(self.active_profile_name)
         self.profile_combo.blockSignals(False)
 
-    def set_active_profile(self, profile_name):
+    def set_active_profile(self, profile_name: str) -> None:
         """Switches the application to a different settings profile."""
         if not profile_name or profile_name == self.active_profile_name:
             return
@@ -277,36 +286,64 @@ class MainWindow(QMainWindow):
             self._update_all_views()
             self.update_profile_combo()
         else:
-            QMessageBox.warning(self, "Profile Not Found", f"The profile '{profile_name}' could not be found.")
+            QMessageBox.warning(
+                self, "Profile Not Found", f"The profile '{profile_name}' could not be found."
+            )
             # Revert combo box to the actual active profile
             self.profile_combo.setCurrentText(self.active_profile_name)
 
-    def open_profile_manager(self):
+    def open_profile_manager(self) -> None:
         """Opens the profile management dialog."""
         dialog = ProfileManagerDialog(self)
         dialog.exec()
-        self.update_profile_combo() # Refresh combo box in case of changes
+        self.update_profile_combo()  # Refresh combo box in case of changes
 
-    def create_profile(self, name, base_profile_name="Default"):
-        """Creates a new profile by copying an existing one."""
+    def create_profile(self, name: str, base_profile_name: str = "Default") -> bool:
+        """Creates a new profile by copying an existing one.
+
+        Args:
+            name: The name for the new profile.
+            base_profile_name: The name of the profile to copy settings from.
+
+        Returns:
+            True if the profile was created successfully, False otherwise.
+        """
         if name in self.config["profiles"]:
-            QMessageBox.warning(self, "Profile Exists", f"A profile named '{name}' already exists.")
+            QMessageBox.warning(
+                self, "Profile Exists", f"A profile named '{name}' already exists."
+            )
             return False
 
         # Use the base profile's settings, or default to an empty config
-        default_profile_structure = {"rules": [], "packing_lists": [], "stock_exports": []}
-        base_config = self.config["profiles"].get(base_profile_name, default_profile_structure)
-        self.config["profiles"][name] = json.loads(json.dumps(base_config)) # Deep copy
+        default_profile_structure = {
+            "rules": [],
+            "packing_lists": [],
+            "stock_exports": [],
+        }
+        base_config = self.config["profiles"].get(
+            base_profile_name, default_profile_structure
+        )
+        self.config["profiles"][name] = json.loads(json.dumps(base_config))  # Deep copy
         self._save_config()
         self.log_activity("Profiles", f"Created new profile: {name}")
         return True
 
-    def rename_profile(self, old_name, new_name):
-        """Renames an existing profile."""
+    def rename_profile(self, old_name: str, new_name: str) -> bool:
+        """Renames an existing profile.
+
+        Args:
+            old_name: The current name of the profile.
+            new_name: The new name for the profile.
+
+        Returns:
+            True if the profile was renamed successfully, False otherwise.
+        """
         if old_name == new_name:
             return True
         if new_name in self.config["profiles"]:
-            QMessageBox.warning(self, "Profile Exists", f"A profile named '{new_name}' already exists.")
+            QMessageBox.warning(
+                self, "Profile Exists", f"A profile named '{new_name}' already exists."
+            )
             return False
 
         self.config["profiles"][new_name] = self.config["profiles"].pop(old_name)
@@ -318,14 +355,23 @@ class MainWindow(QMainWindow):
         self.log_activity("Profiles", f"Renamed profile '{old_name}' to '{new_name}'")
         return True
 
-    def delete_profile(self, name):
-        """Deletes a settings profile."""
+    def delete_profile(self, name: str) -> bool:
+        """Deletes a settings profile.
+
+        Args:
+            name: The name of the profile to delete.
+
+        Returns:
+            True if the profile was deleted successfully, False otherwise.
+        """
         if len(self.config["profiles"]) <= 1:
-            QMessageBox.warning(self, "Cannot Delete", "You cannot delete the last profile.")
+            QMessageBox.warning(
+                self, "Cannot Delete", "You cannot delete the last profile."
+            )
             return False
 
         if name not in self.config["profiles"]:
-            return False # Should not happen
+            return False  # Should not happen
 
         del self.config["profiles"][name]
 
@@ -337,7 +383,7 @@ class MainWindow(QMainWindow):
         self.log_activity("Profiles", f"Deleted profile: {name}")
         return True
 
-    def filter_table(self):
+    def filter_table(self) -> None:
         """Applies the current filter settings to the results table view.
 
         Reads the filter text, selected column, and case sensitivity setting
@@ -356,7 +402,7 @@ class MainWindow(QMainWindow):
         self.proxy_model.setFilterCaseSensitivity(case_sensitivity)
         self.proxy_model.setFilterRegularExpression(text)
 
-    def _update_all_views(self):
+    def _update_all_views(self) -> None:
         """Central slot to refresh all UI components after data changes.
 
         This method is called whenever the main `analysis_results_df` is
@@ -376,7 +422,7 @@ class MainWindow(QMainWindow):
         self.ui_manager.set_ui_busy(False)
         # The column manager button is enabled within update_results_table
 
-    def update_statistics_tab(self):
+    def update_statistics_tab(self) -> None:
         """Populates the 'Statistics' tab with the latest analysis data.
 
         Clears any existing data and redraws the statistics display,
@@ -409,12 +455,12 @@ class MainWindow(QMainWindow):
         else:
             self.courier_stats_layout.addWidget(QLabel("No courier stats available."), 0, 0)
 
-    def log_activity(self, op_type, desc):
+    def log_activity(self, op_type: str, desc: str) -> None:
         """Adds a new entry to the 'Activity Log' table in the UI.
 
         Args:
-            op_type (str): The type of operation (e.g., "Session", "Analysis").
-            desc (str): A description of the activity.
+            op_type: The type of operation (e.g., "Session", "Analysis").
+            desc: A description of the activity.
         """
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.activity_log_table.insertRow(0)
@@ -422,15 +468,14 @@ class MainWindow(QMainWindow):
         self.activity_log_table.setItem(0, 1, QTableWidgetItem(op_type))
         self.activity_log_table.setItem(0, 2, QTableWidgetItem(desc))
 
-    def on_table_double_clicked(self, index: QModelIndex):
+    def on_table_double_clicked(self, index: QModelIndex) -> None:
         """Handles double-click events on the results table.
 
         A double-click on a row triggers the toggling of the fulfillment
         status for the corresponding order.
 
         Args:
-            index (QModelIndex): The model index of the cell that was
-                double-clicked.
+            index: The model index of the cell that was double-clicked.
         """
         if not index.isValid():
             return
@@ -445,15 +490,15 @@ class MainWindow(QMainWindow):
         if order_number:
             self.actions_handler.toggle_fulfillment_status_for_order(order_number)
 
-    def show_context_menu(self, pos: QPoint):
+    def show_context_menu(self, pos: QPoint) -> None:
         """Shows a context menu for the results table view.
 
         The menu is populated with actions relevant to the clicked row,
         such as changing order status, copying data, or removing items/orders.
 
         Args:
-            pos (QPoint): The position where the right-click occurred, in the
-                table's viewport coordinates.
+            pos: The position where the right-click occurred, in the table's
+                viewport coordinates.
         """
         if self.analysis_results_df.empty:
             return
@@ -496,7 +541,7 @@ class MainWindow(QMainWindow):
                     menu.addAction(action)
             menu.exec(table.viewport().mapToGlobal(pos))
 
-    def closeEvent(self, event):
+    def closeEvent(self, event) -> None:
         """Handles the application window being closed.
 
         Saves the current analysis DataFrame and visible columns to a session
@@ -515,7 +560,7 @@ class MainWindow(QMainWindow):
                 logging.error(f"Error saving session automatically: {e}", exc_info=True)
         event.accept()
 
-    def load_session(self):
+    def load_session(self) -> None:
         """Loads a previous session from a pickle file if available.
 
         If a session file exists, it prompts the user to restore it. If they

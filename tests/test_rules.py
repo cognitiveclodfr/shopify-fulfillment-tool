@@ -1,11 +1,25 @@
+"""Unit tests for the RuleEngine module.
+
+This module contains tests for the rule engine logic found in
+`shopify_tool/rules.py`. It uses a sample DataFrame and a variety of rule
+configurations to test all operators, actions, and edge cases.
+"""
+
 import pytest
 import pandas as pd
 from shopify_tool.rules import RuleEngine
 
 
 @pytest.fixture
-def sample_df():
-    """Provides a sample DataFrame for testing."""
+def sample_df() -> pd.DataFrame:
+    """Provides a sample DataFrame for testing the rule engine.
+
+    This fixture creates a DataFrame with a variety of data types and values
+    to cover different rule conditions and actions.
+
+    Returns:
+        A sample pandas DataFrame for testing.
+    """
     data = {
         "Order_Number": ["#1001", "#1001", "#1002", "#1003", "#1004"],
         "Order_Type": ["Single", "Single", "Multi", "Multi", "Single"],
@@ -20,9 +34,11 @@ def sample_df():
     return pd.DataFrame(data)
 
 
-def test_add_tag_with_simple_rule(sample_df):
-    """
-    Tests a simple rule to add a tag to the Status_Note column.
+def test_add_tag_with_simple_rule(sample_df: pd.DataFrame) -> None:
+    """Tests a simple rule to add a tag to the Status_Note column.
+
+    Args:
+        sample_df: The sample DataFrame fixture.
     """
     rules = [
         {
@@ -48,9 +64,14 @@ def test_add_tag_with_simple_rule(sample_df):
     assert "Repeat, DHL-SHIP" in result_df.loc[4, "Status_Note"]
 
 
-def test_set_priority_with_multiple_conditions_all(sample_df):
-    """
-    Tests a rule with multiple 'AND' conditions.
+def test_set_priority_with_multiple_conditions_all(sample_df: pd.DataFrame) -> None:
+    """Tests a rule with multiple 'AND' conditions.
+
+    This test verifies that a rule with `match: "ALL"` correctly applies its
+    action only to rows that satisfy all specified conditions.
+
+    Args:
+        sample_df: The sample DataFrame fixture.
     """
     rules = [
         {
@@ -76,9 +97,14 @@ def test_set_priority_with_multiple_conditions_all(sample_df):
     assert result_df.loc[result_df["Order_Number"] == "#1004", "Priority"].iloc[0] == "Normal"
 
 
-def test_set_status_with_multiple_conditions_any(sample_df):
-    """
-    Tests a rule with multiple 'OR' conditions.
+def test_set_status_with_multiple_conditions_any(sample_df: pd.DataFrame) -> None:
+    """Tests a rule with multiple 'OR' conditions.
+
+    This test verifies that a rule with `match: "ANY"` correctly applies its
+    action to rows that satisfy at least one of the specified conditions.
+
+    Args:
+        sample_df: The sample DataFrame fixture.
     """
     rules = [
         {
@@ -103,9 +129,11 @@ def test_set_status_with_multiple_conditions_any(sample_df):
     assert result_df.loc[result_df["Order_Number"] == "#1002", "Order_Fulfillment_Status"].iloc[0] == "Fulfillable"
 
 
-def test_no_action_if_no_match(sample_df):
-    """
-    Ensures no changes are made if no rules match.
+def test_no_action_if_no_match(sample_df: pd.DataFrame) -> None:
+    """Ensures no changes are made if no rules match.
+
+    Args:
+        sample_df: The sample DataFrame fixture.
     """
     rules = [
         {
@@ -124,10 +152,14 @@ def test_no_action_if_no_match(sample_df):
     pd.testing.assert_frame_equal(original_df, result_df, check_like=True)
 
 
-def test_exclude_sku_action(sample_df):
-    """
-    Tests the 'EXCLUDE_SKU' action.
-    This action should set the quantity of the matching SKU to 0.
+def test_exclude_sku_action(sample_df: pd.DataFrame) -> None:
+    """Tests the 'EXCLUDE_SKU' action.
+
+    This action should set the quantity of the matching SKU to 0 and add a
+    note to the 'Status_Note' column.
+
+    Args:
+        sample_df: The sample DataFrame fixture.
     """
     rules = [
         {
@@ -151,9 +183,11 @@ def test_exclude_sku_action(sample_df):
     assert result_df.loc[result_df["SKU"] == "SKU-D", "Quantity"].iloc[0] == 3
 
 
-def test_empty_rules_config(sample_df):
-    """
-    Tests that the engine handles an empty or invalid rules list gracefully.
+def test_empty_rules_config(sample_df: pd.DataFrame) -> None:
+    """Tests that the engine handles an empty or invalid rules list gracefully.
+
+    Args:
+        sample_df: The sample DataFrame fixture.
     """
     original_df = sample_df.copy()
 
@@ -168,9 +202,11 @@ def test_empty_rules_config(sample_df):
     pd.testing.assert_frame_equal(original_df, result_df_none)
 
 
-def test_rules_with_empty_conditions(sample_df):
-    """
-    Tests that a rule with no conditions does not match any rows.
+def test_rules_with_empty_conditions(sample_df: pd.DataFrame) -> None:
+    """Tests that a rule with no conditions does not match any rows.
+
+    Args:
+        sample_df: The sample DataFrame fixture.
     """
     rules = [
         {
@@ -200,8 +236,18 @@ def test_rules_with_empty_conditions(sample_df):
         ("is not empty", "", ["#1001", "#1003"]),  # Tags is not empty
     ],
 )
-def test_all_string_operators(sample_df, operator, value, expected_matches):
-    """Tests all string-based operators of the rule engine via parametrization."""
+def test_all_string_operators(
+    sample_df: pd.DataFrame, operator: str, value: str, expected_matches: list[str]
+) -> None:
+    """Tests all string-based operators of the rule engine via parametrization.
+
+    Args:
+        sample_df: The sample DataFrame fixture.
+        operator: The rule operator to test (e.g., 'equals', 'contains').
+        value: The value to use in the rule condition.
+        expected_matches: A list of Order_Number values that are expected to
+            match the rule.
+    """
     field = "Shipping_Provider"
     if "empty" in operator:
         field = "Tags"  # 'is empty' needs a field with empty values
@@ -227,8 +273,18 @@ def test_all_string_operators(sample_df, operator, value, expected_matches):
         ("is less than", 100, ["#1001", "#1004"]),
     ],
 )
-def test_all_numeric_operators(sample_df, operator, value, expected_matches):
-    """Tests all numeric operators of the rule engine via parametrization."""
+def test_all_numeric_operators(
+    sample_df: pd.DataFrame, operator: str, value: int, expected_matches: list[str]
+) -> None:
+    """Tests all numeric operators of the rule engine via parametrization.
+
+    Args:
+        sample_df: The sample DataFrame fixture.
+        operator: The numeric operator to test.
+        value: The numeric value to use in the rule condition.
+        expected_matches: A list of Order_Number values that are expected to
+            match the rule.
+    """
     rules = [
         {
             "match": "ALL",
@@ -243,17 +299,31 @@ def test_all_numeric_operators(sample_df, operator, value, expected_matches):
     assert sorted(matched_orders) == sorted(expected_matches)
 
 
-def test_rule_with_invalid_field(sample_df):
-    """Tests that a rule with a non-existent field is skipped gracefully."""
+def test_rule_with_invalid_field(sample_df: pd.DataFrame) -> None:
+    """Tests that a rule with a non-existent field is skipped gracefully.
+
+    Args:
+        sample_df: The sample DataFrame fixture.
+    """
     original_df = sample_df.copy()
-    rules = [{"conditions": [{"field": "NonExistentField", "operator": "equals", "value": "a"}]}]
+    rules = [
+        {
+            "conditions": [
+                {"field": "NonExistentField", "operator": "equals", "value": "a"}
+            ]
+        }
+    ]
     engine = RuleEngine(rules)
     result_df = engine.apply(sample_df.copy())
     pd.testing.assert_frame_equal(original_df, result_df)
 
 
-def test_prepare_df_for_actions_creates_columns(sample_df):
-    """Tests that the _prepare_df_for_actions method creates missing columns."""
+def test_prepare_df_for_actions_creates_columns(sample_df: pd.DataFrame) -> None:
+    """Tests that the _prepare_df_for_actions method creates missing columns.
+
+    Args:
+        sample_df: The sample DataFrame fixture.
+    """
     df = pd.DataFrame({"Order_Number": ["#1001"]})
     rules = [
         {"actions": [{"type": "SET_PRIORITY"}]},
@@ -267,8 +337,12 @@ def test_prepare_df_for_actions_creates_columns(sample_df):
     assert "_is_excluded" in df.columns
 
 
-def test_exclude_from_report_action(sample_df):
-    """Tests the EXCLUDE_FROM_REPORT action sets the internal flag correctly."""
+def test_exclude_from_report_action(sample_df: pd.DataFrame) -> None:
+    """Tests the EXCLUDE_FROM_REPORT action sets the internal flag correctly.
+
+    Args:
+        sample_df: The sample DataFrame fixture.
+    """
     rules = [
         {
             "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1002"}],
@@ -281,8 +355,12 @@ def test_exclude_from_report_action(sample_df):
     assert not result_df.loc[result_df["Order_Number"] != "#1002", "_is_excluded"].any()
 
 
-def test_add_tag_to_nan_note(sample_df):
-    """Tests that the ADD_TAG action works correctly on a cell with a NaN/null value."""
+def test_add_tag_to_nan_note(sample_df: pd.DataFrame) -> None:
+    """Tests that the ADD_TAG action works correctly on a cell with a NaN/null value.
+
+    Args:
+        sample_df: The sample DataFrame fixture.
+    """
     df = sample_df.copy()
     # Force a NaN value into the Status_Note column
     df.loc[0, "Status_Note"] = pd.NA

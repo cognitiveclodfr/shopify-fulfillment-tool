@@ -1,3 +1,10 @@
+"""Provides a custom logging handler to integrate Python's logging with Qt.
+
+This module defines the `QtLogHandler` class, which is a custom logging
+handler that emits a Qt signal for each log record. This allows for thread-safe
+logging to a Qt widget from any thread in the application.
+"""
+
 import logging
 from PySide6.QtCore import QObject, Signal
 
@@ -20,21 +27,23 @@ class QtLogHandler(logging.Handler, QObject):
     # Define a signal that will carry the log message
     log_message_received = Signal(str)
 
-    def __init__(self, parent=None):
-        """Initializes the QtLogHandler."""
-        # Initialize QObject part first
+    def __init__(self, parent: QObject | None = None) -> None:
+        """Initializes the QtLogHandler.
+
+        Args:
+            parent: The parent QObject, if any.
+        """
         QObject.__init__(self)
-        # Then initialize the logging.Handler part
         logging.Handler.__init__(self)
 
-    def emit(self, record):
+    def emit(self, record: logging.LogRecord) -> None:
         """Formats and emits a log record as a Qt signal.
 
         This method is called automatically by the Python logging framework
         whenever a log event is dispatched to this handler.
 
         Args:
-            record (logging.LogRecord): The log record to process.
+            record: The log record to process.
         """
         # Format the log record into a string
         msg = self.format(record)

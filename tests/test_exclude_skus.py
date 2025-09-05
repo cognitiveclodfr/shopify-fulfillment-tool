@@ -1,3 +1,9 @@
+"""Unit tests for the SKU exclusion feature in packing lists.
+
+This module tests the functionality of excluding specific SKUs from generated
+packing list reports, as defined in `shopify_tool/packing_lists.py`.
+"""
+
 import sys
 import os
 import pandas as pd
@@ -6,10 +12,15 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from shopify_tool import packing_lists
 
 
-def test_exclude_skus_from_packing_list(tmp_path):
-    """
-    Tests that the create_packing_list function correctly excludes specified
-    "virtual" SKUs from the final report.
+def test_exclude_skus_from_packing_list(tmp_path) -> None:
+    """Tests that the create_packing_list function correctly excludes specified SKUs.
+
+    This test verifies that when a list of SKUs is passed to the
+    `exclude_skus` parameter of the `create_packing_list` function, those
+    SKUs are correctly omitted from the final generated Excel report.
+
+    Args:
+        tmp_path: A pytest fixture providing a temporary directory path.
     """
     # 1. Create a sample analysis DataFrame
     analysis_df = pd.DataFrame(

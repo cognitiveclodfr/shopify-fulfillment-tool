@@ -31,14 +31,33 @@ The application follows a straightforward workflow:
     -   **Custom Reports**: Build your own one-off reports with a simple report builder UI.
 -   **Session Persistence**: Close the app and restore your previous session's data on the next launch.
 
-## Project Structure
+## Codebase Overview
 
-A brief overview of the main directories:
--   `shopify_tool/`: Contains the core backend logic for analysis, report generation, and the rule engine.
--   `gui/`: Contains all the PySide6 UI code, including the main window, dialogs, and helper classes for managing the UI and user actions.
--   `tests/`: Contains the test suite for the application, written using pytest.
--   `data/`: Contains templates for reports and serves as the default output location.
--   `config.json`: The default configuration file.
+The project is organized into two main packages: `shopify_tool` (backend) and `gui` (frontend).
+
+### `shopify_tool` (Backend)
+
+This package contains all the core data processing and business logic, designed to be independent of the user interface.
+
+-   **`core.py`**: The main orchestrator of the backend. It acts as the primary API for the GUI, coordinating the analysis and report generation processes.
+-   **`analysis.py`**: Contains the core fulfillment simulation logic. It takes cleaned DataFrames and determines order statuses, calculates final stock, and generates summary statistics.
+-   **`rules.py`**: Implements the configurable rule engine. It applies user-defined rules from the config to tag or modify orders.
+-   **`packing_lists.py`**: Handles the creation of formatted packing list reports in Excel, including advanced filtering and sorting.
+-   **`stock_export.py`**: Manages the generation of stock export files, often used for courier systems.
+-   **`utils.py`**: A collection of helper functions, primarily for handling file paths in a cross-platform and bundled-application context.
+-   **`logger_config.py`**: Sets up the application-wide logger.
+
+### `gui` (Frontend)
+
+This package contains all the PySide6 UI code and related helper classes.
+
+-   **`main_window_pyside.py`**: The main application window. It orchestrates the UI and connects user actions to the backend handlers.
+-   **`ui_manager.py`**: Responsible for creating, laying out, and managing the state of all widgets in the main window.
+-   **`actions_handler.py`**: Connects UI events (like button clicks) to the corresponding backend logic, often by running tasks in a background thread.
+-   **`file_handler.py`**: Manages file dialogs, loading, and validation of input CSV files.
+-   **`pandas_model.py`**: A custom `QAbstractTableModel` that serves as an interface between pandas DataFrames and `QTableView` widgets, enabling the display of tabular data.
+-   **Dialogs (`settings_window_pyside.py`, `profile_manager_dialog.py`, etc.)**: Each dialog is implemented in its own module, handling specific user interactions like editing settings or managing profiles.
+-   **`worker.py`**: A generic, reusable `QRunnable` worker for executing any function in a background thread to keep the UI responsive.
 
 ## Configuration
 
@@ -96,3 +115,24 @@ This project uses `ruff` for code formatting and linting. The rules are defined 
     ```bash
     ruff check .
     ```
+
+## Contributing
+
+Contributions are welcome! If you would like to contribute to the development of this tool, please follow these steps:
+
+1.  **Fork the repository** on GitHub.
+2.  **Create a new branch** for your feature or bug fix:
+    ```bash
+    git checkout -b feature/your-feature-name
+    ```
+3.  **Make your changes** and ensure the code adheres to the existing style.
+4.  **Run the tests** to make sure you haven't introduced any regressions:
+    ```bash
+    pytest
+    ```
+5.  **Commit your changes** with a clear and descriptive commit message.
+6.  **Push your branch** to your fork:
+    ```bash
+    git push origin feature/your-feature-name
+    ```
+7.  **Open a pull request** from your fork to the main repository.

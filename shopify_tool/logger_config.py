@@ -1,27 +1,35 @@
+"""Configures the logging for the Shopify Fulfillment Tool application.
+
+This module provides a centralized function to set up a logger that can be
+used across the entire application. It configures file-based logging for
+auditing and history, and a stream-based handler for real-time feedback
+during development.
+"""
+
 import logging
 import os
 from logging.handlers import RotatingFileHandler
 
 
-def setup_logging():
+def setup_logging() -> logging.Logger:
     """Configures and initializes the logging for the entire application.
 
     This function sets up a centralized logger named 'ShopifyToolLogger'.
     It configures two handlers:
-    1.  **RotatingFileHandler**: Writes log messages of level INFO and above to
-        a file named `logs/app_history.log`. The log file is rotated when it
-        reaches 1MB, and up to 5 backup files are kept. This is for persistent
-        historical logging.
-    2.  **StreamHandler**: Writes log messages of level INFO and above to the
-        console (stderr). This is useful for immediate feedback during
-        development or for headless execution.
+        1. RotatingFileHandler: Writes log messages of level INFO and above to
+           a file named `logs/app_history.log`. The log file is rotated when it
+           reaches 1MB, and up to 5 backup files are kept. This is for
+           persistent historical logging.
+        2. StreamHandler: Writes log messages of level INFO and above to the
+           console (stderr). This is useful for immediate feedback during
+           development or for headless execution.
 
     The function ensures that handlers are not duplicated if it is called
     multiple times. A specific handler for the GUI is expected to be added
     separately by the UI code.
 
     Returns:
-        logging.Logger: The configured logger instance for the application.
+        The configured logger instance for the application.
     """
     log_dir = "logs"
     if not os.path.exists(log_dir):

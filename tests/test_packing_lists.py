@@ -1,3 +1,9 @@
+"""Unit tests for the packing list generation module.
+
+This module contains tests for the packing list creation logic found in
+`shopify_tool/packing_lists.py`, including filtering and report generation.
+"""
+
 import sys
 import os
 import pandas as pd
@@ -6,8 +12,12 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from shopify_tool import packing_lists
 
 
-def test_create_packing_list_minimal(tmp_path):
-    """Tests the basic creation of a packing list with minimal data."""
+def test_create_packing_list_minimal(tmp_path) -> None:
+    """Tests the basic creation of a packing list with minimal data.
+
+    Args:
+        tmp_path: A pytest fixture providing a temporary directory path.
+    """
     # Build a small DataFrame that matches the analysis_df shape
     df = pd.DataFrame(
         {
@@ -26,9 +36,14 @@ def test_create_packing_list_minimal(tmp_path):
     assert out_file.exists()
 
 
-def test_create_packing_list_with_not_equals_filter(tmp_path):
-    """
-    Tests that a packing list can be correctly filtered with a '!=' operator.
+def test_create_packing_list_with_not_equals_filter(tmp_path) -> None:
+    """Tests that a packing list can be correctly filtered with a '!=' operator.
+
+    This test ensures that the filtering logic correctly applies the "not
+    equals" operator, excluding the specified items from the final report.
+
+    Args:
+        tmp_path: A pytest fixture providing a temporary directory path.
     """
     # Build a DataFrame with different shipping providers
     df = pd.DataFrame(

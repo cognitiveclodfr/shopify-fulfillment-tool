@@ -1,3 +1,10 @@
+"""Provides a Qt model to interface a pandas DataFrame with a QTableView.
+
+This module defines the `PandasModel` class, which acts as a wrapper around a
+pandas DataFrame, allowing it to be displayed and manipulated in a Qt view
+(like QTableView) while adhering to the Qt Model/View programming paradigm.
+"""
+
 from PySide6.QtCore import QAbstractTableModel, Qt, QModelIndex
 from PySide6.QtGui import QColor
 import pandas as pd
@@ -19,12 +26,14 @@ class PandasModel(QAbstractTableModel):
                        styling.
     """
 
-    def __init__(self, dataframe: pd.DataFrame, parent=None):
+    def __init__(
+        self, dataframe: pd.DataFrame, parent: QObject | None = None
+    ) -> None:
         """Initializes the PandasModel.
 
         Args:
-            dataframe (pd.DataFrame): The pandas DataFrame to be modeled.
-            parent (QObject, optional): The parent object. Defaults to None.
+            dataframe: The pandas DataFrame to be modeled.
+            parent: The parent object. Defaults to None.
         """
         super().__init__(parent)
         self._dataframe = dataframe
@@ -35,19 +44,21 @@ class PandasModel(QAbstractTableModel):
             "SystemNoteHighlight": QColor("#DAA520"),  # GoldenRod
         }
 
-    def rowCount(self, parent=QModelIndex()) -> int:
+    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
         """Returns the number of rows in the model."""
         if parent.isValid():
             return 0
         return len(self._dataframe)
 
-    def columnCount(self, parent=QModelIndex()) -> int:
+    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:
         """Returns the number of columns in the model."""
         if parent.isValid():
             return 0
         return len(self._dataframe.columns)
 
-    def data(self, index: QModelIndex, role=Qt.ItemDataRole.DisplayRole):
+    def data(
+        self, index: QModelIndex, role: Qt.ItemDataRole = Qt.ItemDataRole.DisplayRole
+    ) -> object | None:
         """Returns the data for a given model index and role.
 
         This method is called by the view to get the data to display. It
@@ -57,11 +68,11 @@ class PandasModel(QAbstractTableModel):
           'System_note' or 'Order_Fulfillment_Status' columns.
 
         Args:
-            index (QModelIndex): The index of the item to retrieve data for.
-            role (Qt.ItemDataRole): The role for which to retrieve data.
+            index: The index of the item to retrieve data for.
+            role: The role for which to retrieve data.
 
         Returns:
-            Any: The data for the given role, or None if not applicable.
+            The data for the given role, or None if not applicable.
         """
         if not index.isValid():
             return None
@@ -99,17 +110,21 @@ class PandasModel(QAbstractTableModel):
 
         return None
 
-    def headerData(self, section: int, orientation: Qt.Orientation, role=Qt.ItemDataRole.DisplayRole):
+    def headerData(
+        self,
+        section: int,
+        orientation: Qt.Orientation,
+        role: Qt.ItemDataRole = Qt.ItemDataRole.DisplayRole,
+    ) -> str | None:
         """Returns the header data for the given section and orientation.
 
         Args:
-            section (int): The row or column number.
-            orientation (Qt.Orientation): The header orientation (Horizontal
-                or Vertical).
-            role (Qt.ItemDataRole): The role for which to retrieve data.
+            section: The row or column number.
+            orientation: The header orientation (Horizontal or Vertical).
+            role: The role for which to retrieve data.
 
         Returns:
-            str | None: The header title, or None.
+            The header title, or None.
         """
         if role == Qt.ItemDataRole.DisplayRole:
             if orientation == Qt.Orientation.Horizontal:
@@ -118,31 +133,33 @@ class PandasModel(QAbstractTableModel):
                 return str(section + 1)
         return None
 
-    def get_column_index(self, column_name):
+    def get_column_index(self, column_name: str) -> int | None:
         """Returns the numerical index of a column from its string name.
 
         Args:
-            column_name (str): The name of the column.
+            column_name: The name of the column.
 
         Returns:
-            int | None: The index of the column, or None if not found.
+            The index of the column, or None if not found.
         """
         try:
             return self._dataframe.columns.get_loc(column_name)
         except KeyError:
             return None
 
-    def set_column_order_and_visibility(self, all_columns_in_order, visible_columns):
+    def set_column_order_and_visibility(
+        self, all_columns_in_order: list[str], visible_columns: list[str]
+    ) -> None:
         """Reorders and filters columns in the underlying DataFrame.
 
-        Note: This method seems to be obsolete or not fully implemented, as
-        column visibility is now handled by the view/proxy.
+        Note:
+            This method seems to be obsolete or not fully implemented, as
+            column visibility is now handled by the view/proxy.
 
         Args:
-            all_columns_in_order (list[str]): A list of all column names in
-                the desired order.
-            visible_columns (list[str]): A list of columns that should remain
-                visible.
+            all_columns_in_order: A list of all column names in the desired
+                order.
+            visible_columns: A list of columns that should remain visible.
         """
         self.beginResetModel()
         existing_columns = [col for col in all_columns_in_order if col in self._dataframe.columns]

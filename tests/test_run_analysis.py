@@ -1,3 +1,9 @@
+"""Unit tests for the main analysis runner.
+
+This module contains tests for the `run_full_analysis` function in
+`shopify_tool/core.py`, focusing on its basic execution and data transformations.
+"""
+
 import sys
 import os
 import pandas as pd
@@ -6,10 +12,17 @@ import pandas as pd
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 
-def make_test_data():
-    """Creates a sample set of DataFrames and config for testing run_analysis."""
+def make_test_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
+    """Creates a sample set of DataFrames and config for testing run_analysis.
+
+    Returns:
+        A tuple containing sample stock_df, orders_df, history_df, and config
+        dictionary.
+    """
     # Stock: 2 items, one with zero stock
-    stock_df = pd.DataFrame({"Артикул": ["SKU1", "SKU2"], "Име": ["Product 1", "Product 2"], "Наличност": [5, 0]})
+    stock_df = pd.DataFrame(
+        {"Артикул": ["SKU1", "SKU2"], "Име": ["Product 1", "Product 2"], "Наличност": [5, 0]}
+    )
     # Orders: 2 orders, one fulfillable, one not
     orders_df = pd.DataFrame(
         {
@@ -33,7 +46,7 @@ def make_test_data():
     return stock_df, orders_df, history_df, config
 
 
-def test_run_analysis_basic():
+def test_run_analysis_basic() -> None:
     """Tests the basic execution of run_full_analysis in test mode."""
     from shopify_tool import core
 

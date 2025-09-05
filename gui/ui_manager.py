@@ -1,6 +1,19 @@
+"""Handles the creation, layout, and state of all UI widgets.
+
+This module defines the `UIManager` class, which is responsible for building
+the graphical user interface of the main window. It creates all the widgets
+(buttons, labels, tables, etc.), arranges them in layouts, and provides
+methods to update their state.
+"""
+
 import logging
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, QLabel,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QGridLayout,
+    QPushButton,
+    QLabel,
     QTabWidget, QGroupBox, QTableView, QPlainTextEdit, QTableWidget, QLineEdit,
     QComboBox, QCheckBox
 )
@@ -24,17 +37,17 @@ class UIManager:
         log (logging.Logger): A logger for this class.
     """
 
-    def __init__(self, main_window):
+    def __init__(self, main_window: "MainWindow") -> None:
         """Initializes the UIManager.
 
         Args:
-            main_window (MainWindow): The main window instance that this
-                manager will build the UI for.
+            main_window: The main window instance that this manager will
+                build the UI for.
         """
         self.mw = main_window
         self.log = logging.getLogger(__name__)
 
-    def create_widgets(self):
+    def create_widgets(self) -> None:
         """Creates and lays out all widgets in the main window.
 
         This is the main entry point for building the UI. It constructs the
@@ -54,7 +67,7 @@ class UIManager:
         main_layout.setStretchFactor(self.mw.tab_view, 1)
         self.log.info("UI widgets created successfully.")
 
-    def _create_session_group(self):
+    def _create_session_group(self) -> QGroupBox:
         """Creates the 'Session' QGroupBox."""
         group = QGroupBox("Session")
         layout = QHBoxLayout()
@@ -69,7 +82,7 @@ class UIManager:
         layout.addStretch()
         return group
 
-    def _create_files_group(self):
+    def _create_files_group(self) -> QGroupBox:
         """Creates the 'Load Data' QGroupBox."""
         group = QGroupBox("Load Data")
         layout = QGridLayout()
@@ -96,14 +109,14 @@ class UIManager:
         layout.setColumnStretch(1, 1)
         return group
 
-    def _create_actions_layout(self):
+    def _create_actions_layout(self) -> QHBoxLayout:
         """Creates the QHBoxLayout containing the 'Reports' and 'Actions' groups."""
         layout = QHBoxLayout()
         layout.addWidget(self._create_reports_group(), 1)
         layout.addWidget(self._create_main_actions_group(), 3)
         return layout
 
-    def _create_reports_group(self):
+    def _create_reports_group(self) -> QGroupBox:
         """Creates the 'Reports' QGroupBox."""
         group = QGroupBox("Reports")
         layout = QVBoxLayout()
@@ -126,7 +139,7 @@ class UIManager:
         layout.addStretch()
         return group
 
-    def _create_main_actions_group(self):
+    def _create_main_actions_group(self) -> QGroupBox:
         """Creates the 'Actions' QGroupBox containing the main 'Run' button."""
         group = QGroupBox("Actions")
         main_layout = QVBoxLayout(group)
@@ -157,7 +170,7 @@ class UIManager:
 
         return group
 
-    def _create_tab_view(self):
+    def _create_tab_view(self) -> QTabWidget:
         """Creates the main QTabWidget for displaying data and logs."""
         tab_view = QTabWidget()
         self.mw.execution_log_edit = QPlainTextEdit()
@@ -176,7 +189,7 @@ class UIManager:
 
         return tab_view
 
-    def _create_activity_log_tab(self):
+    def _create_activity_log_tab(self) -> QWidget:
         """Creates the 'Activity Log' tab with its QTableWidget."""
         tab = QWidget()
         layout = QVBoxLayout(tab)
@@ -187,7 +200,7 @@ class UIManager:
         layout.addWidget(self.mw.activity_log_table)
         return tab
 
-    def _create_data_view_tab(self):
+    def _create_data_view_tab(self) -> QWidget:
         """Creates the 'Analysis Data' tab, including the filter controls and table view."""
         tab = QWidget()
         layout = QVBoxLayout(tab)
@@ -215,11 +228,11 @@ class UIManager:
         layout.addWidget(self.mw.tableView)
         return tab
 
-    def create_statistics_tab(self, tab_widget):
+    def create_statistics_tab(self, tab_widget: QWidget) -> None:
         """Creates and lays out the UI elements for the 'Statistics' tab.
 
         Args:
-            tab_widget (QWidget): The parent widget (the tab) to populate.
+            tab_widget: The parent widget (the tab) to populate.
         """
         layout = QGridLayout(tab_widget)
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -247,7 +260,7 @@ class UIManager:
         layout.addLayout(self.mw.courier_stats_layout, row_counter, 0, 1, 2)
         self.log.info("Statistics tab created.")
 
-    def set_ui_busy(self, is_busy):
+    def set_ui_busy(self, is_busy: bool) -> None:
         """Enables or disables key UI elements based on application state.
 
         This is used to prevent user interaction while a long-running process
@@ -255,8 +268,8 @@ class UIManager:
         only when data is loaded.
 
         Args:
-            is_busy (bool): If True, disables interactive widgets. If False,
-                enables them based on the current application state.
+            is_busy: If True, disables interactive widgets. If False, enables
+                them based on the current application state.
         """
         self.mw.run_analysis_button.setEnabled(not is_busy)
         is_data_loaded = not self.mw.analysis_results_df.empty
@@ -265,15 +278,15 @@ class UIManager:
         self.mw.report_builder_button.setEnabled(not is_busy and is_data_loaded)
         self.log.debug(f"UI busy state set to: {is_busy}")
 
-    def update_results_table(self, data_df):
+    def update_results_table(self, data_df: pd.DataFrame) -> None:
         """Populates the main results table with new data from a DataFrame.
 
-        It sets up a `PandasModel` and a `QSortFilterProxyModel` to efficiently
-        display and filter the potentially large dataset of analysis results.
+        It sets up a `PandasModel` and a `QSortFilterProxyModel` to
+        efficiently display and filter the potentially large dataset of
+        analysis results.
 
         Args:
-            data_df (pd.DataFrame): The DataFrame containing the analysis
-                results to display.
+            data_df: The DataFrame containing the analysis results to display.
         """
         self.log.info("Updating results table with new data.")
         if data_df.empty:

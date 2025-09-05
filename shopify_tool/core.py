@@ -1,3 +1,18 @@
+"""Main orchestrator for the Shopify Fulfillment Tool's backend logic.
+
+This module acts as the primary API for the GUI, coordinating the various
+backend processes like data loading, validation, analysis, and report
+generation. It is responsible for the overall workflow of a fulfillment
+session.
+
+Key functions include:
+- `run_full_analysis`: The main entry point to execute the entire analysis
+  pipeline.
+- `create_packing_list_report`: Generates a filtered packing list.
+- `create_stock_export_report`: Generates a filtered stock export file.
+- `validate_csv_headers`: Quickly validates input CSV files before loading.
+"""
+
 import os
 import logging
 import pandas as pd
@@ -12,30 +27,39 @@ SYSTEM_TAGS = ["Repeat", "Priority", "Error"]
 logger = logging.getLogger("ShopifyToolLogger")
 
 
-def _normalize_unc_path(path):
-    """Normalizes a path, which is especially useful for UNC paths on Windows."""
+def _normalize_unc_path(path: str) -> str:
+    """Normalizes a file path, especially for UNC paths on Windows.
+
+    Args:
+        path: The file path to normalize.
+
+    Returns:
+        The normalized file path.
+    """
     if not path:
         return path
-    # os.path.normpath will convert / to \ on Windows and handle other inconsistencies
+    # os.path.normpath will convert / to \ on Windows and handle other
+    # inconsistencies.
     return os.path.normpath(path)
 
 
-def _validate_dataframes(orders_df, stock_df, config):
-    """Validates that the required columns are present in the dataframes.
+def _validate_dataframes(
+    orders_df: pd.DataFrame, stock_df: pd.DataFrame, config: dict
+) -> list[str]:
+    """Validates that the required columns are present in the DataFrames.
 
     Checks the orders and stock DataFrames against the required columns
     specified in the application configuration.
 
     Args:
-        orders_df (pd.DataFrame): The DataFrame containing order data.
-        stock_df (pd.DataFrame): The DataFrame containing stock data.
-        config (dict): The application configuration dictionary, which contains
+        orders_df: The DataFrame containing order data.
+        stock_df: The DataFrame containing stock data.
+        config: The application configuration dictionary, which contains
             the 'column_mappings' with 'orders_required' and
             'stock_required' lists.
 
     Returns:
-        list[str]: A list of error messages. If the list is empty,
-                   validation passed.
+        A list of error messages. If the list is empty, validation passed.
     """
     errors = []
     column_mappings = config.get("column_mappings", {})
@@ -53,24 +77,24 @@ def _validate_dataframes(orders_df, stock_df, config):
     return errors
 
 
-def validate_csv_headers(file_path, required_columns, delimiter=","):
+def validate_csv_headers(
+    file_path: str, required_columns: list[str], delimiter: str = ","
+) -> tuple[bool, list[str]]:
     """Quickly validates if a CSV file contains the required column headers.
 
     This function reads only the header row of a CSV file to check for the
     presence of required columns without loading the entire file into memory.
 
     Args:
-        file_path (str): The path to the CSV file.
-        required_columns (list[str]): A list of column names that must be present.
-        delimiter (str, optional): The delimiter used in the CSV file.
-            Defaults to ",".
+        file_path: The path to the CSV file.
+        required_columns: A list of column names that must be present.
+        delimiter: The delimiter used in the CSV file. Defaults to ",".
 
     Returns:
-        tuple[bool, list[str]]: A tuple containing:
-            - bool: True if all required columns are present, False otherwise.
-            - list[str]: A list of missing columns. An empty list if all are
-              present. Returns a list with an error message on file read
-              errors.
+        A tuple containing:
+            - A boolean indicating if all required columns are present.
+            - A list of missing columns, or an error message if the file
+              could not be read.
     """
     if not required_columns:
         return True, []
@@ -94,42 +118,45 @@ def validate_csv_headers(file_path, required_columns, delimiter=","):
         return False, [f"An unexpected error occurred: {e}"]
 
 
-def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_delimiter, config):
+def run_full_analysis(
+    stock_file_path: str | None,
+    orders_file_path: str | None,
+    output_dir_path: str,
+    stock_delimiter: str,
+    config: dict,
+) -> tuple[bool, str | None, pd.DataFrame | None, dict | None]:
     """Orchestrates the entire fulfillment analysis process.
 
     This function serves as the main entry point for the core analysis logic.
     It performs the following steps:
-    1. Loads stock and order data from CSV files.
-    2. Validates that the data contains the required columns.
-    3. Loads historical fulfillment data.
-    4. Runs the fulfillment simulation to determine order statuses.
-    5. Applies stock alerts and custom tagging rules.
-    6. Saves a detailed analysis report to an Excel file, including summaries.
-    7. Updates the fulfillment history with newly fulfilled orders.
+        1. Loads stock and order data from CSV files.
+        2. Validates that the data contains the required columns.
+        3. Loads historical fulfillment data.
+        4. Runs the fulfillment simulation to determine order statuses.
+        5. Applies stock alerts and custom tagging rules.
+        6. Saves a detailed analysis report to an Excel file, including
+           summaries.
+        7. Updates the fulfillment history with newly fulfilled orders.
 
     Args:
-        stock_file_path (str | None): Path to the stock data CSV file. Can be
-            None for testing purposes if a DataFrame is provided in `config`.
-        orders_file_path (str | None): Path to the Shopify orders export CSV
-            file. Can be None for testing.
-        output_dir_path (str): Path to the directory where the output report
-            will be saved.
-        stock_delimiter (str): The delimiter used in the stock CSV file.
-        config (dict): The application configuration dictionary. It can also
-            contain test DataFrames under 'test_stock_df' and
-            'test_orders_df' keys.
+        stock_file_path: Path to the stock data CSV file. Can be None for
+            testing purposes if a DataFrame is provided in `config`.
+        orders_file_path: Path to the Shopify orders export CSV file. Can be
+            None for testing.
+        output_dir_path: Path to the directory where the output report will
+            be saved.
+        stock_delimiter: The delimiter used in the stock CSV file.
+        config: The application configuration dictionary. It can also contain
+            test DataFrames under 'test_stock_df' and 'test_orders_df' keys.
 
     Returns:
-        tuple[bool, str | None, pd.DataFrame | None, dict | None]:
-            A tuple containing:
-            - bool: True for success, False for failure.
-            - str | None: A message indicating the result. On success, this
-              is the path to the output file. On failure, it's an error
-              message.
-            - pd.DataFrame | None: The final analysis DataFrame if successful,
-              otherwise None.
-            - dict | None: A dictionary of calculated statistics if
-              successful, otherwise None.
+        A tuple containing:
+            - A boolean indicating success or failure.
+            - A message indicating the result. On success, this is the path
+              to the output file. On failure, it's an error message.
+            - The final analysis DataFrame if successful, otherwise None.
+            - A dictionary of calculated statistics if successful, otherwise
+              None.
     """
     logger.info("--- Starting Full Analysis Process ---")
     # 1. Load data
@@ -236,7 +263,9 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
         return True, None, final_df, stats
 
 
-def create_packing_list_report(analysis_df, report_config):
+def create_packing_list_report(
+    analysis_df: pd.DataFrame, report_config: dict
+) -> tuple[bool, str]:
     """Generates a single packing list report based on a report configuration.
 
     Uses the provided analysis DataFrame and a specific report configuration
@@ -244,16 +273,15 @@ def create_packing_list_report(analysis_df, report_config):
     location specified in the configuration.
 
     Args:
-        analysis_df (pd.DataFrame): The main analysis DataFrame containing
-            fulfillment data.
-        report_config (dict): A dictionary from the main config file that
-            defines the filters, output filename, excluded SKUs, and other
-            settings for this specific report.
+        analysis_df: The main analysis DataFrame containing fulfillment data.
+        report_config: A dictionary from the main config file that defines
+            the filters, output filename, excluded SKUs, and other settings
+            for this specific report.
 
     Returns:
-        tuple[bool, str]: A tuple containing:
-            - bool: True for success, False for failure.
-            - str: A message indicating the result (e.g., success message with
+        A tuple containing:
+            - A boolean indicating success or failure.
+            - A message indicating the result (e.g., success message with
               file path or an error description).
     """
     report_name = report_config.get("name", "Unknown Report")
@@ -287,16 +315,16 @@ def create_packing_list_report(analysis_df, report_config):
         return False, error_message
 
 
-def get_unique_column_values(df, column_name):
+def get_unique_column_values(df: pd.DataFrame, column_name: str) -> list[str]:
     """Extracts unique, sorted, non-null values from a DataFrame column.
 
     Args:
-        df (pd.DataFrame): The DataFrame to extract values from.
-        column_name (str): The name of the column to get unique values from.
+        df: The DataFrame to extract values from.
+        column_name: The name of the column to get unique values from.
 
     Returns:
-        list[str]: A sorted list of unique string-converted values, or an
-                   empty list if the column doesn't exist or an error occurs.
+        A sorted list of unique string-converted values, or an empty list if
+        the column doesn't exist or an error occurs.
     """
     if df.empty or column_name not in df.columns:
         return []
@@ -307,15 +335,17 @@ def get_unique_column_values(df, column_name):
         return []
 
 
-def create_stock_export_report(analysis_df, report_config):
+def create_stock_export_report(
+    analysis_df: pd.DataFrame, report_config: dict
+) -> tuple[bool, str]:
     """Generates a single stock export report based on a configuration.
 
     Args:
-        analysis_df (pd.DataFrame): The main analysis DataFrame.
-        report_config (dict): The configuration for the specific stock export.
+        analysis_df: The main analysis DataFrame.
+        report_config: The configuration for the specific stock export.
 
     Returns:
-        tuple[bool, str]: A tuple containing a success flag and a status message.
+        A tuple containing a success flag and a status message.
     """
     report_name = report_config.get("name", "Untitled Stock Export")
     try:

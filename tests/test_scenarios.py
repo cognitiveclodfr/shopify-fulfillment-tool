@@ -1,3 +1,10 @@
+"""Scenario-based tests for the Shopify Fulfillment Tool.
+
+This module contains a suite of tests that simulate specific, realistic
+scenarios to validate the end-to-end behavior of the core analysis logic.
+Each test corresponds to a defined test case (e.g., TC02, TC03).
+"""
+
 import sys
 import os
 import pandas as pd
@@ -6,8 +13,24 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from shopify_tool import core
 
 
-def run_test(stock_df, orders_df, history_df=None, low_stock_threshold=10):
-    """Helper function to run an analysis with given data and return the results."""
+def run_test(
+    stock_df: pd.DataFrame,
+    orders_df: pd.DataFrame,
+    history_df: pd.DataFrame | None = None,
+    low_stock_threshold: int = 10,
+) -> tuple[pd.DataFrame, dict]:
+    """Helper function to run an analysis with given data and return the results.
+
+    Args:
+        stock_df: The stock DataFrame for the test.
+        orders_df: The orders DataFrame for the test.
+        history_df: The optional fulfillment history DataFrame.
+        low_stock_threshold: The low stock threshold to use in the config.
+
+    Returns:
+        A tuple containing the final analysis DataFrame and the statistics
+        dictionary.
+    """
     config = {"settings": {"low_stock_threshold": low_stock_threshold}}
     config["test_stock_df"] = stock_df
     config["test_orders_df"] = orders_df
@@ -17,10 +40,12 @@ def run_test(stock_df, orders_df, history_df=None, low_stock_threshold=10):
     return final_df, stats
 
 
-def test_TC02_multi_item_fulfillable():
+def test_TC02_multi_item_fulfillable() -> None:
     """Tests a multi-item order where all items are in stock."""
     # One multi-item order, all items available
-    stock = pd.DataFrame({"Артикул": ["A", "B"], "Име": ["A", "B"], "Наличност": [2, 2]})
+    stock = pd.DataFrame(
+        {"Артикул": ["A", "B"], "Име": ["A", "B"], "Наличност": [2, 2]}
+    )
     orders = pd.DataFrame(
         {
             "Name": ["M1", "M1"],
@@ -40,10 +65,12 @@ def test_TC02_multi_item_fulfillable():
     assert a_final == 1 and b_final == 1
 
 
-def test_TC03_prioritization_multi_over_single():
+def test_TC03_prioritization_multi_over_single() -> None:
     """Tests that a multi-item order is prioritized over a single-item order."""
     # Stock A=2, B=1
-    stock = pd.DataFrame({"Артикул": ["A", "B"], "Име": ["A", "B"], "Наличност": [2, 1]})
+    stock = pd.DataFrame(
+        {"Артикул": ["A", "B"], "Име": ["A", "B"], "Наличност": [2, 1]}
+    )
     # Multi-order M1 wants A:2 & B:1 (item_count=2); Single S1 wants A:1
     orders = pd.DataFrame(
         {
@@ -64,7 +91,7 @@ def test_TC03_prioritization_multi_over_single():
     assert status_S1 == "Not Fulfillable"
 
 
-def test_TC05_multi_order_with_missing_item_fails():
+def test_TC05_multi_order_with_missing_item_fails() -> None:
     """Tests that a multi-item order fails if any single item is out of stock."""
     # Multi-order with one missing SKU -> whole order Not Fulfillable
     stock = pd.DataFrame({"Артикул": ["A"], "Име": ["A"], "Наличност": [5]})
@@ -89,7 +116,7 @@ def test_TC05_multi_order_with_missing_item_fails():
     assert a_final == 5
 
 
-def test_TC08_exact_stock_matches():
+def test_TC08_exact_stock_matches() -> None:
     """Tests fulfillment when the required quantity exactly matches the available stock."""
     stock = pd.DataFrame({"Артикул": ["X"], "Име": ["X"], "Наличност": [1]})
     orders = pd.DataFrame(
@@ -108,7 +135,7 @@ def test_TC08_exact_stock_matches():
     assert final_df["Final_Stock"].iloc[0] == 0
 
 
-def test_TC09_missing_lineitem_sku_is_ignored():
+def test_TC09_missing_lineitem_sku_is_ignored() -> None:
     """Tests that order line items with a missing SKU are ignored."""
     stock = pd.DataFrame({"Артикул": ["Y"], "Име": ["Y"], "Наличност": [5]})
     orders = pd.DataFrame(
@@ -127,7 +154,7 @@ def test_TC09_missing_lineitem_sku_is_ignored():
     assert "O2" not in final_df["Order_Number"].unique()
 
 
-def test_TC10_missing_sku_in_stock_file():
+def test_TC10_missing_sku_in_stock_file() -> None:
     """Tests that stock items with a missing SKU are ignored."""
     # Stock has a row with missing SKU which should be ignored
     stock = pd.DataFrame({"Артикул": [pd.NA], "Име": ["NA"], "Наличност": [99]})
@@ -147,9 +174,11 @@ def test_TC10_missing_sku_in_stock_file():
     assert final_df["Order_Fulfillment_Status"].iloc[0] == "Not Fulfillable"
 
 
-def test_TC11_duplicate_sku_in_stock_keep_first():
+def test_TC11_duplicate_sku_in_stock_keep_first() -> None:
     """Tests that duplicate SKUs in the stock file are handled by keeping the first entry."""
-    stock = pd.DataFrame({"Артикул": ["D", "D"], "Име": ["D1", "D2"], "Наличност": [5, 99]})
+    stock = pd.DataFrame(
+        {"Артикул": ["D", "D"], "Име": ["D1", "D2"], "Наличност": [5, 99]}
+    )
     orders = pd.DataFrame(
         {
             "Name": ["O1"],
@@ -166,7 +195,7 @@ def test_TC11_duplicate_sku_in_stock_keep_first():
     assert final_df["Order_Fulfillment_Status"].iloc[0] == "Not Fulfillable"
 
 
-def test_TC13_empty_input_files_do_not_crash():
+def test_TC13_empty_input_files_do_not_crash() -> None:
     """Tests that the analysis runs without crashing when given empty input files."""
     stock = pd.DataFrame(columns=["Артикул", "Име", "Наличност"])
     orders = pd.DataFrame(

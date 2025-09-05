@@ -1,3 +1,11 @@
+"""Handles file selection dialogs, validation, and loading logic.
+
+This module defines the `FileHandler` class, which encapsulates the
+functionality related to file I/O initiated by the user, such as selecting
+orders and stock files. It interacts with the `QFileDialog` to get file paths
+and then triggers validation on those files.
+"""
+
 import os
 import logging
 from PySide6.QtWidgets import QFileDialog
@@ -18,17 +26,17 @@ class FileHandler:
         log (logging.Logger): A logger for this class.
     """
 
-    def __init__(self, main_window):
+    def __init__(self, main_window: "MainWindow") -> None:
         """Initializes the FileHandler.
 
         Args:
-            main_window (MainWindow): The main window instance that this
-                handler will manage file operations for.
+            main_window: The main window instance that this handler will
+                manage file operations for.
         """
         self.mw = main_window
         self.log = logging.getLogger(__name__)
 
-    def select_orders_file(self):
+    def select_orders_file(self) -> None:
         """Opens a file dialog for the user to select the orders CSV file.
 
         After a file is selected, it updates the corresponding UI labels,
@@ -43,7 +51,7 @@ class FileHandler:
             self.validate_file("orders")
             self.check_files_ready()
 
-    def select_stock_file(self):
+    def select_stock_file(self) -> None:
         """Opens a file dialog for the user to select the stock CSV file.
 
         After a file is selected, it updates the corresponding UI labels,
@@ -58,7 +66,7 @@ class FileHandler:
             self.validate_file("stock")
             self.check_files_ready()
 
-    def validate_file(self, file_type):
+    def validate_file(self, file_type: str) -> None:
         """Validates that a selected CSV file contains the required headers.
 
         It reads the required column names from the application configuration
@@ -67,8 +75,7 @@ class FileHandler:
         providing details on failure.
 
         Args:
-            file_type (str): The type of file to validate, either "orders" or
-                             "stock".
+            file_type: The type of file to validate, either "orders" or "stock".
         """
         if file_type == "orders":
             path = self.mw.orders_file_path
@@ -100,7 +107,7 @@ class FileHandler:
             label.setToolTip(tooltip_text)
             self.log.warning(f"'{file_type}' file is invalid. {tooltip_text}")
 
-    def check_files_ready(self):
+    def check_files_ready(self) -> None:
         """Checks if both orders and stock files are selected and valid.
 
         If both files have been selected and have passed validation, this

@@ -1,3 +1,9 @@
+"""Unit tests for the stock export generation module.
+
+This module contains tests for the stock export creation logic found in
+`shopify_tool/stock_export.py`, including filtering and edge cases.
+"""
+
 import sys
 import os
 import pandas as pd
@@ -8,8 +14,12 @@ from shopify_tool import stock_export
 
 
 @pytest.fixture
-def sample_analysis_df():
-    """Provides a sample DataFrame for testing."""
+def sample_analysis_df() -> pd.DataFrame:
+    """Provides a sample analysis DataFrame for testing stock export functionality.
+
+    Returns:
+        A sample pandas DataFrame.
+    """
     return pd.DataFrame(
         {
             "Order_Fulfillment_Status": [
@@ -26,8 +36,13 @@ def sample_analysis_df():
     )
 
 
-def test_create_stock_export_success(tmp_path, sample_analysis_df):
-    """Tests the successful creation and content of a stock export file."""
+def test_create_stock_export_success(tmp_path, sample_analysis_df: pd.DataFrame) -> None:
+    """Tests the successful creation and content of a stock export file.
+
+    Args:
+        tmp_path: A pytest fixture providing a temporary directory path.
+        sample_analysis_df: The sample DataFrame fixture.
+    """
     output_path = tmp_path / "stock_export_out.xls"
 
     stock_export.create_stock_export(sample_analysis_df, str(output_path))
@@ -47,8 +62,15 @@ def test_create_stock_export_success(tmp_path, sample_analysis_df):
     )
 
 
-def test_create_stock_export_with_filters(tmp_path, sample_analysis_df):
-    """Tests that filters are correctly applied before generating a stock export."""
+def test_create_stock_export_with_filters(
+    tmp_path, sample_analysis_df: pd.DataFrame
+) -> None:
+    """Tests that filters are correctly applied before generating a stock export.
+
+    Args:
+        tmp_path: A pytest fixture providing a temporary directory path.
+        sample_analysis_df: The sample DataFrame fixture.
+    """
     output_path = tmp_path / "output.xls"
     filters = [{"field": "Order_Type", "operator": "==", "value": "Single"}]
 
@@ -64,8 +86,15 @@ def test_create_stock_export_with_filters(tmp_path, sample_analysis_df):
     pd.testing.assert_frame_equal(result_df, expected_df)
 
 
-def test_create_stock_export_empty_after_filter(tmp_path, sample_analysis_df):
-    """Tests that an empty file with headers is created if filtering results in an empty dataset."""
+def test_create_stock_export_empty_after_filter(
+    tmp_path, sample_analysis_df: pd.DataFrame
+) -> None:
+    """Tests that an empty file with headers is created if filtering results in an empty dataset.
+
+    Args:
+        tmp_path: A pytest fixture providing a temporary directory path.
+        sample_analysis_df: The sample DataFrame fixture.
+    """
     output_path = tmp_path / "output.xls"
     filters = [{"field": "Order_Type", "operator": "==", "value": "NonExistent"}]
 
@@ -77,9 +106,15 @@ def test_create_stock_export_empty_after_filter(tmp_path, sample_analysis_df):
     assert list(result_df.columns) == ["Артикул", "Наличност"]
 
 
-def test_create_stock_export_no_fulfillable_items(tmp_path):
-    """Tests that an empty file is created when no items are fulfillable."""
-    df = pd.DataFrame({"Order_Fulfillment_Status": ["Not Fulfillable"], "SKU": ["S1"], "Quantity": [1]})
+def test_create_stock_export_no_fulfillable_items(tmp_path) -> None:
+    """Tests that an empty file is created when no items are fulfillable.
+
+    Args:
+        tmp_path: A pytest fixture providing a temporary directory path.
+    """
+    df = pd.DataFrame(
+        {"Order_Fulfillment_Status": ["Not Fulfillable"], "SKU": ["S1"], "Quantity": [1]}
+    )
     output_path = tmp_path / "output.xls"
 
     stock_export.create_stock_export(df, str(output_path))
@@ -90,8 +125,16 @@ def test_create_stock_export_no_fulfillable_items(tmp_path):
     assert list(result_df.columns) == ["Артикул", "Наличност"]
 
 
-def test_create_stock_export_skips_invalid_filter(tmp_path, sample_analysis_df, caplog):
-    """Tests that an invalid filter object is skipped without crashing."""
+def test_create_stock_export_skips_invalid_filter(
+    tmp_path, sample_analysis_df: pd.DataFrame, caplog
+) -> None:
+    """Tests that an invalid filter object is skipped without crashing.
+
+    Args:
+        tmp_path: A pytest fixture providing a temporary directory path.
+        sample_analysis_df: The sample DataFrame fixture.
+        caplog: A pytest fixture for capturing log output.
+    """
     output_path = tmp_path / "output.xls"
     # This filter is missing the 'value' key
     filters = [{"field": "Order_Type", "operator": "=="}]

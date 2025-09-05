@@ -1,1 +1,1 @@
-# This file makes the 'gui' directory a Python package.
+"""Initializes the gui package."""

@@ -1,8 +1,26 @@
+"""Core data processing and analysis module for the Shopify Fulfillment Tool.
+
+This module contains the primary business logic for the application. It is
+responsible for taking raw order and stock data, cleaning it, simulating the
+fulfillment process, and generating detailed analysis results and summary
+reports. The functions in this module are designed to be pure and operate
+on pandas DataFrames, making them independent of the user interface and
+easily testable.
+
+Key functions include:
+- `run_analysis`: The main function that orchestrates the entire fulfillment
+  simulation.
+- `toggle_order_fulfillment`: Allows for manual overriding of an order's
+  fulfillment status and recalculates stock levels accordingly.
+- `recalculate_statistics`: Computes summary statistics from the main analysis
+  DataFrame.
+"""
+
 import pandas as pd
 import numpy as np
 
 
-def _generalize_shipping_method(method):
+def _generalize_shipping_method(method: str | float) -> str:
     """Standardizes raw shipping method names to a consistent format.
 
     Takes a raw shipping method string, converts it to lowercase, and maps it
@@ -11,11 +29,11 @@ def _generalize_shipping_method(method):
     input. Handles NaN values by returning 'Unknown'.
 
     Args:
-        method (str | float): The raw shipping method from the orders file.
-            Can be a float (NaN) for empty values.
+        method: The raw shipping method from the orders file. Can be a float
+            (NaN) for empty values.
 
     Returns:
-        str: The standardized shipping provider name.
+        The standardized shipping provider name.
     """
     if pd.isna(method):
         return "Unknown"
@@ -31,47 +49,46 @@ def _generalize_shipping_method(method):
     return method.title()
 
 
-def run_analysis(stock_df, orders_df, history_df):
+def run_analysis(
+    stock_df: pd.DataFrame, orders_df: pd.DataFrame, history_df: pd.DataFrame
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
     """Performs the core fulfillment analysis and simulation.
 
     This function is the heart of the fulfillment logic. It takes raw data,
     cleans it, and simulates the stock allocation process.
 
     The process includes:
-    1.  Cleaning and standardizing columns in orders and stock DataFrames.
-    2.  Prioritizing orders for fulfillment, typically processing multi-item
-        orders first to maximize the number of complete orders shipped.
-    3.  Iterating through prioritized orders, checking stock availability, and
-        allocating stock for fulfillable orders.
-    4.  Calculating the final stock levels after the simulation.
-    5.  Enriching the data with additional information like shipping provider,
-        order type (Single/Multi), and repeat order status.
-    6.  Generating summary reports for fulfilled and missing items.
-    7.  Calculating final statistics.
+        1. Cleaning and standardizing columns in orders and stock DataFrames.
+        2. Prioritizing orders for fulfillment, typically processing multi-item
+           orders first to maximize the number of complete orders shipped.
+        3. Iterating through prioritized orders, checking stock availability,
+           and allocating stock for fulfillable orders.
+        4. Calculating the final stock levels after the simulation.
+        5. Enriching the data with additional information like shipping
+           provider, order type (Single/Multi), and repeat order status.
+        6. Generating summary reports for fulfilled and missing items.
+        7. Calculating final statistics.
 
     This function operates purely on DataFrames and does not perform any
     file I/O.
 
     Args:
-        stock_df (pd.DataFrame): DataFrame with stock levels for each SKU.
-            Requires columns 'Артикул' (SKU) and 'Наличност' (Stock).
-        orders_df (pd.DataFrame): DataFrame with all order line items from
-            Shopify. Requires 'Name' (Order Number), 'Lineitem sku', and
-            'Lineitem quantity'.
-        history_df (pd.DataFrame): DataFrame with previously fulfilled order
-            numbers. Requires an 'Order_Number' column.
+        stock_df: DataFrame with stock levels for each SKU. Requires columns
+            'Артикул' (SKU) and 'Наличност' (Stock).
+        orders_df: DataFrame with all order line items from Shopify. Requires
+            'Name' (Order Number), 'Lineitem sku', and 'Lineitem quantity'.
+        history_df: DataFrame with previously fulfilled order numbers.
+            Requires an 'Order_Number' column.
 
     Returns:
-        tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
-            A tuple containing four elements:
-            - final_df (pd.DataFrame): The main DataFrame with detailed results
-              for every line item, including the calculated
-              'Order_Fulfillment_Status'.
-            - summary_present_df (pd.DataFrame): A summary of all SKUs that
-              will be fulfilled, aggregated by quantity.
-            - summary_missing_df (pd.DataFrame): A summary of SKUs in
-              unfulfillable orders that were out of stock.
-            - stats (dict): A dictionary containing key statistics about the
+        A tuple containing four elements:
+            - final_df: The main DataFrame with detailed results for every
+              line item, including the calculated 'Order_Fulfillment_Status'.
+            - summary_present_df: A summary of all SKUs that will be
+              fulfilled, aggregated by quantity.
+            - summary_missing_df: A summary of SKUs in unfulfillable orders
+              that were out of stock.
+            - stats: A dictionary containing key statistics about the
               fulfillment analysis (e.g., total orders completed).
     """
     # --- Data Cleaning ---
@@ -211,7 +228,7 @@ def run_analysis(stock_df, orders_df, history_df):
     return final_df, summary_present_df, summary_missing_df, stats
 
 
-def recalculate_statistics(df):
+def recalculate_statistics(df: pd.DataFrame) -> dict:
     """Calculates statistics based on the provided analysis DataFrame.
 
     Aggregates data from the main analysis DataFrame to produce a summary
@@ -219,19 +236,22 @@ def recalculate_statistics(df):
     and a breakdown of orders per shipping courier.
 
     Args:
-        df (pd.DataFrame): The main analysis DataFrame, which must contain
+        df: The main analysis DataFrame, which must contain
             'Order_Fulfillment_Status', 'Order_Number', 'Quantity',
             'Shipping_Provider', and 'System_note' columns.
 
     Returns:
-        dict: A dictionary containing key statistics, including:
-            - 'total_orders_completed' (int)
-            - 'total_orders_not_completed' (int)
-            - 'total_items_to_write_off' (int)
-            - 'total_items_not_to_write_off' (int)
-            - 'couriers_stats' (list[dict] | None): A list of dictionaries,
-              each representing a courier's stats, or None if no orders
-              were completed.
+        A dictionary containing key statistics, including:
+            - 'total_orders_completed': The total number of fulfillable orders.
+            - 'total_orders_not_completed': The total number of unfulfillable
+              orders.
+            - 'total_items_to_write_off': The total quantity of items in
+              fulfillable orders.
+            - 'total_items_not_to_write_off': The total quantity of items in
+              unfulfillable orders.
+            - 'couriers_stats': A list of dictionaries, where each dict
+              contains stats for a specific shipping provider, or None if no
+              orders were completed.
     """
     stats = {}
     completed_orders_df = df[df["Order_Fulfillment_Status"] == "Fulfillable"].copy()
@@ -260,7 +280,9 @@ def recalculate_statistics(df):
     return stats
 
 
-def toggle_order_fulfillment(df, order_number):
+def toggle_order_fulfillment(
+    df: pd.DataFrame, order_number: str
+) -> tuple[bool, str | None, pd.DataFrame]:
     """Manually toggles the fulfillment status of an order and recalculates stock.
 
     This function allows a user to manually override the automated fulfillment
@@ -277,15 +299,15 @@ def toggle_order_fulfillment(df, order_number):
     The function operates on and returns a modified copy of the input DataFrame.
 
     Args:
-        df (pd.DataFrame): The main analysis DataFrame.
-        order_number (str): The order number to toggle.
+        df: The main analysis DataFrame.
+        order_number: The order number to toggle.
 
     Returns:
-        tuple[bool, str | None, pd.DataFrame]: A tuple containing:
-            - success (bool): True if the toggle was successful, False otherwise.
-            - error_message (str | None): An error message if success is False.
-            - updated_df (pd.DataFrame): The modified DataFrame. If the toggle
-              fails, this is the original, unmodified DataFrame.
+        A tuple containing:
+            - success: True if the toggle was successful, False otherwise.
+            - error_message: An error message if success is False.
+            - updated_df: The modified DataFrame. If the toggle fails, this is
+              the original, unmodified DataFrame.
     """
     if df is None or order_number not in df["Order_Number"].values:
         return False, "Order number not found.", df

@@ -1,3 +1,9 @@
+"""Provides a dialog for viewing and editing all application settings.
+
+This module defines the `SettingsWindow` class, which provides a tabbed
+interface for modifying different sections of the application's configuration.
+"""
+
 import sys
 import json
 import pandas as pd
@@ -78,16 +84,20 @@ class SettingsWindow(QDialog):
     ]
     ACTION_TYPES = ["ADD_TAG", "SET_STATUS", "SET_PRIORITY", "EXCLUDE_FROM_REPORT", "EXCLUDE_SKU"]
 
-    def __init__(self, parent, config, analysis_df=None):
+    def __init__(
+        self,
+        parent: QWidget,
+        config: dict,
+        analysis_df: pd.DataFrame | None = None,
+    ) -> None:
         """Initializes the SettingsWindow.
 
         Args:
-            parent (QWidget): The parent widget.
-            config (dict): The application configuration dictionary. A deep
-                copy is made to avoid modifying the original until saved.
-            analysis_df (pd.DataFrame, optional): The current analysis
-                DataFrame, used for populating filter value dropdowns.
-                Defaults to None.
+            parent: The parent widget.
+            config: The application configuration dictionary. A deep copy is
+                made to avoid modifying the original until saved.
+            analysis_df: The current analysis DataFrame, used for populating
+                filter value dropdowns. Defaults to None.
         """
         super().__init__(parent)
         self.parent = parent
@@ -135,19 +145,31 @@ class SettingsWindow(QDialog):
         button_box.rejected.connect(self.reject)
         main_layout.addWidget(button_box)
 
-    # Generic helper to delete a widget and its reference from a list
-    def _delete_widget_from_list(self, widget_refs, ref_list):
-        """Generic helper to delete a group box widget and its reference from a list."""
+    def _delete_widget_from_list(self, widget_refs: dict, ref_list: list) -> None:
+        """Deletes a group box widget and its reference from a list.
+
+        Args:
+            widget_refs: A dictionary containing a reference to the group box
+                widget to be deleted.
+            ref_list: The list from which to remove the widget reference.
+        """
         widget_refs["group_box"].deleteLater()
         ref_list.remove(widget_refs)
 
-    # Generic helper to delete a row widget and its reference from a list
-    def _delete_row_from_list(self, row_widget, ref_list, ref_dict):
-        """Generic helper to delete a row widget and its reference from a list."""
+    def _delete_row_from_list(
+        self, row_widget: QWidget, ref_list: list, ref_dict: dict
+    ) -> None:
+        """Deletes a row widget and its reference from a list.
+
+        Args:
+            row_widget: The row widget to be deleted.
+            ref_list: The list from which to remove the widget reference.
+            ref_dict: The dictionary reference to remove from the list.
+        """
         row_widget.deleteLater()
         ref_list.remove(ref_dict)
 
-    def create_general_tab(self):
+    def create_general_tab(self) -> None:
         """Creates and populates the 'General & Paths' settings tab."""
         tab = QWidget()
         layout = QFormLayout(tab)
@@ -167,7 +189,7 @@ class SettingsWindow(QDialog):
         self.stock_output_path_edit.setText(paths.get("output_dir_stock", ""))
         self.tab_widget.addTab(tab, "General & Paths")
 
-    def create_rules_tab(self):
+    def create_rules_tab(self) -> None:
         """Creates the 'Rules' tab for dynamically managing automation rules."""
         tab = QWidget()
         main_layout = QVBoxLayout(tab)
@@ -185,13 +207,12 @@ class SettingsWindow(QDialog):
         for rule_config in self.config_data.get("rules", []):
             self.add_rule_widget(rule_config)
 
-    def add_rule_widget(self, config=None):
+    def add_rule_widget(self, config: dict | None = None) -> None:
         """Adds a new group of widgets for creating/editing a single rule.
 
         Args:
-            config (dict, optional): The configuration for a pre-existing
-                rule to load into the widgets. If None, creates a new,
-                blank rule.
+            config: The configuration for a pre-existing rule to load into
+                the widgets. If None, creates a new, blank rule.
         """
         if not isinstance(config, dict):
             config = {"name": "New Rule", "match": "ALL", "conditions": [], "actions": []}
@@ -246,17 +267,19 @@ class SettingsWindow(QDialog):
         for act_config in config.get("actions", []):
             self.add_action_row(widget_refs, act_config)
 
-    def add_condition_row(self, rule_widget_refs, config=None):
+    def add_condition_row(
+        self, rule_widget_refs: dict, config: dict | None = None
+    ) -> None:
         """Adds a new row of widgets for a single condition within a rule.
 
         This method now supports dynamic value widgets, allowing for either a
         `QLineEdit` or a `QComboBox` based on the selected field and operator.
 
         Args:
-            rule_widget_refs (dict): A dictionary of widget references for the
+            rule_widget_refs: A dictionary of widget references for the
                 parent rule.
-            config (dict, optional): The configuration for a pre-existing
-                condition. If None, creates a new, blank condition.
+            config: The configuration for a pre-existing condition. If None,
+                creates a new, blank condition.
         """
         if not isinstance(config, dict):
             config = {}
@@ -301,20 +324,22 @@ class SettingsWindow(QDialog):
             lambda: self._delete_row_from_list(row_widget, rule_widget_refs["conditions"], condition_refs)
         )
 
-    def _on_rule_condition_changed(self, condition_refs, initial_value=None):
+    def _on_rule_condition_changed(
+        self, condition_refs: dict, initial_value: any | None = None
+    ) -> None:
         """Dynamically changes the rule's value widget based on other selections.
 
         This method is connected to the 'field' and 'operator' combo boxes
         for a rule condition. It creates a `QComboBox` for value selection if
-        the field is in the DataFrame and the operator is suitable (e.g., 'equals').
-        For operators like 'is_empty', it hides the value widget. Otherwise,
-        it provides a standard `QLineEdit`.
+        the field is in the DataFrame and the operator is suitable (e.g.,
+        'equals'). For operators like 'is_empty', it hides the value widget.
+        Otherwise, it provides a standard `QLineEdit`.
 
         Args:
-            condition_refs (dict): A dictionary of widget references for the
+            condition_refs: A dictionary of widget references for the
                 condition row.
-            initial_value (any, optional): The value to set in the newly
-                created widget. Defaults to None.
+            initial_value: The value to set in the newly created widget.
+                Defaults to None.
         """
         field = condition_refs["field"].currentText()
         op = condition_refs["op"].currentText()
@@ -353,14 +378,16 @@ class SettingsWindow(QDialog):
         condition_refs["value_widget"] = new_widget
 
 
-    def add_action_row(self, rule_widget_refs, config=None):
+    def add_action_row(
+        self, rule_widget_refs: dict, config: dict | None = None
+    ) -> None:
         """Adds a new row of widgets for a single action within a rule.
 
         Args:
-            rule_widget_refs (dict): A dictionary of widget references for the
+            rule_widget_refs: A dictionary of widget references for the
                 parent rule.
-            config (dict, optional): The configuration for a pre-existing
-                action. If None, creates a new, blank action.
+            config: The configuration for a pre-existing action. If None,
+                creates a new, blank action.
         """
         if not isinstance(config, dict):
             config = {}
@@ -383,7 +410,7 @@ class SettingsWindow(QDialog):
             lambda: self._delete_row_from_list(row_widget, rule_widget_refs["actions"], action_refs)
         )
 
-    def create_packing_lists_tab(self):
+    def create_packing_lists_tab(self) -> None:
         """Creates the 'Packing Lists' tab for managing report configurations."""
         tab = QWidget()
         main_layout = QVBoxLayout(tab)
@@ -401,12 +428,12 @@ class SettingsWindow(QDialog):
         for pl_config in self.config_data.get("packing_lists", []):
             self.add_packing_list_widget(pl_config)
 
-    def add_packing_list_widget(self, config=None):
+    def add_packing_list_widget(self, config: dict | None = None) -> None:
         """Adds a new group of widgets for a single packing list configuration.
 
         Args:
-            config (dict, optional): The configuration for a pre-existing
-                packing list. If None, creates a new, blank one.
+            config: The configuration for a pre-existing packing list. If
+                None, creates a new, blank one.
         """
         if not isinstance(config, dict):
             config = {"name": "", "output_filename": "", "filters": [], "exclude_skus": []}
@@ -446,17 +473,24 @@ class SettingsWindow(QDialog):
         for f_config in config.get("filters", []):
             self.add_filter_row(widget_refs, self.FILTERABLE_COLUMNS, self.FILTER_OPERATORS, f_config)
 
-    def add_filter_row(self, parent_widget_refs, fields, operators, config=None):
+    def add_filter_row(
+        self,
+        parent_widget_refs: dict,
+        fields: list[str],
+        operators: list[str],
+        config: dict | None = None,
+    ) -> None:
         """Adds a new row of widgets for a single filter criterion.
 
-        This is a generic helper used by both packing list and stock export tabs.
+        This is a generic helper used by both packing list and stock export
+        tabs.
 
         Args:
-            parent_widget_refs (dict): Widget references for the parent report.
-            fields (list[str]): The list of columns to show in the field dropdown.
-            operators (list[str]): The list of operators to show.
-            config (dict, optional): The configuration for a pre-existing
-                filter. If None, creates a new, blank filter.
+            parent_widget_refs: Widget references for the parent report.
+            fields: The list of columns to show in the field dropdown.
+            operators: The list of operators to show.
+            config: The configuration for a pre-existing filter. If None,
+                creates a new, blank filter.
         """
         if not isinstance(config, dict):
             config = {}
@@ -500,7 +534,9 @@ class SettingsWindow(QDialog):
             lambda: self._delete_row_from_list(row_widget, parent_widget_refs["filters"], filter_refs)
         )
 
-    def _on_filter_criteria_changed(self, filter_refs, initial_value=None):
+    def _on_filter_criteria_changed(
+        self, filter_refs: dict, initial_value: any | None = None
+    ) -> None:
         """Dynamically changes the filter's value widget based on other selections.
 
         For example, if the operator is '==' and the field is 'Order_Type',
@@ -508,9 +544,9 @@ class SettingsWindow(QDialog):
         DataFrame ('Single', 'Multi') instead of a plain QLineEdit.
 
         Args:
-            filter_refs (dict): A dictionary of widget references for the filter row.
-            initial_value (any, optional): The value to set in the newly
-                created widget. Defaults to None.
+            filter_refs: A dictionary of widget references for the filter row.
+            initial_value: The value to set in the newly created widget.
+                Defaults to None.
         """
         field = filter_refs["field"].currentText()
         op = filter_refs["op"].currentText()
@@ -543,7 +579,7 @@ class SettingsWindow(QDialog):
         filter_refs["value_layout"].insertWidget(2, new_widget, 1)
         filter_refs["value_widget"] = new_widget
 
-    def create_stock_exports_tab(self):
+    def create_stock_exports_tab(self) -> None:
         """Creates the 'Stock Exports' tab for managing report configurations."""
         tab = QWidget()
         main_layout = QVBoxLayout(tab)
@@ -561,12 +597,12 @@ class SettingsWindow(QDialog):
         for se_config in self.config_data.get("stock_exports", []):
             self.add_stock_export_widget(se_config)
 
-    def add_stock_export_widget(self, config=None):
+    def add_stock_export_widget(self, config: dict | None = None) -> None:
         """Adds a new group of widgets for a single stock export configuration.
 
         Args:
-            config (dict, optional): The configuration for a pre-existing
-                stock export. If None, creates a new, blank one.
+            config: The configuration for a pre-existing stock export. If
+                None, creates a new, blank one.
         """
         if not isinstance(config, dict):
             config = {"name": "", "output_filename": "", "filters": []}
@@ -603,7 +639,7 @@ class SettingsWindow(QDialog):
         for f_config in config.get("filters", []):
             self.add_filter_row(widget_refs, self.FILTERABLE_COLUMNS, self.FILTER_OPERATORS, f_config)
 
-    def create_mappings_tab(self):
+    def create_mappings_tab(self) -> None:
         """Creates the 'Mappings' tab for column and courier name mappings."""
         tab = QWidget()
         main_layout = QVBoxLayout(tab)
@@ -657,7 +693,9 @@ class SettingsWindow(QDialog):
         for original, standardized in self.config_data.get("courier_mappings", {}).items():
             self.add_courier_mapping_row(original, standardized)
 
-    def add_courier_mapping_row(self, original_name="", standardized_name=""):
+    def add_courier_mapping_row(
+        self, original_name: str = "", standardized_name: str = ""
+    ) -> None:
         """Adds a new row for a single courier mapping."""
         row_widget = QWidget()
         row_layout = QHBoxLayout(row_widget)
@@ -685,13 +723,13 @@ class SettingsWindow(QDialog):
             lambda: self._delete_row_from_list(row_widget, self.courier_mapping_widgets, row_refs)
         )
 
-    def save_settings(self):
+    def save_settings(self) -> None:
         """Saves all settings from the UI back into the config dictionary.
 
-        This method iterates through all the dynamically created widgets on all
-        tabs, reads their current values, and reconstructs the `self.config_data`
-        dictionary. If successful, it accepts the dialog, allowing the main
-        window to retrieve the updated configuration.
+        This method iterates through all the dynamically created widgets on
+        all tabs, reads their current values, and reconstructs the
+        `self.config_data` dictionary. If successful, it accepts the dialog,
+        allowing the main window to retrieve the updated configuration.
         """
         try:
             # General Tab

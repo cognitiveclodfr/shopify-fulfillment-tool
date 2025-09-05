@@ -1,3 +1,10 @@
+"""Provides a dialog for selecting a pre-configured report.
+
+This module defines the `ReportSelectionDialog` class, which dynamically
+creates buttons for selecting a pre-configured report from the application's
+configuration.
+"""
+
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QPushButton
 from PySide6.QtCore import Signal, Slot
 
@@ -20,15 +27,20 @@ class ReportSelectionDialog(QDialog):
     # Signal that emits the selected report configuration when a button is clicked
     reportSelected = Signal(dict)
 
-    def __init__(self, report_type, reports_config, parent=None):
+    def __init__(
+        self,
+        report_type: str,
+        reports_config: list[dict],
+        parent: QWidget | None = None,
+    ) -> None:
         """Initializes the ReportSelectionDialog.
 
         Args:
-            report_type (str): The type of reports to display (e.g.,
+            report_type: The type of reports to display (e.g.,
                 "packing_lists"). Used for the window title.
-            reports_config (list[dict]): A list of report configuration
-                dictionaries, each used to create a button.
-            parent (QWidget, optional): The parent widget. Defaults to None.
+            reports_config: A list of report configuration dictionaries, each
+                used to create a button.
+            parent: The parent widget. Defaults to None.
         """
         super().__init__(parent)
 
@@ -48,15 +60,15 @@ class ReportSelectionDialog(QDialog):
                 layout.addWidget(button)
 
     @Slot(dict)
-    def on_report_button_clicked(self, report_config):
+    def on_report_button_clicked(self, report_config: dict) -> None:
         """Handles the click of any report button.
 
         Emits the `reportSelected` signal with the configuration of the
         clicked report and then closes the dialog.
 
         Args:
-            report_config (dict): The configuration dictionary associated
-                with the button that was clicked.
+            report_config: The configuration dictionary associated with the
+                button that was clicked.
         """
         self.reportSelected.emit(report_config)
         self.accept()
