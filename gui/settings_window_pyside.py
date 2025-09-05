@@ -20,6 +20,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
+from shopify_tool.core import get_unique_column_values
+
 
 class SettingsWindow(QDialog):
     """A dialog window for viewing and editing all application settings.
@@ -228,6 +230,9 @@ class SettingsWindow(QDialog):
     def add_condition_row(self, rule_widget_refs, config=None):
         """Adds a new row of widgets for a single condition within a rule.
 
+        This method now supports dynamic value widgets, allowing for either a
+        `QLineEdit` or a `QComboBox` based on the selected field and operator.
+
         Args:
             rule_widget_refs (dict): A dictionary of widget references for the
                 parent rule.
@@ -241,23 +246,89 @@ class SettingsWindow(QDialog):
         field_combo.addItems(self.CONDITION_FIELDS)
         op_combo = QComboBox()
         op_combo.addItems(self.CONDITION_OPERATORS)
-        value_edit = QLineEdit()
         delete_btn = QPushButton("X")
+
         row_layout.addWidget(field_combo)
         row_layout.addWidget(op_combo)
-        row_layout.addWidget(value_edit, 1)
-        row_layout.addWidget(delete_btn)
+        # The value widget will be inserted at index 2 by the handler
+
         field_combo.setCurrentText(config.get("field", self.CONDITION_FIELDS[0]))
         op_combo.setCurrentText(config.get("operator", self.CONDITION_OPERATORS[0]))
-        value_edit.setText(config.get("value", ""))
+        initial_value = config.get("value", "")
+
         row_widget = QWidget()
         row_widget.setLayout(row_layout)
+
+        condition_refs = {
+            "widget": row_widget,
+            "field": field_combo,
+            "op": op_combo,
+            "value_widget": None,
+            "value_layout": row_layout,
+        }
+
+        row_layout.addWidget(delete_btn)
+
+        # Connect signals to the new handler
+        field_combo.currentTextChanged.connect(lambda: self._on_rule_condition_changed(condition_refs))
+        op_combo.currentTextChanged.connect(lambda: self._on_rule_condition_changed(condition_refs))
+
+        # Create the initial value widget
+        self._on_rule_condition_changed(condition_refs, initial_value=initial_value)
+
         rule_widget_refs["conditions_layout"].addWidget(row_widget)
-        condition_refs = {"widget": row_widget, "field": field_combo, "op": op_combo, "value": value_edit}
         rule_widget_refs["conditions"].append(condition_refs)
         delete_btn.clicked.connect(
             lambda: self._delete_row_from_list(row_widget, rule_widget_refs["conditions"], condition_refs)
         )
+
+    def _on_rule_condition_changed(self, condition_refs, initial_value=None):
+        """Dynamically changes the rule's value widget based on other selections.
+
+        This method is connected to the 'field' and 'operator' combo boxes
+        for a rule condition. It creates a `QComboBox` for value selection if
+        the field is in the DataFrame and the operator is suitable (e.g., 'equals').
+        For operators like 'is_empty', it hides the value widget. Otherwise,
+        it provides a standard `QLineEdit`.
+
+        Args:
+            condition_refs (dict): A dictionary of widget references for the
+                condition row.
+            initial_value (any, optional): The value to set in the newly
+                created widget. Defaults to None.
+        """
+        field = condition_refs["field"].currentText()
+        op = condition_refs["op"].currentText()
+
+        # Remove the old value widget, if it exists
+        if condition_refs["value_widget"]:
+            condition_refs["value_widget"].deleteLater()
+            condition_refs["value_widget"] = None
+
+        # Operators that don't need a value input
+        if op in ["is_empty", "is_not_empty"]:
+            return  # No widget will be created or added
+
+        # Determine if a ComboBox should be used
+        use_combobox = op in ["equals", "does not equal"] and not self.analysis_df.empty and field in self.analysis_df.columns
+
+        if use_combobox:
+            unique_values = get_unique_column_values(self.analysis_df, field)
+            new_widget = QComboBox()
+            new_widget.addItems([""] + unique_values)  # Add a blank option
+            if initial_value and str(initial_value) in unique_values:
+                new_widget.setCurrentText(str(initial_value))
+        else:
+            # Default to QLineEdit
+            new_widget = QLineEdit()
+            new_widget.setPlaceholderText("Value")
+            if initial_value is not None:
+                new_widget.setText(str(initial_value))
+
+        # Insert the new widget into the layout at the correct position
+        condition_refs["value_layout"].insertWidget(2, new_widget, 1)
+        condition_refs["value_widget"] = new_widget
+
 
     def add_action_row(self, rule_widget_refs, config=None):
         """Adds a new row of widgets for a single action within a rule.
@@ -527,10 +598,24 @@ class SettingsWindow(QDialog):
             # Rules Tab
             new_rules = []
             for rule_w in self.rule_widgets:
-                conditions = [
-                    {"field": c["field"].currentText(), "operator": c["op"].currentText(), "value": c["value"].text()}
-                    for c in rule_w["conditions"]
-                ]
+                conditions = []
+                for c in rule_w["conditions"]:
+                    value_widget = c.get("value_widget")
+                    val = ""
+                    if value_widget:
+                        if isinstance(value_widget, QComboBox):
+                            val = value_widget.currentText()
+                        else:
+                            val = value_widget.text()
+
+                    conditions.append(
+                        {
+                            "field": c["field"].currentText(),
+                            "operator": c["op"].currentText(),
+                            "value": val,
+                        }
+                    )
+
                 actions = [{"type": a["type"].currentText(), "value": a["value"].text()} for a in rule_w["actions"]]
                 new_rules.append(
                     {
