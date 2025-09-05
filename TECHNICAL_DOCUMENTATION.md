@@ -1,131 +1,132 @@
-# Technical Documentation: Shopify Fulfillment Tool v8.1.8
+# Technical Documentation: Shopify Fulfillment Tool
 
-This document provides a technical overview of the Shopify Fulfillment Tool, intended for developers and maintainers. It covers the application's architecture, core logic, GUI structure, and data flow.
-
-## Version 8.1.8 Changes
-
-This release introduces several new features focused on providing more detailed feedback to the user, enhancing report customization, and improving the robustness of the core logic. A major focus was also placed on increasing the quality and coverage of the unit test suite.
-
--   **Low Stock Alerts (`core.py`):**
-    -   The `run_full_analysis` function can now apply a low stock warning. After the main analysis, it checks if a `low_stock_threshold` is defined in the config.
-    -   If it is, it uses a `np.where` clause to create a new `Stock_Alert` column, marking any item where `Final_Stock` < `threshold`.
-
--   **Exclude SKUs from Packing Lists (`core.py`, `packing_lists.py`):**
-    -   The `create_packing_list_report` function in `core.py` now accepts an `exclude_skus` parameter from the report's configuration.
-    -   This list of SKUs to exclude is passed down to `packing_lists.create_packing_list`, where the main DataFrame is filtered to remove these SKUs before the report is generated.
-
--   **Core Analysis Logic (`analysis.py`):**
-    -   **`toggle_order_fulfillment`:** This function has been heavily refactored for robustness. It now includes a pre-flight check to see if a "force-fulfill" is possible by checking available stock. It can also handle orders containing unlisted SKUs (items not in the stock file) by dynamically adding them to the DataFrame to track their negative stock.
-    -   **`recalculate_statistics`:** A new standalone function that computes a rich dictionary of statistics from the main analysis frame. This separates the calculation from the main analysis loop and produces a structured `couriers_stats` list. If no stats are available, it returns `None` as per the spec for the GUI.
-    -   **Improved Summary_Missing:** The logic for generating the `summary_missing_df` has been corrected to only include items that are truly out of stock (`Quantity` > `Stock`), making the report more accurate.
-
--   **Data Validation and Export (`core.py`):**
-    -   **`validate_csv_headers`:** A new utility function has been added to `core.py` to quickly validate the headers of input CSVs against a list of required columns before loading the full file. This provides faster and clearer error feedback to the user.
-    -   **Report Info Sheet:** The `run_full_analysis` function now adds a `Report Info` worksheet to the `fulfillment_analysis.xlsx` export, containing a timestamp of when the report was generated.
-
-## Version 8.1.0 Changes
-
-This release focuses on improving the data model, enhancing the user interface, and expanding configuration options.
-
--   **Data Model Changes (`analysis.py`):**
-    -   A new `System_note` column has been added to the main analysis DataFrame. It replaces the previous use of the `Status_Note` column for housing system-generated tags (e.g., `Repeat`). This change helps to separate machine-generated data from user notes.
-    -   A new `Total Price` column has been added, sourced from the `Total` field in the Shopify order export. This is handled during the initial data cleaning phase.
-
--   **GUI Enhancements (`gui_main.py`):**
-    -   The main analysis table (`ttk.Treeview`) has been restyled for a more modern look, using the central `STYLE` dictionary for all fonts and colors, and an increased row height for better readability.
-    -   A new tag, `SystemNoteHighlight`, has been added to apply a yellow background to any row containing data in the `System_note` column.
-    -   The right-click context menu (`_show_context_menu`) now includes a "Copy SKU" command, which copies the SKU of the selected line item to the clipboard.
-
--   **Configuration Enhancements (`gui/settings_window.py`):**
-    -   The `CONDITION_FIELDS` (for Rules) and `FILTERABLE_COLUMNS` (for Packing Lists and Stock Exports) constants have been updated and synchronized.
-    -   They now include `Order_Number`, `Total Price`, and `System_note`, making these fields available for creating automation rules and report filters.
-
----
+This document provides a complete technical overview of the Shopify Fulfillment Tool, intended for developers and maintainers. It covers the application's architecture, configuration structure, core logic, and data flow.
 
 ## 1. Architecture Overview
 
-The application is a desktop program built with Python, using `customtkinter` for the user interface and `pandas` for data manipulation. It is designed to be packaged into a single executable using PyInstaller.
+The application is a desktop program built with Python, using **PySide6** for the user interface and **pandas** for data manipulation. It is designed to be packaged into a single executable using PyInstaller.
 
 The architecture is divided into two main components:
-- **Backend Logic (`shopify_tool/`)**: A package containing all the core data processing, analysis, and report generation logic. It is designed to be independent of the user interface.
-- **Frontend GUI (`gui/` and `gui_main.py`)**: The user-facing part of the application that provides controls for loading data, running analysis, and viewing results. It acts as a client to the `shopify_tool` backend.
+-   **Backend Logic (`shopify_tool/`)**: A package containing all the core data processing, analysis, and report generation logic. It is designed to be independent of the user interface and can be used as a standalone library.
+-   **Frontend GUI (`gui/` and `gui_main.py`)**: The user-facing part of the application that provides controls for loading data, running analysis, and managing settings. It acts as a client to the `shopify_tool` backend.
 
-The application's lifecycle and user-specific data are managed by `gui_main.py`, which is the main entry point.
+### Data Flow
 
-## 2. Backend Logic (`shopify_tool` package)
+The general data flow is as follows:
 
-The `shopify_tool` package is the engine of the application.
+1.  **Configuration Loading**: On startup, `gui_main.py` loads the `config.json` file from the user's persistent data directory. The user selects an active **Profile**.
+2.  **User Input**: The user selects an orders CSV and a stock CSV file through the GUI.
+3.  **Validation**: The application validates the headers of the CSV files against the **Column Mappings** defined in the active profile.
+4.  **Analysis**: The user clicks "Run Analysis".
+    -   `gui_main.py` calls `shopify_tool.core.run_full_analysis()`.
+    -   The `core` module reads the CSVs, applies **Courier Mappings**, and runs the main fulfillment simulation logic from `shopify_tool.analysis`.
+    -   The `core` module then applies the **Rule Engine** (`shopify_tool.rules`) to the analysis results.
+    -   The final `pandas.DataFrame` is returned to the GUI.
+5.  **Display**: The GUI displays the DataFrame in an interactive table.
+6.  **Report Generation**:
+    -   The user requests a report (Packing List or Stock Export).
+    -   The GUI calls the appropriate function in `shopify_tool.core` (`create_packing_list_report` or `create_stock_export_report`), passing the relevant report configuration from the active profile.
+    -   The `core` module uses `shopify_tool.packing_lists` or `shopify_tool.stock_export` to filter the DataFrame and generate the final Excel file.
 
-### Key Modules:
+## 2. Configuration File (`config.json`)
 
-- **`utils.py`**: A new module containing shared helper functions, such as `get_persistent_data_path` for accessing the user's application data directory and `resource_path` for accessing bundled application files.
+The `config.json` file is the heart of the application's user-defined settings. All settings are stored within **profiles**.
 
-- **`core.py`**: The central orchestrator of the backend. It acts as the primary API for the GUI.
-  - `run_full_analysis()`: The main workflow function. It now uses `get_persistent_data_path` to read and write the `fulfillment_history.csv` file, ensuring it works correctly from any location (including network shares). It also normalizes file paths to handle UNC paths robustly.
-  - `create_packing_list_report()`: A wrapper that calls `packing_lists.create_packing_list()` to generate a specific packing list report.
-  - `create_stock_export_report()`: A wrapper that calls `stock_export.create_stock_export()` to generate a stock export file.
+### Profile Structure
 
-- **`analysis.py`**: Contains the core business logic for the fulfillment simulation.
-  - `run_analysis()`: A pure computation function that takes pandas DataFrames, simulates fulfillment based on a multi-item > single-item priority, and returns the results.
-  - `toggle_order_fulfillment()`: Contains the complex logic to manually mark an order as "Fulfillable" or "Not Fulfillable" and recalculates the stock accordingly.
+The root of `config.json` contains a `profiles` object and a key for the `active_profile_name`.
 
-- **`rules.py`**: Implements a flexible rule engine. Its `apply()` method iterates through the rules defined in `config.json` and applies them to the dataset.
+```json
+{
+  "active_profile_name": "My_Warehouse",
+  "profiles": {
+    "default": { ... },
+    "My_Warehouse": { ... }
+  }
+}
+```
 
-- **`packing_lists.py` & `stock_export.py`**: These modules contain the logic for generating the final report files. They now parse a robust list-of-objects filter format from `config.json`.
+Each profile object contains the following keys:
 
-## 3. Graphical User Interface (GUI)
+-   `settings`: General application settings.
+-   `paths`: Default file paths.
+-   `column_mappings`: Defines how user CSV columns map to internal data fields.
+-   `courier_mappings`: Standardizes courier names.
+-   `rules`: A list of automation rules for the Rule Engine.
+-   `packing_lists`: A list of templates for packing list reports.
+-   `stock_exports`: A list of templates for stock export reports.
 
-The GUI is built using `customtkinter` and is managed primarily by `gui_main.py`.
+**Example Profile Snippet:**
+```json
+"My_Warehouse": {
+  "settings": {
+    "stock_csv_delimiter": ";",
+    "low_stock_threshold": 10
+  },
+  "column_mappings": {
+    "orders": { "sku": "Lineitem sku", ... },
+    "stock": { "sku": "Артикул", "stock": "Наличност" }
+  },
+  "courier_mappings": {
+    "DHL Express": "DHL"
+  },
+  "rules": [
+    {
+      "name": "Prioritize High-Value Orders",
+      "match": "ALL",
+      "conditions": [
+        { "field": "Total Price", "operator": "is greater than", "value": "150" }
+      ],
+      "actions": [
+        { "type": "SET_PRIORITY", "value": "High" }
+      ]
+    }
+  ],
+  "packing_lists": [ ... ]
+}
+```
 
-### Key Components:
+## 3. Backend Deep Dive (`shopify_tool/`)
 
-- **`gui_main.py` - `App` class**:
-  - **Initialization (`__init__`)**: Now handles the robust initialization of the user configuration. On first launch, it copies a default `config.json` from the application's resources to a persistent user-specific directory (e.g., `AppData`). All subsequent sessions read from and write to this user-specific config file.
-  - **UI Layout:** The `create_widgets` method has been refactored to create a more organized action panel, with report buttons grouped separately from the main "Run Analysis" button.
-  - **Theming:** A centralized `STYLE` dictionary defines the application's color palette, fonts, and corner radius for a consistent look and feel.
+### `core.py`
+This module acts as the main API for the backend. It orchestrates the other backend modules and is the primary entry point for the GUI.
+-   `run_full_analysis()`: The main workflow function. It takes file paths and configurations, manages data validation and cleaning (including applying mappings), calls the analysis function, applies the rule engine, and returns the final DataFrame.
+-   `create_packing_list_report()`, `create_stock_export_report()`: These functions take the analysis DataFrame and a specific report configuration, and call the appropriate module to generate the file.
 
-- **`gui/settings_window.py` - `SettingsWindow` class**:
-  - This class creates the modal "Settings" window.
-  - The `save_settings()` method now saves configurations for rules, packing lists, and stock exports using a flexible list-of-objects format, which allows for more complex filtering logic (e.g., multiple conditions on the same field).
-  - The layout has been improved to ensure content areas expand to fill the window, preventing large empty spaces.
+### `analysis.py`
+Contains the pure business logic for the fulfillment simulation.
+-   `run_analysis()`: Takes clean DataFrames for orders and stock. It determines which orders are fulfillable based on available stock, prioritizing multi-item orders over single-item orders to maximize the number of completed orders.
+-   `toggle_order_fulfillment()`: Contains the logic to manually mark an order as "Fulfillable" or "Not Fulfillable" and correctly recalculates the resulting stock changes.
 
-## 4. Configuration and Data
+### `rules.py`
+Implements the flexible "IF/THEN" rule engine.
+-   `RuleEngine` class:
+    -   Initialized with a list of rule configurations from the active profile.
+    -   The `apply()` method iterates through each rule, evaluates its conditions against the DataFrame, and executes the specified actions on the matching rows.
+    -   `OPERATOR_MAP`: A dictionary that maps the string operators from `config.json` (e.g., "contains") to the internal Python functions that perform the comparison.
 
-- **Persistent User Data:** Critical user-specific files are now stored in a persistent application data folder (e.g., `C:\Users\YourUser\AppData\Roaming\ShopifyFulfillmentTool`). This includes:
-    - `config.json`: Stores all user configurations for rules, reports, and paths.
-    - `fulfillment_history.csv`: Tracks previously fulfilled orders to identify repeats.
-    - `session_data.pkl`: Stores the state of the last session for potential restoration.
-- **`config.json` Filter Format:** The format for filters in `packing_lists` and `stock_exports` has been updated to a list of objects for clarity and power.
-    - **Old format:** `"filters": {"Order_Type": "Multi"}`
-    - **New format:** `"filters": [{"field": "Order_Type", "operator": "==", "value": "Multi"}]`
-- **`data/` directory**: This directory in the application bundle now only holds default templates. User-generated output is saved to session-specific folders.
+### `packing_lists.py` & `stock_export.py`
+These modules are responsible for generating the final report files.
+-   `create_packing_list()`: Takes the main DataFrame and a report configuration. It dynamically builds a pandas query string from the `filters` list, applies it to the DataFrame, excludes any specified SKUs, sorts the results for optimal picking, and formats the output into a clean Excel file using `xlsxwriter`.
 
-## 5. Data Flow (Example: Generating a Packing List)
+## 4. GUI Deep Dive (`gui/` & `gui_main.py`)
 
-The data flow remains largely the same, but the underlying configuration and file paths are now more robust.
+### `gui_main.py`
+This is the main entry point of the application. It contains the `MainWindow` (or equivalent) class that builds the main UI and manages the application's state.
+-   **State Management**: It holds the application's state, including the loaded `config.json`, the name of the `active_profile`, and the main `analysis_df`.
+-   **Profile Management**:
+    -   `load_config()`: Loads `config.json` from disk.
+    -   `save_config()`: Saves the current configuration back to `config.json`.
+    -   `create_profile()`: Creates a new profile by deep copying an existing one.
+    -   `rename_profile()`, `delete_profile()`: Manages profile names and deletion.
+    -   `set_active_profile()`: The core function for switching profiles. It updates the `active_profile_name` in the config and reloads the entire UI to reflect the settings of the newly activated profile.
+-   **Backend Interaction**: It calls the functions in `shopify_tool.core` to perform analysis and generate reports, passing the settings from the active profile.
 
-1.  **User Action**: The user clicks a button for a specific packing list.
-2.  **Orchestration (`gui_main.py`)**: The `report_config` for the selected report is retrieved from `self.config` (loaded from the persistent `config.json`).
-3.  **Core Logic (`core.py`)**: The `create_packing_list_report` function is called.
-4.  **Filtering and Generation (`packing_lists.py`)**: `create_packing_list()` now receives the new filter format. It loops through the list of filter objects, dynamically building a pandas query string (e.g., `\`Order_Type\` == 'Multi' & \`Shipping_Provider\` != 'DHL'`). It then filters the DataFrame and generates the report.
+### `gui/settings_window_pyside.py`
+This module defines the `SettingsWindow`, a complex dialog that allows users to edit all settings within a profile.
+-   **Dynamic UI**: The window is built dynamically based on the configuration of the active profile passed to it.
+-   **Data Handling**: It receives a *deep copy* of the active profile's configuration. This ensures that changes are not applied to the main application's state unless the user explicitly clicks "Save."
+-   `save_settings()`: When the user clicks "Save," this method reads the state of every widget in the dialog (text boxes, dropdowns, etc.) and reconstructs the configuration dictionary. It then calls `self.accept()`, and `gui_main.py` retrieves the updated dictionary to save to disk.
 
-## 6. Test Coverage Review (v8.1.8)
-
-A comprehensive effort was undertaken to improve the quality and coverage of the unit test suite. All tests pass, and the final coverage results are as follows:
-
-**Overall Coverage: 96%**
-
-| Module File                 | Coverage | Notes                                                                   |
-| --------------------------- | :------: | ----------------------------------------------------------------------- |
-| `shopify_tool/analysis.py`      |   95%    | Coverage maintained.                                                    |
-| `shopify_tool/logger_config.py` |   96%    | Coverage maintained.                                                    |
-| `shopify_tool/packing_lists.py` |   94%    | **Improved.** Added tests for edge cases.                               |
-| `shopify_tool/rules.py`         |   99%    | **Improved.** Added comprehensive tests for all operators & edge cases. |
-| `shopify_tool/core.py`          |   97%    | **Improved.** Added tests for error handling and all major code paths.  |
-| `shopify_tool/stock_export.py`  |   94%    | **Improved.** Added tests for filtering logic and error handling.       |
-| `shopify_tool/utils.py`         |  100%    | **Improved.** Full coverage achieved.                                   |
-
-**Summary of Improvements:**
--   Unit test coverage was increased from 85% to 96%.
--   Added new test files and numerous new tests to cover error handling, edge cases, and all logical operators in the rule engine.
--   All modules identified as needing improvement now have coverage of 94% or higher.
+### `gui/profile_manager_dialog.py`
+Provides the UI for managing profiles. It's a simple dialog that calls the profile management methods (`create_profile`, etc.) on its parent, the `MainWindow`.
