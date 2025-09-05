@@ -1,5 +1,4 @@
 import os
-import json
 import logging
 from datetime import datetime
 import pandas as pd
@@ -58,7 +57,7 @@ class ActionsHandler(QObject):
         the file loading buttons in the UI.
         """
         try:
-            base_output_dir = self.mw.config["paths"].get("output_dir_stock", "data/output")
+            base_output_dir = self.mw.active_profile_config["paths"].get("output_dir_stock", "data/output")
             os.makedirs(base_output_dir, exist_ok=True)
             date_str = datetime.now().strftime("%Y-%m-%d")
             session_id = 1
@@ -165,7 +164,8 @@ class ActionsHandler(QObject):
         """
         reports_config = self.mw.active_profile_config.get(report_type, [])
         if not reports_config:
-            msg = f"No {report_type.replace('_', ' ')} configured in the active profile ('{self.mw.active_profile_name}')."
+            msg = (f"No {report_type.replace('_', ' ')} configured in the active "
+                   f"profile ('{self.mw.active_profile_name}').")
             QMessageBox.information(self.mw, "No Reports", msg)
             return
         dialog = ReportSelectionDialog(report_type, reports_config, self.mw)

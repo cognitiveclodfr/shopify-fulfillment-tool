@@ -147,13 +147,19 @@ class MainWindow(QMainWindow):
                         "active_profile": "Default"
                     }
                     self._save_config()
-                    QMessageBox.information(self, "Migration Complete", f"Your configuration was migrated. A backup is available at:\n{backup_path}")
+                    QMessageBox.information(
+                        self,
+                        "Migration Complete",
+                        f"Your configuration was migrated. A backup is available at:\n{backup_path}"
+                    )
                 except Exception as e:
                     QMessageBox.critical(self, "Migration Error", f"Could not migrate config.json: {e}")
                     QApplication.quit()
                     return
             else:
-                QMessageBox.critical(self, "Configuration Error", "Configuration update is required to run the application.")
+                QMessageBox.critical(
+                    self, "Configuration Error", "Configuration update is required to run the application."
+                )
                 QApplication.quit()
                 return
 
@@ -288,7 +294,8 @@ class MainWindow(QMainWindow):
             return False
 
         # Use the base profile's settings, or default to an empty config
-        base_config = self.config["profiles"].get(base_profile_name, {"rules": [], "packing_lists": [], "stock_exports": []})
+        default_profile_structure = {"rules": [], "packing_lists": [], "stock_exports": []}
+        base_config = self.config["profiles"].get(base_profile_name, default_profile_structure)
         self.config["profiles"][name] = json.loads(json.dumps(base_config)) # Deep copy
         self._save_config()
         self.log_activity("Profiles", f"Created new profile: {name}")
