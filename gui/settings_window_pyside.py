@@ -310,7 +310,11 @@ class SettingsWindow(QDialog):
             return  # No widget will be created or added
 
         # Determine if a ComboBox should be used
-        use_combobox = op in ["equals", "does not equal"] and not self.analysis_df.empty and field in self.analysis_df.columns
+        use_combobox = (
+            op in ["equals", "does not equal"]
+            and not self.analysis_df.empty
+            and field in self.analysis_df.columns
+        )
 
         if use_combobox:
             unique_values = get_unique_column_values(self.analysis_df, field)
