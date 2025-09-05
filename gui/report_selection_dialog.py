@@ -5,7 +5,7 @@ creates buttons for selecting a pre-configured report from the application's
 configuration.
 """
 
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QPushButton
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QPushButton, QWidget
 from PySide6.QtCore import Signal, Slot
 
 

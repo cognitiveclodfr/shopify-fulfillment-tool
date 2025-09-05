@@ -7,9 +7,11 @@ When a signal is received, the handler executes the corresponding application
 logic, such as running an analysis, generating a report, or modifying data.
 """
 
+from __future__ import annotations
 import os
 import logging
 from datetime import datetime
+import typing
 import pandas as pd
 
 from PySide6.QtCore import QObject, Signal
@@ -21,6 +23,9 @@ from shopify_tool.analysis import toggle_order_fulfillment
 from gui.settings_window_pyside import SettingsWindow
 from gui.report_selection_dialog import ReportSelectionDialog
 from gui.report_builder_window_pyside import ReportBuilderWindow
+
+if typing.TYPE_CHECKING:
+    from gui.main_window_pyside import MainWindow
 
 
 class ActionsHandler(QObject):

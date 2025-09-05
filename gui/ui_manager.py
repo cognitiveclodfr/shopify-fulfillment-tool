@@ -6,10 +6,31 @@ the graphical user interface of the main window. It creates all the widgets
 methods to update their state.
 """
 
+from __future__ import annotations
 import logging
+import typing
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
+    QHBoxLayout,
+    QGridLayout,
+    QPushButton,
+    QLabel,
+    QTabWidget,
+    QGroupBox,
+    QTableView,
+    QPlainTextEdit,
+    QTableWidget,
+    QLineEdit,
+    QComboBox,
+    QCheckBox,
+)
+from PySide6.QtCore import Qt
+import pandas as pd
+from .pandas_model import PandasModel
+
+if typing.TYPE_CHECKING:
+    from .main_window_pyside import MainWindow
     QHBoxLayout,
     QGridLayout,
     QPushButton,

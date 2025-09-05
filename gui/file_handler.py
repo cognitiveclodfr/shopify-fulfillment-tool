@@ -6,11 +6,16 @@ orders and stock files. It interacts with the `QFileDialog` to get file paths
 and then triggers validation on those files.
 """
 
+from __future__ import annotations
 import os
 import logging
 from PySide6.QtWidgets import QFileDialog
+import typing
 
 from shopify_tool import core
+
+if typing.TYPE_CHECKING:
+    from gui.main_window_pyside import MainWindow
 
 
 class FileHandler:

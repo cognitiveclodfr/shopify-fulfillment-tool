@@ -5,7 +5,7 @@ pandas DataFrame, allowing it to be displayed and manipulated in a Qt view
 (like QTableView) while adhering to the Qt Model/View programming paradigm.
 """
 
-from PySide6.QtCore import QAbstractTableModel, Qt, QModelIndex
+from PySide6.QtCore import QAbstractTableModel, Qt, QModelIndex, QObject
 from PySide6.QtGui import QColor
 import pandas as pd
 

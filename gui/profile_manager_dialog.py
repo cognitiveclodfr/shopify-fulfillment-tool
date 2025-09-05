@@ -4,9 +4,21 @@ This module defines the `ProfileManagerDialog` class, which provides the user
 interface for managing their settings profiles (add, rename, delete).
 """
 
+from __future__ import annotations
 from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
+    QListWidget,
+    QListWidgetItem,
+    QHBoxLayout,
+    QPushButton,
+    QInputDialog,
+    QMessageBox,
+)
+import typing
+
+if typing.TYPE_CHECKING:
+    from gui.main_window_pyside import MainWindow
     QListWidget,
     QListWidgetItem,
     QHBoxLayout,
