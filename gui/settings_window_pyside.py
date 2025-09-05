@@ -105,7 +105,7 @@ class SettingsWindow(QDialog):
                     "quantity": "Lineitem quantity",
                     "shipping_provider": "Shipping Provider",
                 },
-                "stock": {"sku": "Артикул", "stock": "Наличност"},
+                "stock": {"sku": "SKU", "stock": "Stock"},
             }
         if "courier_mappings" not in self.config_data:
             self.config_data["courier_mappings"] = {}
@@ -609,7 +609,7 @@ class SettingsWindow(QDialog):
         main_layout = QVBoxLayout(tab)
 
         # Column Mappings GroupBox
-        column_mappings_box = QGroupBox("Мапінг стовпців")
+        column_mappings_box = QGroupBox("Column Mappings")
         column_mappings_layout = QVBoxLayout(column_mappings_box)
 
         # Orders Column Mappings
@@ -637,21 +637,21 @@ class SettingsWindow(QDialog):
         main_layout.addWidget(column_mappings_box)
 
         # Courier Mappings GroupBox
-        courier_mappings_box = QGroupBox("Мапінг кур'єрів")
+        courier_mappings_box = QGroupBox("Courier Mappings")
         courier_main_layout = QVBoxLayout(courier_mappings_box)
 
         # Layout for the dynamic rows
         self.courier_mappings_layout = QVBoxLayout()
         courier_main_layout.addLayout(self.courier_mappings_layout)
 
-        add_courier_btn = QPushButton("Додати мапінг")
+        add_courier_btn = QPushButton("Add Mapping")
         add_courier_btn.clicked.connect(lambda: self.add_courier_mapping_row())
         courier_main_layout.addWidget(add_courier_btn, 0, Qt.AlignLeft)
 
         main_layout.addWidget(courier_mappings_box)
         main_layout.addStretch()
 
-        self.tab_widget.addTab(tab, "Мапінги")
+        self.tab_widget.addTab(tab, "Mappings")
 
         # Populate initial courier mappings
         for original, standardized in self.config_data.get("courier_mappings", {}).items():
@@ -663,9 +663,9 @@ class SettingsWindow(QDialog):
         row_layout = QHBoxLayout(row_widget)
 
         original_edit = QLineEdit(original_name)
-        original_edit.setPlaceholderText("Оригінальна назва")
+        original_edit.setPlaceholderText("Original Name")
         standardized_edit = QLineEdit(standardized_name)
-        standardized_edit.setPlaceholderText("Стандартизована назва")
+        standardized_edit.setPlaceholderText("Standardized Name")
         delete_btn = QPushButton("X")
 
         row_layout.addWidget(original_edit, 1)
