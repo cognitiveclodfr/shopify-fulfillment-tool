@@ -2,7 +2,7 @@ import os
 import logging
 import pandas as pd
 from datetime import datetime
-from . import analysis, packing_lists, stock_export
+from . import analysis, packing_lists, stock_export, transformations
 from .rules import RuleEngine
 from .utils import get_persistent_data_path
 import numpy as np
@@ -120,13 +120,15 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
             'test_orders_df' keys.
 
     Returns:
-        tuple[bool, str | None, pd.DataFrame | None, dict | None]:
+        tuple[bool, str | None, pd.DataFrame | None, pd.DataFrame | None, dict | None]:
             A tuple containing:
             - bool: True for success, False for failure.
             - str | None: A message indicating the result. On success, this
               is the path to the output file. On failure, it's an error
               message.
             - pd.DataFrame | None: The final analysis DataFrame if successful,
+              otherwise None.
+            - pd.DataFrame | None: The SKU summary DataFrame if successful,
               otherwise None.
             - dict | None: A dictionary of calculated statistics if
               successful, otherwise None.
@@ -140,7 +142,7 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
         orders_file_path = _normalize_unc_path(orders_file_path)
 
         if not os.path.exists(stock_file_path) or not os.path.exists(orders_file_path):
-            return False, "One or both input files were not found.", None, None
+            return False, "One or both input files were not found.", None, None, None
 
         logger.info(f"Reading stock file from normalized path: {stock_file_path}")
         stock_df = pd.read_csv(stock_file_path, delimiter=stock_delimiter)
@@ -158,7 +160,18 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
     if validation_errors:
         error_message = "\n".join(validation_errors)
         logger.error(f"Validation Error: {error_message}")
-        return False, error_message, None, None
+        return False, error_message, None, None, None
+
+    # --- Data Transformation ---
+    # Apply set/bundle decoding before any analysis
+    decoding_rules = config.get("decoding_rules", [])
+    if decoding_rules:
+        orders_df = transformations.apply_set_decoding(orders_df, decoding_rules)
+
+    # Apply packaging rules
+    packaging_rules = config.get("packaging_rules", [])
+    if packaging_rules:
+        orders_df = transformations.apply_packaging_rules(orders_df, packaging_rules)
 
     # Use a persistent path for the history file to avoid permission errors on network drives
     history_path = get_persistent_data_path("fulfillment_history.csv")
@@ -230,10 +243,10 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
             )
             updated_history.to_csv(history_path, index=False)
             logger.info(f"Updated fulfillment history with {len(newly_fulfilled)} new records.")
-        return True, output_file_path, final_df, stats
+        return True, output_file_path, final_df, summary_present_df, stats
     else:
         # For tests, just return the DataFrames
-        return True, None, final_df, stats
+        return True, None, final_df, summary_present_df, stats
 
 
 def create_packing_list_report(analysis_df, report_config):

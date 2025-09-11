@@ -170,11 +170,24 @@ class UIManager:
         self.mw.data_view_tab = self._create_data_view_tab()
         tab_view.addTab(self.mw.data_view_tab, "Analysis Data")
 
+        self.mw.sku_summary_tab = self._create_sku_summary_tab()
+        tab_view.addTab(self.mw.sku_summary_tab, "SKU Summary")
+
         self.mw.stats_tab = QWidget()
         self.create_statistics_tab(self.mw.stats_tab)
         tab_view.addTab(self.mw.stats_tab, "Statistics")
 
         return tab_view
+
+    def _create_sku_summary_tab(self):
+        """Creates the 'SKU Summary' tab with its QTableView."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        self.mw.sku_summary_table = QTableView()
+        self.mw.sku_summary_table.setSortingEnabled(True)
+        self.mw.sku_summary_table.setAlternatingRowColors(True)
+        layout.addWidget(self.mw.sku_summary_table)
+        return tab
 
     def _create_activity_log_tab(self):
         """Creates the 'Activity Log' tab with its QTableWidget."""

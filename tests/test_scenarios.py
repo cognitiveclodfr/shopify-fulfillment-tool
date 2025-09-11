@@ -12,7 +12,7 @@ def run_test(stock_df, orders_df, history_df=None, low_stock_threshold=10):
     config["test_stock_df"] = stock_df
     config["test_orders_df"] = orders_df
     config["test_history_df"] = history_df if history_df is not None else pd.DataFrame({"Order_Number": []})
-    success, _, final_df, stats = core.run_full_analysis(None, None, None, ";", config)
+    success, _, final_df, _, stats = core.run_full_analysis(None, None, None, ";", config)
     assert success
     return final_df, stats
 

@@ -39,7 +39,7 @@ def test_run_analysis_basic():
 
     stock_df, orders_df, history_df, config = make_test_data()
     # Use core.run_full_analysis to test new logic
-    success, _, final_df, stats = core.run_full_analysis(
+    success, _, final_df, _, stats = core.run_full_analysis(
         stock_file_path=None, orders_file_path=None, output_dir_path=None, stock_delimiter=";", config=config
     )
     assert success

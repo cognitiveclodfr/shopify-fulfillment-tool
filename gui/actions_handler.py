@@ -112,9 +112,10 @@ class ActionsHandler(QObject):
             result (tuple): The tuple returned by `core.run_full_analysis`.
         """
         self.log.info("Analysis thread finished.")
-        success, result_msg, df, stats = result
+        success, result_msg, df, summary_df, stats = result
         if success:
             self.mw.analysis_results_df = df
+            self.mw.sku_summary_df = summary_df
             self.mw.analysis_stats = stats
             self.data_changed.emit()
             self.mw.log_activity("Analysis", f"Analysis complete. Report saved to: {result_msg}")

@@ -13,6 +13,7 @@ from PySide6.QtGui import QAction
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from gui.pandas_model import PandasModel
 from shopify_tool.utils import get_persistent_data_path, resource_path
 from shopify_tool.analysis import recalculate_statistics
 from gui.log_handler import QtLogHandler
@@ -64,6 +65,7 @@ class MainWindow(QMainWindow):
         self.orders_file_path = None
         self.stock_file_path = None
         self.analysis_results_df = pd.DataFrame()
+        self.sku_summary_df = pd.DataFrame()
         self.analysis_stats = None
         self.threadpool = QThreadPool()
 
@@ -367,6 +369,7 @@ class MainWindow(QMainWindow):
         self.analysis_stats = recalculate_statistics(self.analysis_results_df)
         self.ui_manager.update_results_table(self.analysis_results_df)
         self.update_statistics_tab()
+        self._update_sku_summary_tab()
 
         # Populate filter dropdown
         self.filter_column_selector.clear()
@@ -408,6 +411,17 @@ class MainWindow(QMainWindow):
                 self.courier_stats_layout.addWidget(QLabel(str(stats.get("repeated_orders_found", "N/A"))), i, 2)
         else:
             self.courier_stats_layout.addWidget(QLabel("No courier stats available."), 0, 0)
+
+    def _update_sku_summary_tab(self):
+        """Populates the 'SKU Summary' tab with the latest analysis data."""
+        if self.sku_summary_df is None or self.sku_summary_df.empty:
+            # Clear the table if there's no data
+            self.sku_summary_table.setModel(None)
+            return
+
+        model = PandasModel(self.sku_summary_df)
+        self.sku_summary_table.setModel(model)
+        self.sku_summary_table.resizeColumnsToContents()
 
     def log_activity(self, op_type, desc):
         """Adds a new entry to the 'Activity Log' table in the UI.

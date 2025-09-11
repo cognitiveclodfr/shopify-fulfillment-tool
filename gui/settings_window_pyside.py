@@ -100,6 +100,8 @@ class SettingsWindow(QDialog):
         self.rule_widgets = []
         self.packing_list_widgets = []
         self.stock_export_widgets = []
+        self.decoding_rule_widgets = []
+        self.packaging_rule_widgets = []
         self.column_mapping_widgets = {}
         self.courier_mapping_widgets = []
 
@@ -123,6 +125,8 @@ class SettingsWindow(QDialog):
         self.create_packing_lists_tab()
         self.create_stock_exports_tab()
         self.create_mappings_tab()
+        self.create_decoding_rules_tab()
+        self.create_packaging_rules_tab()
 
         button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         button_box.accepted.connect(self.save_settings)
@@ -622,6 +626,187 @@ class SettingsWindow(QDialog):
         for f_config in config.get("filters", []):
             self.add_filter_row(widget_refs, f_config)
 
+    def create_decoding_rules_tab(self):
+        """Creates the 'Decoding Rules' tab for managing set/bundle definitions."""
+        tab = QWidget()
+        main_layout = QVBoxLayout(tab)
+        add_rule_btn = QPushButton("Add New Decoding Rule")
+        add_rule_btn.clicked.connect(self.add_decoding_rule_widget)
+        main_layout.addWidget(add_rule_btn, 0, Qt.AlignLeft)
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        main_layout.addWidget(scroll_area)
+
+        scroll_content = QWidget()
+        self.decoding_rules_layout = QVBoxLayout(scroll_content)
+        self.decoding_rules_layout.setAlignment(Qt.AlignTop)
+        scroll_area.setWidget(scroll_content)
+
+        self.tab_widget.addTab(tab, "Decoding Rules")
+        for rule_config in self.config_data.get("decoding_rules", []):
+            self.add_decoding_rule_widget(rule_config)
+
+    def add_decoding_rule_widget(self, config=None):
+        """Adds a new group of widgets for a single decoding rule."""
+        if not isinstance(config, dict):
+            config = {"set_sku": "", "components": {}}
+
+        rule_box = QGroupBox("Decoding Rule")
+        rule_layout = QVBoxLayout(rule_box)
+
+        header_layout = QHBoxLayout()
+        header_layout.addWidget(QLabel("Set SKU:"))
+        set_sku_edit = QLineEdit(config.get("set_sku", ""))
+        header_layout.addWidget(set_sku_edit)
+        delete_rule_btn = QPushButton("Delete Rule")
+        header_layout.addWidget(delete_rule_btn)
+        rule_layout.addLayout(header_layout)
+
+        components_box = QGroupBox("Components")
+        components_layout = QVBoxLayout(components_box)
+        components_rows_layout = QVBoxLayout()
+        components_layout.addLayout(components_rows_layout)
+        add_component_btn = QPushButton("Add Component")
+        components_layout.addWidget(add_component_btn, 0, Qt.AlignLeft)
+        rule_layout.addWidget(components_box)
+
+        self.decoding_rules_layout.addWidget(rule_box)
+
+        widget_refs = {
+            "group_box": rule_box,
+            "set_sku": set_sku_edit,
+            "components_layout": components_rows_layout,
+            "components": [],
+        }
+        self.decoding_rule_widgets.append(widget_refs)
+
+        def add_component_row(sku="", qty=1):
+            row_layout = QHBoxLayout()
+            sku_edit = QLineEdit(sku)
+            qty_edit = QLineEdit(str(qty))
+            delete_btn = QPushButton("X")
+            row_layout.addWidget(QLabel("SKU:"))
+            row_layout.addWidget(sku_edit, 1)
+            row_layout.addWidget(QLabel("Qty:"))
+            row_layout.addWidget(qty_edit)
+            row_layout.addWidget(delete_btn)
+
+            row_widget = QWidget()
+            row_widget.setLayout(row_layout)
+
+            comp_refs = {"widget": row_widget, "sku": sku_edit, "qty": qty_edit}
+            widget_refs["components"].append(comp_refs)
+            components_rows_layout.addWidget(row_widget)
+            delete_btn.clicked.connect(lambda: self._delete_row_from_list(row_widget, widget_refs["components"], comp_refs))
+
+        add_component_btn.clicked.connect(lambda: add_component_row())
+        delete_rule_btn.clicked.connect(lambda: self._delete_widget_from_list(widget_refs, self.decoding_rule_widgets))
+
+        for sku, qty in config.get("components", {}).items():
+            add_component_row(sku, qty)
+
+    def create_packaging_rules_tab(self):
+        """Creates the 'Packaging Rules' tab."""
+        tab = QWidget()
+        main_layout = QVBoxLayout(tab)
+        add_rule_btn = QPushButton("Add New Packaging Rule")
+        add_rule_btn.clicked.connect(self.add_packaging_rule_widget)
+        main_layout.addWidget(add_rule_btn, 0, Qt.AlignLeft)
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        main_layout.addWidget(scroll_area)
+
+        scroll_content = QWidget()
+        self.packaging_rules_layout = QVBoxLayout(scroll_content)
+        self.packaging_rules_layout.setAlignment(Qt.AlignTop)
+        scroll_area.setWidget(scroll_content)
+
+        self.tab_widget.addTab(tab, "Packaging Rules")
+        for rule_config in self.config_data.get("packaging_rules", []):
+            self.add_packaging_rule_widget(rule_config)
+
+    def add_packaging_rule_widget(self, config=None):
+        """Adds a group of widgets for a single packaging rule."""
+        if not isinstance(config, dict):
+            config = {"name": "New Packaging Rule", "conditions": [], "action": {}}
+
+        rule_box = QGroupBox("Packaging Rule")
+        rule_layout = QVBoxLayout(rule_box)
+
+        header_layout = QHBoxLayout()
+        header_layout.addWidget(QLabel("Rule Name:"))
+        name_edit = QLineEdit(config.get("name", ""))
+        header_layout.addWidget(name_edit)
+        delete_rule_btn = QPushButton("Delete Rule")
+        header_layout.addWidget(delete_rule_btn)
+        rule_layout.addLayout(header_layout)
+
+        conditions_box = QGroupBox("IF order matches:")
+        conditions_layout = QVBoxLayout(conditions_box)
+        conditions_rows_layout = QVBoxLayout()
+        conditions_layout.addLayout(conditions_rows_layout)
+        add_condition_btn = QPushButton("Add Condition")
+        conditions_layout.addWidget(add_condition_btn, 0, Qt.AlignLeft)
+        rule_layout.addWidget(conditions_box)
+
+        action_box = QGroupBox("THEN add this item:")
+        action_layout = QFormLayout(action_box)
+        action_sku_edit = QLineEdit(config.get("action", {}).get("sku", ""))
+        action_qty_edit = QLineEdit(str(config.get("action", {}).get("quantity", 1)))
+        action_layout.addRow("SKU:", action_sku_edit)
+        action_layout.addRow("Quantity:", action_qty_edit)
+        rule_layout.addWidget(action_box)
+
+        self.packaging_rules_layout.addWidget(rule_box)
+
+        widget_refs = {
+            "group_box": rule_box,
+            "name": name_edit,
+            "conditions_layout": conditions_rows_layout,
+            "conditions": [],
+            "action_sku": action_sku_edit,
+            "action_qty": action_qty_edit,
+        }
+        self.packaging_rule_widgets.append(widget_refs)
+
+        # This is simplified. For now, we only allow filtering on Order_Type
+        def add_condition_row(cond_config=None):
+            if not isinstance(cond_config, dict):
+                cond_config = {}
+
+            row_layout = QHBoxLayout()
+            # Hardcoded for Order_Type for simplicity as per plan
+            field_label = QLabel("Order_Type")
+            op_combo = QComboBox()
+            op_combo.addItems(["=="])
+            value_combo = QComboBox()
+            value_combo.addItems(["Single", "Multi"])
+            if cond_config.get("value") in ["Single", "Multi"]:
+                value_combo.setCurrentText(cond_config["value"])
+
+            delete_btn = QPushButton("X")
+            row_layout.addWidget(field_label)
+            row_layout.addWidget(op_combo)
+            row_layout.addWidget(value_combo)
+            row_layout.addWidget(delete_btn)
+
+            row_widget = QWidget()
+            row_widget.setLayout(row_layout)
+
+            cond_refs = {"widget": row_widget, "field": "Order_Type", "op": op_combo, "value": value_combo}
+            widget_refs["conditions"].append(cond_refs)
+            conditions_rows_layout.addWidget(row_widget)
+            delete_btn.clicked.connect(lambda: self._delete_row_from_list(row_widget, widget_refs["conditions"], cond_refs))
+
+        add_condition_btn.clicked.connect(lambda: add_condition_row())
+        delete_rule_btn.clicked.connect(lambda: self._delete_widget_from_list(widget_refs, self.packaging_rule_widgets))
+
+        for cond in config.get("conditions", []):
+            add_condition_row(cond)
+
+
     def create_mappings_tab(self):
         """Creates the 'Mappings' tab for column and courier name mappings."""
         tab = QWidget()
@@ -782,6 +967,60 @@ class SettingsWindow(QDialog):
                         item_data["template"] = item_w["template"].text()
                     new_items.append(item_data)
                 self.config_data[key] = new_items
+
+            # Decoding Rules Tab
+            new_decoding_rules = []
+            for rule_w in self.decoding_rule_widgets:
+                set_sku = rule_w["set_sku"].text().strip()
+                if not set_sku:
+                    continue
+                components = {}
+                for comp_w in rule_w["components"]:
+                    comp_sku = comp_w["sku"].text().strip()
+                    try:
+                        comp_qty = int(comp_w["qty"].text().strip())
+                        if comp_sku and comp_qty > 0:
+                            components[comp_sku] = comp_qty
+                    except ValueError:
+                        # Ignore components with invalid quantity
+                        pass
+                if components:
+                    new_decoding_rules.append({"set_sku": set_sku, "components": components})
+            self.config_data["decoding_rules"] = new_decoding_rules
+
+            # Packaging Rules Tab
+            new_packaging_rules = []
+            for rule_w in self.packaging_rule_widgets:
+                name = rule_w["name"].text().strip()
+                if not name:
+                    continue
+
+                conditions = []
+                for cond_w in rule_w["conditions"]:
+                    conditions.append({
+                        "field": cond_w["field"],
+                        "operator": cond_w["op"].currentText(),
+                        "value": cond_w["value"].currentText(),
+                    })
+
+                action_sku = rule_w["action_sku"].text().strip()
+                try:
+                    action_qty = int(rule_w["action_qty"].text().strip())
+                    if not action_sku or action_qty <= 0:
+                        continue
+                except ValueError:
+                    continue
+
+                new_packaging_rules.append({
+                    "name": name,
+                    "conditions": conditions,
+                    "action": {
+                        "type": "ADD_PACKAGING_ITEM",
+                        "sku": action_sku,
+                        "quantity": action_qty
+                    }
+                })
+            self.config_data["packaging_rules"] = new_packaging_rules
 
             # Mappings Tab
             for key, widget in self.column_mapping_widgets["orders"].items():

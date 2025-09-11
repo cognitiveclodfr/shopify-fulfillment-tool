@@ -38,7 +38,7 @@ def test_run_full_analysis_basic():
     config["test_orders_df"] = orders_df
     config["test_history_df"] = pd.DataFrame({"Order_Number": []})
 
-    success, output_path, final_df, stats = core.run_full_analysis(None, None, None, ";", config)
+    success, output_path, final_df, _, stats = core.run_full_analysis(None, None, None, ";", config)
     assert success
     assert output_path is None
     assert "Final_Stock" in final_df.columns
@@ -76,7 +76,7 @@ def test_full_run_with_file_io(tmp_path):
     }
 
     # 4. Run the main analysis function
-    success, analysis_path, final_df, stats = core.run_full_analysis(
+    success, analysis_path, final_df, _, stats = core.run_full_analysis(
         str(stock_file), str(orders_file), str(output_dir), ";", config
     )
 
@@ -148,7 +148,7 @@ def test_validate_csv_headers_generic_exception(mocker):
 def test_run_full_analysis_file_not_found(mocker):
     """Tests run_full_analysis behavior when input files do not exist."""
     mocker.patch("os.path.exists", return_value=False)
-    success, msg, _, _ = core.run_full_analysis("fake", "fake", "fake", ";", {})
+    success, msg, _, _, _ = core.run_full_analysis("fake", "fake", "fake", ";", {})
     assert not success
     assert "input files were not found" in msg
 
@@ -157,7 +157,7 @@ def test_run_full_analysis_validation_fails(mocker):
     """Tests run_full_analysis behavior when DataFrame validation fails."""
     # This mocks the internal _validate_dataframes function to return errors
     mocker.patch("shopify_tool.core._validate_dataframes", return_value=["Missing column 'X'"])
-    success, msg, _, _ = core.run_full_analysis(
+    success, msg, _, _, _ = core.run_full_analysis(
         None, None, None, ";", {"test_stock_df": pd.DataFrame(), "test_orders_df": pd.DataFrame()}
     )
     assert not success
