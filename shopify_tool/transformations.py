@@ -26,7 +26,10 @@ def apply_set_decoding(orders_df, decoding_rules):
         return orders_df
 
     # Create a lookup dictionary for faster access
-    rules_lookup = {rule['set_sku']: rule['components'] for rule in decoding_rules if 'set_sku' in rule and 'components' in rule}
+    rules_lookup = {}
+    for rule in decoding_rules:
+        if 'set_sku' in rule and 'components' in rule:
+            rules_lookup[rule['set_sku']] = rule['components']
 
     if not rules_lookup:
         return orders_df
@@ -68,7 +71,10 @@ def apply_set_decoding(orders_df, decoding_rules):
 
     result_df = pd.concat([transformed_df, new_rows_df], ignore_index=True)
 
-    logger.info(f"Set decoding complete. Dropped {len(rows_to_drop)} set rows and added {len(new_rows)} component rows.")
+    logger.info(
+        f"Set decoding complete. Dropped {len(rows_to_drop)} set rows and "
+        f"added {len(new_rows)} component rows."
+    )
 
     return result_df
 

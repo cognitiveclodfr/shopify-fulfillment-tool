@@ -698,7 +698,10 @@ class SettingsWindow(QDialog):
             comp_refs = {"widget": row_widget, "sku": sku_edit, "qty": qty_edit}
             widget_refs["components"].append(comp_refs)
             components_rows_layout.addWidget(row_widget)
-            delete_btn.clicked.connect(lambda: self._delete_row_from_list(row_widget, widget_refs["components"], comp_refs))
+
+            def on_delete():
+                self._delete_row_from_list(row_widget, widget_refs["components"], comp_refs)
+            delete_btn.clicked.connect(on_delete)
 
         add_component_btn.clicked.connect(lambda: add_component_row())
         delete_rule_btn.clicked.connect(lambda: self._delete_widget_from_list(widget_refs, self.decoding_rule_widgets))
@@ -798,7 +801,10 @@ class SettingsWindow(QDialog):
             cond_refs = {"widget": row_widget, "field": "Order_Type", "op": op_combo, "value": value_combo}
             widget_refs["conditions"].append(cond_refs)
             conditions_rows_layout.addWidget(row_widget)
-            delete_btn.clicked.connect(lambda: self._delete_row_from_list(row_widget, widget_refs["conditions"], cond_refs))
+
+            def on_delete():
+                self._delete_row_from_list(row_widget, widget_refs["conditions"], cond_refs)
+            delete_btn.clicked.connect(on_delete)
 
         add_condition_btn.clicked.connect(lambda: add_condition_row())
         delete_rule_btn.clicked.connect(lambda: self._delete_widget_from_list(widget_refs, self.packaging_rule_widgets))
