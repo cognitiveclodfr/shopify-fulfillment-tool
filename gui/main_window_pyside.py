@@ -75,6 +75,7 @@ class MainWindow(QMainWindow):
 
         # Models
         self.proxy_model = QSortFilterProxyModel()
+        self.sku_summary_model = None
         self.proxy_model.setFilterCaseSensitivity(Qt.CaseInsensitive)
         self.proxy_model.setFilterKeyColumn(-1)  # Search across all columns
 
@@ -433,8 +434,8 @@ class MainWindow(QMainWindow):
             # Sort by the total quantity in descending order
             sku_summary_df = sku_summary_df.sort_values(by="Total Quantity", ascending=False)
 
-            model = PandasModel(sku_summary_df)
-            self.sku_summary_table_view.setModel(model)
+            self.sku_summary_model = PandasModel(sku_summary_df)
+            self.sku_summary_table_view.setModel(self.sku_summary_model)
             self.sku_summary_table_view.resizeColumnsToContents()
 
         except Exception as e:

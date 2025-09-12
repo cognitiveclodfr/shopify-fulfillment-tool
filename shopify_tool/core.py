@@ -31,8 +31,8 @@ def _expand_sets(orders_df, set_mappings):
     if not set_mappings:
         return orders_df
 
-    sku_col = "Lineitem sku"
-    qty_col = "Lineitem quantity"
+    sku_col = "SKU"
+    qty_col = "Quantity"
 
     if sku_col not in orders_df.columns or qty_col not in orders_df.columns:
         logger.warning(f"Skipping set expansion: Missing required columns '{sku_col}' or '{qty_col}'.")
@@ -140,8 +140,17 @@ def _validate_dataframes(orders_df, stock_df, config):
     """
     errors = []
     column_mappings = config.get("column_mappings", {})
-    required_orders_cols = column_mappings.get("orders_required", [])
-    required_stock_cols = column_mappings.get("stock_required", [])
+
+    # Support both new dict-based mapping and old list-based 'required' format
+    if "orders" in column_mappings and isinstance(column_mappings.get("orders"), dict):
+        required_orders_cols = list(column_mappings["orders"].values())
+    else:
+        required_orders_cols = column_mappings.get("orders_required", [])
+
+    if "stock" in column_mappings and isinstance(column_mappings.get("stock"), dict):
+        required_stock_cols = list(column_mappings["stock"].values())
+    else:
+        required_stock_cols = column_mappings.get("stock_required", [])
 
     for col in required_orders_cols:
         if col not in orders_df.columns:
@@ -254,6 +263,41 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
         history_df = config.get("test_history_df", pd.DataFrame({"Order_Number": []}))
     logger.info("Data loaded successfully.")
 
+    # Validate dataframes before renaming
+    validation_errors = _validate_dataframes(orders_df, stock_df, config)
+    if validation_errors:
+        error_message = "\n".join(validation_errors)
+        logger.error(f"Validation Error: {error_message}")
+        return False, error_message, None, None
+
+    # --- Data Cleaning and Standardization ---
+    logger.info("Renaming columns to internal standard names...")
+    column_mappings = config.get("column_mappings", {})
+    orders_map = column_mappings.get("orders", {})
+    stock_map = column_mappings.get("stock", {})
+
+    # Define rename maps, using config values with sensible defaults.
+    # This ensures that even if mappings are not in config (e.g. in tests),
+    # the default column names are used for renaming.
+    orders_rename_map = {
+        orders_map.get("name", "Name"): "Order_Number",
+        orders_map.get("sku", "Lineitem sku"): "SKU",
+        orders_map.get("quantity", "Lineitem quantity"): "Quantity",
+        orders_map.get("shipping_method", "Shipping Method"): "Shipping Method",
+        orders_map.get("shipping_country", "Shipping Country"): "Shipping Country",
+        orders_map.get("tags", "Tags"): "Tags",
+        orders_map.get("notes", "Notes"): "Notes",
+        orders_map.get("total_price", "Total"): "Total Price",
+    }
+    orders_df = orders_df.rename(columns=orders_rename_map)
+
+    stock_rename_map = {
+        stock_map.get("sku", "Артикул"): "SKU",
+        stock_map.get("name", "Име"): "Product_Name",
+        stock_map.get("stock", "Наличност"): "Stock",
+    }
+    stock_df = stock_df.rename(columns=stock_rename_map)
+
     # --- Pre-analysis steps ---
     # 1. Expand sets/bundles
     set_mappings = config.get("set_mappings", {})
@@ -261,13 +305,6 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
         logger.info("Expanding sets/bundles based on config...")
         orders_df = _expand_sets(orders_df, set_mappings)
         logger.info(f"Set expansion complete. Order items count: {len(orders_df)}")
-
-    # 2. Validate dataframes
-    validation_errors = _validate_dataframes(orders_df, stock_df, config)
-    if validation_errors:
-        error_message = "\n".join(validation_errors)
-        logger.error(f"Validation Error: {error_message}")
-        return False, error_message, None, None
 
     # Use a persistent path for the history file to avoid permission errors on network drives
     history_path = get_persistent_data_path("fulfillment_history.csv")

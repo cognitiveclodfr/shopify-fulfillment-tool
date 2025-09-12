@@ -35,7 +35,8 @@ def run_analysis(stock_df, orders_df, history_df):
     """Performs the core fulfillment analysis and simulation.
 
     This function is the heart of the fulfillment logic. It takes raw data,
-    cleans it, and simulates the stock allocation process.
+    cleans it, and simulates the stock allocation process. It expects input
+    DataFrames to have standardized column names (e.g., 'Order_Number', 'SKU').
 
     The process includes:
     1.  Cleaning and standardizing columns in orders and stock DataFrames.
@@ -54,10 +55,9 @@ def run_analysis(stock_df, orders_df, history_df):
 
     Args:
         stock_df (pd.DataFrame): DataFrame with stock levels for each SKU.
-            Requires columns 'Артикул' (SKU) and 'Наличност' (Stock).
-        orders_df (pd.DataFrame): DataFrame with all order line items from
-            Shopify. Requires 'Name' (Order Number), 'Lineitem sku', and
-            'Lineitem quantity'.
+            Requires 'SKU' and 'Stock' columns.
+        orders_df (pd.DataFrame): DataFrame with all order line items.
+            Requires 'Order_Number', 'SKU', and 'Quantity' columns.
         history_df (pd.DataFrame): DataFrame with previously fulfilled order
             numbers. Requires an 'Order_Number' column.
 
@@ -75,34 +75,35 @@ def run_analysis(stock_df, orders_df, history_df):
               fulfillment analysis (e.g., total orders completed).
     """
     # --- Data Cleaning ---
-    orders_df["Name"] = orders_df["Name"].ffill()
-    orders_df["Shipping Method"] = orders_df["Shipping Method"].ffill()
-    orders_df["Shipping Country"] = orders_df["Shipping Country"].ffill()
-    if "Total" in orders_df.columns:
-        orders_df["Total"] = orders_df["Total"].ffill()
+    # Ensure key columns are forward-filled for rows that are part of the same order
+    if "Order_Number" in orders_df.columns:
+        orders_df["Order_Number"] = orders_df["Order_Number"].ffill()
+    if "Shipping Method" in orders_df.columns:
+        orders_df["Shipping Method"] = orders_df["Shipping Method"].ffill()
+    if "Shipping Country" in orders_df.columns:
+        orders_df["Shipping Country"] = orders_df["Shipping Country"].ffill()
+    if "Total Price" in orders_df.columns:
+        orders_df["Total Price"] = orders_df["Total Price"].ffill()
 
+    # Define the standard columns we expect to work with
     columns_to_keep = [
-        "Name",
-        "Lineitem sku",
-        "Lineitem quantity",
+        "Order_Number",
+        "SKU",
+        "Quantity",
         "Shipping Method",
         "Shipping Country",
         "Tags",
         "Notes",
-        "Total",
+        "Total Price",
     ]
-    # Filter for existing columns only to avoid errors if 'Total' is missing
+    # Filter for existing columns only to avoid errors if some are missing
     columns_to_keep_existing = [col for col in columns_to_keep if col in orders_df.columns]
     orders_clean_df = orders_df[columns_to_keep_existing].copy()
 
-    rename_map = {"Name": "Order_Number", "Lineitem sku": "SKU", "Lineitem quantity": "Quantity"}
-    if "Total" in orders_clean_df.columns:
-        rename_map["Total"] = "Total Price"
-    orders_clean_df = orders_clean_df.rename(columns=rename_map)
+    # Now that we have the standardized 'SKU' column, drop rows where it's missing
     orders_clean_df = orders_clean_df.dropna(subset=["SKU"])
 
-    stock_clean_df = stock_df[["Артикул", "Име", "Наличност"]].copy()
-    stock_clean_df = stock_clean_df.rename(columns={"Артикул": "SKU", "Име": "Product_Name", "Наличност": "Stock"})
+    stock_clean_df = stock_df.copy()
     stock_clean_df = stock_clean_df.dropna(subset=["SKU"])
     stock_clean_df = stock_clean_df.drop_duplicates(subset=["SKU"], keep="first")
 

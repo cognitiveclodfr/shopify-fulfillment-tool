@@ -68,6 +68,10 @@ def test_fulfillment_prioritization_logic():
 
     # With stock of 5, only the two multi-item orders should be fulfilled (2+2=4 items)
     # The single-item orders should not be fulfilled.
+    orders_df = orders_df.rename(
+        columns={"Name": "Order_Number", "Lineitem sku": "SKU", "Lineitem quantity": "Quantity"}
+    )
+    stock_df = stock_df.rename(columns={"Артикул": "SKU", "Име": "Product_Name", "Наличност": "Stock"})
     final_df, _, _, _ = run_analysis(stock_df, orders_df, history_df)
 
     # Check status of each order
@@ -95,6 +99,10 @@ def test_summary_missing_report():
     )
     history_df = pd.DataFrame(columns=["Order_Number", "Execution_Date"])
 
+    orders_df = orders_df.rename(
+        columns={"Name": "Order_Number", "Lineitem sku": "SKU", "Lineitem quantity": "Quantity"}
+    )
+    stock_df = stock_df.rename(columns={"Артикул": "SKU", "Име": "Product_Name", "Наличност": "Stock"})
     _, _, summary_missing_df, _ = run_analysis(stock_df, orders_df, history_df)
 
     assert not summary_missing_df.empty

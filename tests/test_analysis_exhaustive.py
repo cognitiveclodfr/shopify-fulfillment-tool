@@ -32,6 +32,10 @@ def test_summary_missing_and_stats():
     orders_df = make_orders_df()
     history_df = pd.DataFrame({"Order_Number": []})
 
+    orders_df = orders_df.rename(
+        columns={"Name": "Order_Number", "Lineitem sku": "SKU", "Lineitem quantity": "Quantity"}
+    )
+    stock_df = stock_df.rename(columns={"Артикул": "SKU", "Име": "Product_Name", "Наличност": "Stock"})
     final_df, summary_present_df, summary_missing_df, stats = run_analysis(stock_df, orders_df, history_df)
 
     # Both order O1 (A qty 3) and O2 (B qty 1, missing from stock) should be in missing summary
@@ -52,6 +56,10 @@ def test_repeat_system_note():
     orders_df = make_orders_df()
     history_df = pd.DataFrame({"Order_Number": ["O3"]})
 
+    orders_df = orders_df.rename(
+        columns={"Name": "Order_Number", "Lineitem sku": "SKU", "Lineitem quantity": "Quantity"}
+    )
+    stock_df = stock_df.rename(columns={"Артикул": "SKU", "Име": "Product_Name", "Наличност": "Stock"})
     final_df, _, _, _ = run_analysis(stock_df, orders_df, history_df)
     # Rows from order O3 should have System_note == 'Repeat'
     notes = final_df[final_df["Order_Number"] == "O3"]["System_note"].unique()
