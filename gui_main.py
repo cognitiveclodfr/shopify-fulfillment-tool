@@ -4,6 +4,7 @@ This script initializes the QApplication, creates the main window, and
 starts the application's event loop. It also handles setting the platform
 to 'offscreen' for testing or continuous integration (CI) environments.
 """
+
 import sys
 import os
 from PySide6.QtWidgets import QApplication

@@ -102,4 +102,4 @@ def test_create_stock_export_skips_invalid_filter(tmp_path, sample_analysis_df, 
     # The report should be created as if there were no filters
     assert os.path.exists(output_path)
     result_df = pd.read_excel(output_path)
-    assert len(result_df) == 2 # SKU-A and SKU-B
+    assert len(result_df) == 2  # SKU-A and SKU-B

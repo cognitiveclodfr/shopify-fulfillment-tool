@@ -23,6 +23,7 @@ class ProfileManagerDialog(QDialog):
         list_widget (QListWidget): The widget that displays the list of
             available profiles.
     """
+
     def __init__(self, parent):
         """Initializes the ProfileManagerDialog.
 
@@ -113,7 +114,7 @@ class ProfileManagerDialog(QDialog):
             "Confirm Delete",
             f"Are you sure you want to permanently delete the profile '{name_to_delete}'?",
             QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
+            QMessageBox.No,
         )
 
         if reply == QMessageBox.Yes:

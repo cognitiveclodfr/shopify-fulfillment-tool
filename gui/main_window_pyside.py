@@ -109,10 +109,7 @@ class MainWindow(QMainWindow):
                 with open(default_config_path, "r", encoding="utf-8") as f:
                     default_config = json.load(f)
 
-                self.config = {
-                    "profiles": {"Default": default_config},
-                    "active_profile": "Default"
-                }
+                self.config = {"profiles": {"Default": default_config}, "active_profile": "Default"}
                 self._save_config()
             except Exception as e:
                 QMessageBox.critical(self, "Fatal Error", f"Could not create user configuration file: {e}")
@@ -135,7 +132,7 @@ class MainWindow(QMainWindow):
                 "Migrate Configuration",
                 "Your configuration file is outdated. To support settings profiles, it needs to be updated. "
                 "A backup of your current config will be created.\n\nDo you want to proceed?",
-                QMessageBox.Yes | QMessageBox.No
+                QMessageBox.Yes | QMessageBox.No,
             )
             if reply == QMessageBox.Yes:
                 try:
@@ -143,15 +140,12 @@ class MainWindow(QMainWindow):
                     shutil.copy(self.config_path, backup_path)
 
                     old_config = self.config.copy()
-                    self.config = {
-                        "profiles": {"Default": old_config},
-                        "active_profile": "Default"
-                    }
+                    self.config = {"profiles": {"Default": old_config}, "active_profile": "Default"}
                     self._save_config()
                     QMessageBox.information(
                         self,
                         "Migration Complete",
-                        f"Your configuration was migrated. A backup is available at:\n{backup_path}"
+                        f"Your configuration was migrated. A backup is available at:\n{backup_path}",
                     )
                 except Exception as e:
                     QMessageBox.critical(self, "Migration Error", f"Could not migrate config.json: {e}")
@@ -170,9 +164,9 @@ class MainWindow(QMainWindow):
             # Fallback to the first available profile if active one is invalid
             available_profiles = list(self.config.get("profiles", {}).keys())
             if not available_profiles:
-                 QMessageBox.critical(self, "Configuration Error", "No profiles found in config.json.")
-                 QApplication.quit()
-                 return
+                QMessageBox.critical(self, "Configuration Error", "No profiles found in config.json.")
+                QApplication.quit()
+                return
             self.active_profile_name = available_profiles[0]
             self.config["active_profile"] = self.active_profile_name
 
@@ -286,7 +280,7 @@ class MainWindow(QMainWindow):
         """Opens the profile management dialog."""
         dialog = ProfileManagerDialog(self)
         dialog.exec()
-        self.update_profile_combo() # Refresh combo box in case of changes
+        self.update_profile_combo()  # Refresh combo box in case of changes
 
     def create_profile(self, name, base_profile_name="Default"):
         """Creates a new profile by copying an existing one."""
@@ -297,7 +291,7 @@ class MainWindow(QMainWindow):
         # Use the base profile's settings, or default to an empty config
         default_profile_structure = {"rules": [], "packing_lists": [], "stock_exports": []}
         base_config = self.config["profiles"].get(base_profile_name, default_profile_structure)
-        self.config["profiles"][name] = json.loads(json.dumps(base_config)) # Deep copy
+        self.config["profiles"][name] = json.loads(json.dumps(base_config))  # Deep copy
         self._save_config()
         self.log_activity("Profiles", f"Created new profile: {name}")
         return True
@@ -326,7 +320,7 @@ class MainWindow(QMainWindow):
             return False
 
         if name not in self.config["profiles"]:
-            return False # Should not happen
+            return False  # Should not happen
 
         del self.config["profiles"][name]
 

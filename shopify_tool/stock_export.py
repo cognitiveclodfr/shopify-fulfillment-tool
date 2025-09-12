@@ -88,8 +88,9 @@ def create_stock_export(analysis_df, output_file, report_name="Stock Export", fi
             if "No Excel writer 'xlwt'" in str(e):
                 logger.warning("Pandas failed to find 'xlwt' engine. Trying direct save with xlwt.")
                 import xlwt
+
                 workbook = xlwt.Workbook()
-                sheet = workbook.add_sheet('Sheet1')
+                sheet = workbook.add_sheet("Sheet1")
 
                 # Write header
                 for col_num, value in enumerate(export_df.columns):

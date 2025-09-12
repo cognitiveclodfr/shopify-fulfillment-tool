@@ -78,9 +78,7 @@ def _adjust_stock_for_packaging(df):
         pd.DataFrame: The DataFrame with adjusted 'Final_Stock' values.
     """
     # Filter for rows that need packaging adjustment
-    packaging_jobs = df[
-        (df["Order_Fulfillment_Status"] == "Fulfillable") & (df["_packaging_materials"].notna())
-    ].copy()
+    packaging_jobs = df[(df["Order_Fulfillment_Status"] == "Fulfillable") & (df["_packaging_materials"].notna())].copy()
 
     if packaging_jobs.empty:
         return df
@@ -392,11 +390,9 @@ def create_packing_list_report(analysis_df, report_config):
         logger.error(f"Config error for packing list '{report_name}': {e}", exc_info=True)
         return False, error_message
     except PermissionError:
-        output_filename = report_config.get('output_filename', 'N/A')
+        output_filename = report_config.get("output_filename", "N/A")
         error_message = f"Permission denied. Could not write report to '{output_filename}'."
-        logger.error(
-            f"Permission error creating packing list '{report_name}' at '{output_filename}'", exc_info=True
-        )
+        logger.error(f"Permission error creating packing list '{report_name}' at '{output_filename}'", exc_info=True)
         return False, error_message
     except Exception as e:
         error_message = f"Failed to create report '{report_name}'. See logs/app_errors.log for details."

@@ -1,8 +1,19 @@
 import logging
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, QLabel,
-    QTabWidget, QGroupBox, QTableView, QPlainTextEdit, QTableWidget, QLineEdit,
-    QComboBox, QCheckBox
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QGridLayout,
+    QPushButton,
+    QLabel,
+    QTabWidget,
+    QGroupBox,
+    QTableView,
+    QPlainTextEdit,
+    QTableWidget,
+    QLineEdit,
+    QComboBox,
+    QCheckBox,
 )
 from PySide6.QtCore import Qt
 from .pandas_model import PandasModel
@@ -215,11 +226,10 @@ class UIManager:
 
         filter_layout.addWidget(QLabel("Filter by:"))
         filter_layout.addWidget(self.mw.filter_column_selector)
-        filter_layout.addWidget(self.mw.filter_input, 1) # Allow stretching
+        filter_layout.addWidget(self.mw.filter_input, 1)  # Allow stretching
         filter_layout.addWidget(self.mw.case_sensitive_checkbox)
         filter_layout.addWidget(self.mw.clear_filter_button)
         layout.addLayout(filter_layout)
-
 
         # --- Table View ---
         self.mw.tableView = QTableView()

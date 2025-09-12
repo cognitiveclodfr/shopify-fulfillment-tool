@@ -163,8 +163,10 @@ class ActionsHandler(QObject):
         """
         reports_config = self.mw.active_profile_config.get(report_type, [])
         if not reports_config:
-            msg = (f"No {report_type.replace('_', ' ')} configured in the active "
-                   f"profile ('{self.mw.active_profile_name}').")
+            msg = (
+                f"No {report_type.replace('_', ' ')} configured in the active "
+                f"profile ('{self.mw.active_profile_name}')."
+            )
             QMessageBox.information(self.mw, "No Reports", msg)
             return
         dialog = ReportSelectionDialog(report_type, reports_config, self.mw)

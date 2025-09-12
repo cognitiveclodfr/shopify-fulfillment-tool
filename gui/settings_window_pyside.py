@@ -61,15 +61,23 @@ class SettingsWindow(QDialog):
     # Operators grouped by the data type they apply to
     OPERATORS_BY_TYPE = {
         "text": [
-            "equals", "does not equal", "contains", "does not contain",
-            "starts with", "ends with",
+            "equals",
+            "does not equal",
+            "contains",
+            "does not contain",
+            "starts with",
+            "ends with",
         ],
         "numeric": [
-            "equals", "does not equal", "is greater than", "is less than",
+            "equals",
+            "does not equal",
+            "is greater than",
+            "is less than",
         ],
-        "general": [ # Apply to all types
-            "is empty", "is not empty"
-        ]
+        "general": [  # Apply to all types
+            "is empty",
+            "is not empty",
+        ],
     }
 
     def __init__(self, parent, config, analysis_df=None):
@@ -115,7 +123,7 @@ class SettingsWindow(QDialog):
         self.numeric_columns = []
         if not self.analysis_df.empty:
             self.filterable_columns = sorted(self.analysis_df.columns.tolist())
-            self.numeric_columns = self.analysis_df.select_dtypes(include='number').columns.tolist()
+            self.numeric_columns = self.analysis_df.select_dtypes(include="number").columns.tolist()
 
         self.setWindowTitle("Application Settings")
         self.setMinimumSize(800, 700)
@@ -293,12 +301,8 @@ class SettingsWindow(QDialog):
             field_combo.setCurrentText(config.get("field"))
 
         # Connect signals to the new handler
-        field_combo.currentTextChanged.connect(
-            lambda text: self._on_rule_field_changed(text, condition_refs, config)
-        )
-        op_combo.currentTextChanged.connect(
-            lambda: self._on_rule_op_changed(condition_refs, initial_value)
-        )
+        field_combo.currentTextChanged.connect(lambda text: self._on_rule_field_changed(text, condition_refs, config))
+        op_combo.currentTextChanged.connect(lambda: self._on_rule_op_changed(condition_refs, initial_value))
 
         # Trigger the first update to populate operators and value widget
         self._on_rule_field_changed(field_combo.currentText(), condition_refs, config)
@@ -338,7 +342,6 @@ class SettingsWindow(QDialog):
         # Manually trigger the operator-changed handler to update the value widget
         self._on_rule_op_changed(condition_refs, config.get("value", ""))
 
-
     def _on_rule_op_changed(self, condition_refs, initial_value=None):
         """Dynamically changes the rule's value widget based on the selected operator."""
         field = condition_refs["field"].currentText()
@@ -355,9 +358,7 @@ class SettingsWindow(QDialog):
 
         # Determine if a ComboBox should be used for the value
         use_combobox = (
-            op in ["equals", "does not equal"]
-            and not self.analysis_df.empty
-            and field in self.analysis_df.columns
+            op in ["equals", "does not equal"] and not self.analysis_df.empty and field in self.analysis_df.columns
         )
 
         if use_combobox:
@@ -376,7 +377,6 @@ class SettingsWindow(QDialog):
         # Insert the new widget into the layout at the correct position
         condition_refs["value_layout"].insertWidget(2, new_widget, 1)
         condition_refs["value_widget"] = new_widget
-
 
     def add_action_row(self, rule_widget_refs, config=None):
         """Adds a new row of widgets for a single action within a rule."""
@@ -398,17 +398,15 @@ class SettingsWindow(QDialog):
         action_refs = {
             "widget": row_widget,
             "type": type_combo,
-            "value_widget": None, # Placeholder for the dynamic widget (QLineEdit or QTableWidget)
-            "value_layout": row_layout
+            "value_widget": None,  # Placeholder for the dynamic widget (QLineEdit or QTableWidget)
+            "value_layout": row_layout,
         }
 
         # Set type *before* connecting signals to ensure correct initial widget
         type_combo.setCurrentText(config.get("type", self.ACTION_TYPES[0]))
 
         # Connect signal to handler
-        type_combo.currentTextChanged.connect(
-            lambda: self._on_action_type_changed(action_refs, config)
-        )
+        type_combo.currentTextChanged.connect(lambda: self._on_action_type_changed(action_refs, config))
 
         # Trigger the handler to create the initial value widget
         self._on_action_type_changed(action_refs, config, is_initial_setup=True)
@@ -458,7 +456,7 @@ class SettingsWindow(QDialog):
                     table.setItem(row_pos, 0, QTableWidgetItem(str(item.get("sku", ""))))
                     table.setItem(row_pos, 1, QTableWidgetItem(str(item.get("quantity", ""))))
 
-            action_refs["value_widget"] = table # Store reference to the table itself
+            action_refs["value_widget"] = table  # Store reference to the table itself
 
         else:
             # Default to a simple QLineEdit for all other action types
@@ -469,7 +467,6 @@ class SettingsWindow(QDialog):
 
         # Insert the new widget into the layout
         action_refs["value_layout"].insertWidget(1, value_widget, 1)
-
 
     def create_packing_lists_tab(self):
         """Creates the 'Packing Lists' tab for managing report configurations."""
@@ -527,9 +524,7 @@ class SettingsWindow(QDialog):
             "filters": [],
         }
         self.packing_list_widgets.append(widget_refs)
-        add_filter_btn.clicked.connect(
-            lambda: self.add_filter_row(widget_refs)
-        )
+        add_filter_btn.clicked.connect(lambda: self.add_filter_row(widget_refs))
         delete_btn.clicked.connect(lambda: self._delete_widget_from_list(widget_refs, self.packing_list_widgets))
         for f_config in config.get("filters", []):
             self.add_filter_row(widget_refs, f_config)
@@ -552,7 +547,7 @@ class SettingsWindow(QDialog):
             field_combo.addItems(self.filterable_columns)
 
         op_combo = QComboBox()
-        op_combo.addItems(self.FILTER_OPERATORS) # Filters use a simpler, static list of operators
+        op_combo.addItems(self.FILTER_OPERATORS)  # Filters use a simpler, static list of operators
         delete_btn = QPushButton("X")
 
         row_layout.addWidget(field_combo)
@@ -686,9 +681,7 @@ class SettingsWindow(QDialog):
             "filters": [],
         }
         self.stock_export_widgets.append(widget_refs)
-        add_filter_btn.clicked.connect(
-            lambda: self.add_filter_row(widget_refs)
-        )
+        add_filter_btn.clicked.connect(lambda: self.add_filter_row(widget_refs))
         delete_btn.clicked.connect(lambda: self._delete_widget_from_list(widget_refs, self.stock_export_widgets))
         for f_config in config.get("filters", []):
             self.add_filter_row(widget_refs, f_config)
@@ -808,8 +801,8 @@ class SettingsWindow(QDialog):
         add_set_btn.clicked.connect(self._add_set)
         remove_set_btn.clicked.connect(self._remove_set)
         rename_set_btn.clicked.connect(self._rename_set)
-        add_comp_btn.clicked.connect(lambda: self.set_components_table.insertRow(self.set_components_table.rowCount()))
-        remove_comp_btn.clicked.connect(lambda: self.set_components_table.removeRow(self.set_components_table.currentRow()))
+        add_comp_btn.clicked.connect(self._add_component_row)
+        remove_comp_btn.clicked.connect(self._remove_selected_component_row)
 
     def _add_set(self):
         set_name, ok = QInputDialog.getText(self, "Add New Set", "Enter name for the new set:")
@@ -848,6 +841,14 @@ class SettingsWindow(QDialog):
             self.set_mappings_data[new_name] = self.set_mappings_data.pop(old_name)
             current_item.setText(new_name)
 
+    def _add_component_row(self):
+        """Adds a new empty row to the component table."""
+        self.set_components_table.insertRow(self.set_components_table.rowCount())
+
+    def _remove_selected_component_row(self):
+        """Removes the currently selected row from the component table."""
+        self.set_components_table.removeRow(self.set_components_table.currentRow())
+
     def _on_set_selected(self, current_item, previous_item):
         """When a set is selected, update the components table."""
         # Save changes from the previously selected set before switching
@@ -861,7 +862,7 @@ class SettingsWindow(QDialog):
 
         set_name = current_item.text()
         self.components_box.setTitle(f"Components for Set: {set_name}")
-        self.set_components_table.setRowCount(0) # Clear table
+        self.set_components_table.setRowCount(0)  # Clear table
 
         components = self.set_mappings_data.get(set_name, [])
         for comp in components:
@@ -884,11 +885,10 @@ class SettingsWindow(QDialog):
                     components.append({"sku": sku_item.text(), "quantity": int(qty_item.text())})
                 except ValueError:
                     # Handle case where quantity is not a valid integer
-                    pass # Or show a warning
+                    pass  # Or show a warning
 
         if set_name in self.set_mappings_data:
             self.set_mappings_data[set_name] = components
-
 
     def add_courier_mapping_row(self, original_name="", standardized_name=""):
         """Adds a new row for a single courier mapping."""

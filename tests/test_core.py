@@ -96,9 +96,7 @@ def test_full_run_with_file_io(tmp_path):
     # Stock Export
     export_report_config = config["stock_exports"][0]
     export_report_config["output_filename"] = str(output_dir / export_report_config["output_filename"])
-    export_success, export_msg = core.create_stock_export_report(
-        final_df, export_report_config
-    )
+    export_success, export_msg = core.create_stock_export_report(final_df, export_report_config)
     assert export_success
     assert os.path.exists(export_report_config["output_filename"])
 
