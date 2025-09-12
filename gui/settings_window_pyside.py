@@ -17,6 +17,13 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QPushButton,
     QComboBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QHeaderView,
+    QListWidget,
+    QListWidgetItem,
+    QSplitter,
+    QInputDialog,
 )
 from PySide6.QtCore import Qt
 
@@ -49,7 +56,7 @@ class SettingsWindow(QDialog):
 
     # Constants for builders
     FILTER_OPERATORS = ["==", "!=", "in", "not in", "contains"]
-    ACTION_TYPES = ["ADD_TAG", "SET_STATUS", "SET_PRIORITY", "EXCLUDE_FROM_REPORT", "EXCLUDE_SKU"]
+    ACTION_TYPES = ["ADD_TAG", "SET_STATUS", "SET_PRIORITY", "EXCLUDE_FROM_REPORT", "EXCLUDE_SKU", "ADD_PACKAGING"]
 
     # Operators grouped by the data type they apply to
     OPERATORS_BY_TYPE = {
@@ -123,6 +130,7 @@ class SettingsWindow(QDialog):
         self.create_packing_lists_tab()
         self.create_stock_exports_tab()
         self.create_mappings_tab()
+        self.create_set_mappings_tab()
 
         button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         button_box.accepted.connect(self.save_settings)
@@ -371,34 +379,97 @@ class SettingsWindow(QDialog):
 
 
     def add_action_row(self, rule_widget_refs, config=None):
-        """Adds a new row of widgets for a single action within a rule.
-
-        Args:
-            rule_widget_refs (dict): A dictionary of widget references for the
-                parent rule.
-            config (dict, optional): The configuration for a pre-existing
-                action. If None, creates a new, blank action.
-        """
+        """Adds a new row of widgets for a single action within a rule."""
         if not isinstance(config, dict):
             config = {}
-        row_layout = QHBoxLayout()
+
+        row_widget = QWidget()
+        row_layout = QHBoxLayout(row_widget)
+
         type_combo = QComboBox()
         type_combo.addItems(self.ACTION_TYPES)
-        value_edit = QLineEdit()
         delete_btn = QPushButton("X")
+
         row_layout.addWidget(type_combo)
-        row_layout.addWidget(value_edit, 1)
+        # The value widget will be added dynamically by the handler
+        row_layout.addStretch(1)
         row_layout.addWidget(delete_btn)
+
+        action_refs = {
+            "widget": row_widget,
+            "type": type_combo,
+            "value_widget": None, # Placeholder for the dynamic widget (QLineEdit or QTableWidget)
+            "value_layout": row_layout
+        }
+
+        # Set type *before* connecting signals to ensure correct initial widget
         type_combo.setCurrentText(config.get("type", self.ACTION_TYPES[0]))
-        value_edit.setText(config.get("value", ""))
-        row_widget = QWidget()
-        row_widget.setLayout(row_layout)
+
+        # Connect signal to handler
+        type_combo.currentTextChanged.connect(
+            lambda: self._on_action_type_changed(action_refs, config)
+        )
+
+        # Trigger the handler to create the initial value widget
+        self._on_action_type_changed(action_refs, config, is_initial_setup=True)
+
         rule_widget_refs["actions_layout"].addWidget(row_widget)
-        action_refs = {"widget": row_widget, "type": type_combo, "value": value_edit}
         rule_widget_refs["actions"].append(action_refs)
+
         delete_btn.clicked.connect(
             lambda: self._delete_row_from_list(row_widget, rule_widget_refs["actions"], action_refs)
         )
+
+    def _on_action_type_changed(self, action_refs, config=None, is_initial_setup=False):
+        """Dynamically creates the correct value widget for a selected action type."""
+        action_type = action_refs["type"].currentText()
+
+        # Clean up old widget
+        if action_refs.get("value_widget"):
+            action_refs["value_widget"].deleteLater()
+            action_refs["value_widget"] = None
+
+        if action_type == "ADD_PACKAGING":
+            # Create a table-based widget for SKU list
+            value_widget = QWidget()
+            layout = QVBoxLayout(value_widget)
+            layout.setContentsMargins(0, 0, 0, 0)
+            table = QTableWidget()
+            table.setColumnCount(2)
+            table.setHorizontalHeaderLabels(["SKU", "Quantity"])
+            table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+            layout.addWidget(table)
+
+            btn_layout = QHBoxLayout()
+            add_row_btn = QPushButton("Add Material")
+            remove_row_btn = QPushButton("Remove Selected")
+            btn_layout.addWidget(add_row_btn)
+            btn_layout.addWidget(remove_row_btn)
+            layout.addLayout(btn_layout)
+
+            add_row_btn.clicked.connect(lambda: table.insertRow(table.rowCount()))
+            remove_row_btn.clicked.connect(lambda: table.removeRow(table.currentRow()))
+
+            # If loading from config, populate the table
+            if is_initial_setup and config and isinstance(config.get("value"), list):
+                for item in config["value"]:
+                    row_pos = table.rowCount()
+                    table.insertRow(row_pos)
+                    table.setItem(row_pos, 0, QTableWidgetItem(str(item.get("sku", ""))))
+                    table.setItem(row_pos, 1, QTableWidgetItem(str(item.get("quantity", ""))))
+
+            action_refs["value_widget"] = table # Store reference to the table itself
+
+        else:
+            # Default to a simple QLineEdit for all other action types
+            value_widget = QLineEdit()
+            if is_initial_setup and config:
+                value_widget.setText(str(config.get("value", "")))
+            action_refs["value_widget"] = value_widget
+
+        # Insert the new widget into the layout
+        action_refs["value_layout"].insertWidget(1, value_widget, 1)
+
 
     def create_packing_lists_tab(self):
         """Creates the 'Packing Lists' tab for managing report configurations."""
@@ -676,6 +747,149 @@ class SettingsWindow(QDialog):
         for original, standardized in self.config_data.get("courier_mappings", {}).items():
             self.add_courier_mapping_row(original, standardized)
 
+    def create_set_mappings_tab(self):
+        """Creates the 'Set Mappings' tab for managing SKU bundles."""
+        self.set_mappings_data = json.loads(json.dumps(self.config_data.get("set_mappings", {})))
+
+        tab = QWidget()
+        main_layout = QHBoxLayout(tab)
+        splitter = QSplitter(Qt.Horizontal)
+
+        # Left side: List of sets
+        sets_widget = QWidget()
+        sets_layout = QVBoxLayout(sets_widget)
+        sets_box = QGroupBox("Defined Sets")
+        sets_box_layout = QVBoxLayout(sets_box)
+        self.set_mappings_list_widget = QListWidget()
+        self.set_mappings_list_widget.currentItemChanged.connect(self._on_set_selected)
+        sets_box_layout.addWidget(self.set_mappings_list_widget)
+
+        set_btn_layout = QHBoxLayout()
+        add_set_btn = QPushButton("Add")
+        remove_set_btn = QPushButton("Remove")
+        rename_set_btn = QPushButton("Rename")
+        set_btn_layout.addWidget(add_set_btn)
+        set_btn_layout.addWidget(remove_set_btn)
+        set_btn_layout.addWidget(rename_set_btn)
+        sets_box_layout.addLayout(set_btn_layout)
+        sets_layout.addWidget(sets_box)
+
+        # Right side: Components of the selected set
+        components_widget = QWidget()
+        components_layout = QVBoxLayout(components_widget)
+        self.components_box = QGroupBox("Components for Set: [None]")
+        components_box_layout = QVBoxLayout(self.components_box)
+        self.set_components_table = QTableWidget()
+        self.set_components_table.setColumnCount(2)
+        self.set_components_table.setHorizontalHeaderLabels(["SKU", "Quantity"])
+        self.set_components_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        components_box_layout.addWidget(self.set_components_table)
+
+        comp_btn_layout = QHBoxLayout()
+        add_comp_btn = QPushButton("Add Component")
+        remove_comp_btn = QPushButton("Remove Component")
+        comp_btn_layout.addStretch()
+        comp_btn_layout.addWidget(add_comp_btn)
+        comp_btn_layout.addWidget(remove_comp_btn)
+        components_box_layout.addLayout(comp_btn_layout)
+        components_layout.addWidget(self.components_box)
+
+        splitter.addWidget(sets_widget)
+        splitter.addWidget(components_widget)
+        splitter.setSizes([250, 550])
+        main_layout.addWidget(splitter)
+        self.tab_widget.addTab(tab, "Set Mappings")
+
+        # Load initial data
+        for set_name in sorted(self.set_mappings_data.keys()):
+            self.set_mappings_list_widget.addItem(QListWidgetItem(set_name))
+
+        # Connect button signals
+        add_set_btn.clicked.connect(self._add_set)
+        remove_set_btn.clicked.connect(self._remove_set)
+        rename_set_btn.clicked.connect(self._rename_set)
+        add_comp_btn.clicked.connect(lambda: self.set_components_table.insertRow(self.set_components_table.rowCount()))
+        remove_comp_btn.clicked.connect(lambda: self.set_components_table.removeRow(self.set_components_table.currentRow()))
+
+    def _add_set(self):
+        set_name, ok = QInputDialog.getText(self, "Add New Set", "Enter name for the new set:")
+        if ok and set_name:
+            if set_name in self.set_mappings_data:
+                QMessageBox.warning(self, "Duplicate Name", f"A set named '{set_name}' already exists.")
+                return
+            self.set_mappings_data[set_name] = []
+            self.set_mappings_list_widget.addItem(QListWidgetItem(set_name))
+            self.set_mappings_list_widget.setCurrentRow(self.set_mappings_list_widget.count() - 1)
+
+    def _remove_set(self):
+        current_item = self.set_mappings_list_widget.currentItem()
+        if not current_item:
+            return
+
+        set_name = current_item.text()
+        reply = QMessageBox.question(self, "Confirm Deletion", f"Are you sure you want to delete the set '{set_name}'?")
+        if reply == QMessageBox.Yes:
+            del self.set_mappings_data[set_name]
+            self.set_mappings_list_widget.takeItem(self.set_mappings_list_widget.row(current_item))
+
+    def _rename_set(self):
+        current_item = self.set_mappings_list_widget.currentItem()
+        if not current_item:
+            return
+
+        old_name = current_item.text()
+        new_name, ok = QInputDialog.getText(self, "Rename Set", "Enter new name:", text=old_name)
+
+        if ok and new_name and new_name != old_name:
+            if new_name in self.set_mappings_data:
+                QMessageBox.warning(self, "Duplicate Name", f"A set named '{new_name}' already exists.")
+                return
+            # Update data dictionary and list widget
+            self.set_mappings_data[new_name] = self.set_mappings_data.pop(old_name)
+            current_item.setText(new_name)
+
+    def _on_set_selected(self, current_item, previous_item):
+        """When a set is selected, update the components table."""
+        # Save changes from the previously selected set before switching
+        if previous_item:
+            self._save_current_components_to_data(previous_item.text())
+
+        if not current_item:
+            self.components_box.setTitle("Components for Set: [None]")
+            self.set_components_table.setRowCount(0)
+            return
+
+        set_name = current_item.text()
+        self.components_box.setTitle(f"Components for Set: {set_name}")
+        self.set_components_table.setRowCount(0) # Clear table
+
+        components = self.set_mappings_data.get(set_name, [])
+        for comp in components:
+            row_pos = self.set_components_table.rowCount()
+            self.set_components_table.insertRow(row_pos)
+            self.set_components_table.setItem(row_pos, 0, QTableWidgetItem(str(comp.get("sku", ""))))
+            self.set_components_table.setItem(row_pos, 1, QTableWidgetItem(str(comp.get("quantity", ""))))
+
+    def _save_current_components_to_data(self, set_name):
+        """Reads the component table and saves its data to our internal dict."""
+        if not set_name:
+            return
+
+        components = []
+        for i in range(self.set_components_table.rowCount()):
+            sku_item = self.set_components_table.item(i, 0)
+            qty_item = self.set_components_table.item(i, 1)
+            if sku_item and qty_item and sku_item.text() and qty_item.text():
+                try:
+                    components.append({"sku": sku_item.text(), "quantity": int(qty_item.text())})
+                except ValueError:
+                    # Handle case where quantity is not a valid integer
+                    pass # Or show a warning
+
+        if set_name in self.set_mappings_data:
+            self.set_mappings_data[set_name] = components
+
+
     def add_courier_mapping_row(self, original_name="", standardized_name=""):
         """Adds a new row for a single courier mapping."""
         row_widget = QWidget()
@@ -740,7 +954,23 @@ class SettingsWindow(QDialog):
                         }
                     )
 
-                actions = [{"type": a["type"].currentText(), "value": a["value"].text()} for a in rule_w["actions"]]
+                actions = []
+                for a in rule_w["actions"]:
+                    action_type = a["type"].currentText()
+                    value = None
+                    if action_type == "ADD_PACKAGING":
+                        table = a["value_widget"]
+                        value = []
+                        for i in range(table.rowCount()):
+                            sku_item = table.item(i, 0)
+                            qty_item = table.item(i, 1)
+                            if sku_item and qty_item and sku_item.text() and qty_item.text():
+                                value.append({"sku": sku_item.text(), "quantity": int(qty_item.text())})
+                    else:
+                        # Handle QLineEdit
+                        value = a["value_widget"].text()
+                    actions.append({"type": action_type, "value": value})
+
                 new_rules.append(
                     {
                         "name": rule_w["name_edit"].text(),
@@ -796,6 +1026,14 @@ class SettingsWindow(QDialog):
                 if original and standardized:
                     new_courier_mappings[original] = standardized
             self.config_data["courier_mappings"] = new_courier_mappings
+
+            # Set Mappings Tab
+            # First, ensure the currently displayed components are saved to the temp dict
+            current_set_item = self.set_mappings_list_widget.currentItem()
+            if current_set_item:
+                self._save_current_components_to_data(current_set_item.text())
+            # Now, save the entire temp dict back to the main config
+            self.config_data["set_mappings"] = self.set_mappings_data
 
             self.accept()
         except ValueError:

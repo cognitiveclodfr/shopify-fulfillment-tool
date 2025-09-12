@@ -420,11 +420,14 @@ class MainWindow(QMainWindow):
         try:
             fulfillable_df = self.analysis_results_df[
                 self.analysis_results_df["Order_Fulfillment_Status"] == "Fulfillable"
-            ]
+            ].copy()
 
             if fulfillable_df.empty:
                 self.sku_summary_table_view.setModel(None)
                 return
+
+            # Before grouping, fill NaN in Product_Name to ensure they are included
+            fulfillable_df["Product_Name"] = fulfillable_df["Product_Name"].fillna("[No Name]")
 
             # Group by SKU and Product Name, then sum quantities
             sku_summary_df = (
