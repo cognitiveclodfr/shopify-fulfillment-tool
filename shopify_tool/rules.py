@@ -155,6 +155,8 @@ class RuleEngine:
                     needed_columns.add("Status_Note")
                 elif action_type == "ADD_TAG":
                     needed_columns.add("Status_Note")
+                elif action_type == "ADD_PACKAGING":
+                    needed_columns.add("_packaging_materials")
 
         # Add only the necessary columns if they don't already exist
         if "Priority" in needed_columns and "Priority" not in df.columns:
@@ -163,6 +165,10 @@ class RuleEngine:
             df["_is_excluded"] = False
         if "Status_Note" in needed_columns and "Status_Note" not in df.columns:
             df["Status_Note"] = ""
+        if "_packaging_materials" in needed_columns and "_packaging_materials" not in df.columns:
+            # Initialize with a type that can hold lists/objects
+            df["_packaging_materials"] = None
+            df["_packaging_materials"] = df["_packaging_materials"].astype("object")
 
     def _get_matching_rows(self, df, rule):
         """Evaluates a rule's conditions and finds all matching rows.
@@ -249,6 +255,11 @@ class RuleEngine:
 
             elif action_type == "EXCLUDE_FROM_REPORT":
                 df.loc[matches, "_is_excluded"] = True
+
+            elif action_type == "ADD_PACKAGING":
+                # The value is a list of dicts. We assign this list object
+                # to each matching row's cell. Using apply is safe for this.
+                df.loc[matches, "_packaging_materials"] = df.loc[matches].apply(lambda _: value, axis=1)
 
             elif action_type == "EXCLUDE_SKU":
                 # This is a complex, destructive action.

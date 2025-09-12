@@ -174,7 +174,20 @@ class UIManager:
         self.create_statistics_tab(self.mw.stats_tab)
         tab_view.addTab(self.mw.stats_tab, "Statistics")
 
+        self.mw.sku_summary_tab = self._create_sku_summary_tab()
+        tab_view.addTab(self.mw.sku_summary_tab, "Підсумок по SKU")
+
         return tab_view
+
+    def _create_sku_summary_tab(self):
+        """Creates the 'SKU Summary' tab with its QTableView."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        self.mw.sku_summary_table_view = QTableView()
+        self.mw.sku_summary_table_view.setSortingEnabled(True)
+        self.mw.sku_summary_table_view.setAlternatingRowColors(True)
+        layout.addWidget(self.mw.sku_summary_table_view)
+        return tab
 
     def _create_activity_log_tab(self):
         """Creates the 'Activity Log' tab with its QTableWidget."""

@@ -17,6 +17,7 @@ from shopify_tool.utils import get_persistent_data_path, resource_path
 from shopify_tool.analysis import recalculate_statistics
 from gui.log_handler import QtLogHandler
 from gui.ui_manager import UIManager
+from gui.pandas_model import PandasModel
 from gui.file_handler import FileHandler
 from gui.actions_handler import ActionsHandler
 from gui.profile_manager_dialog import ProfileManagerDialog
@@ -367,6 +368,7 @@ class MainWindow(QMainWindow):
         self.analysis_stats = recalculate_statistics(self.analysis_results_df)
         self.ui_manager.update_results_table(self.analysis_results_df)
         self.update_statistics_tab()
+        self.update_sku_summary_tab()
 
         # Populate filter dropdown
         self.filter_column_selector.clear()
@@ -408,6 +410,39 @@ class MainWindow(QMainWindow):
                 self.courier_stats_layout.addWidget(QLabel(str(stats.get("repeated_orders_found", "N/A"))), i, 2)
         else:
             self.courier_stats_layout.addWidget(QLabel("No courier stats available."), 0, 0)
+
+    def update_sku_summary_tab(self):
+        """Populates the 'SKU Summary' tab with aggregated data for fulfillable orders."""
+        if self.analysis_results_df is None or self.analysis_results_df.empty:
+            self.sku_summary_table_view.setModel(None)
+            return
+
+        try:
+            fulfillable_df = self.analysis_results_df[
+                self.analysis_results_df["Order_Fulfillment_Status"] == "Fulfillable"
+            ]
+
+            if fulfillable_df.empty:
+                self.sku_summary_table_view.setModel(None)
+                return
+
+            # Group by SKU and Product Name, then sum quantities
+            sku_summary_df = (
+                fulfillable_df.groupby(["SKU", "Product_Name"], as_index=False)["Quantity"]
+                .sum()
+                .rename(columns={"Quantity": "Total Quantity"})
+            )
+
+            # Sort by the total quantity in descending order
+            sku_summary_df = sku_summary_df.sort_values(by="Total Quantity", ascending=False)
+
+            model = PandasModel(sku_summary_df)
+            self.sku_summary_table_view.setModel(model)
+            self.sku_summary_table_view.resizeColumnsToContents()
+
+        except Exception as e:
+            logging.error(f"Failed to update SKU summary tab: {e}", exc_info=True)
+            self.sku_summary_table_view.setModel(None)
 
     def log_activity(self, op_type, desc):
         """Adds a new entry to the 'Activity Log' table in the UI.

@@ -12,6 +12,109 @@ SYSTEM_TAGS = ["Repeat", "Priority", "Error"]
 logger = logging.getLogger("ShopifyToolLogger")
 
 
+def _expand_sets(orders_df, set_mappings):
+    """Expands order items that are sets/bundles into their components.
+
+    Iterates through an orders DataFrame and replaces any line item whose SKU
+    is a "set" (as defined in `set_mappings`) with its constituent component
+    SKUs.
+
+    Args:
+        orders_df (pd.DataFrame): The DataFrame of order line items. Must
+            contain 'Lineitem sku' and 'Lineitem quantity'.
+        set_mappings (dict): A dictionary where keys are set SKUs and values
+            are lists of component dictionaries (e.g., {"sku": "COMP1", "quantity": 2}).
+
+    Returns:
+        pd.DataFrame: A new DataFrame with sets expanded into components.
+    """
+    if not set_mappings:
+        return orders_df
+
+    sku_col = "Lineitem sku"
+    qty_col = "Lineitem quantity"
+
+    if sku_col not in orders_df.columns or qty_col not in orders_df.columns:
+        logger.warning(f"Skipping set expansion: Missing required columns '{sku_col}' or '{qty_col}'.")
+        return orders_df
+
+    expanded_rows = []
+    for _, row in orders_df.iterrows():
+        set_sku = row[sku_col]
+        if set_sku in set_mappings:
+            order_quantity = row[qty_col]
+            for component in set_mappings[set_sku]:
+                new_row = row.to_dict()  # Start with a copy of the original row
+                new_row[sku_col] = component["sku"]
+                new_row[qty_col] = component["quantity"] * order_quantity
+                expanded_rows.append(new_row)
+        else:
+            expanded_rows.append(row.to_dict())
+
+    if not expanded_rows:
+        return pd.DataFrame(columns=orders_df.columns)
+
+    return pd.DataFrame(expanded_rows)
+
+
+def _adjust_stock_for_packaging(df):
+    """Adjusts final stock levels for packaging materials added by rules.
+
+    This function identifies orders that are 'Fulfillable' and have packaging
+    materials assigned via the rule engine. For each of these orders, it
+    deducts the required quantity of each packaging SKU from the 'Final_Stock'
+    count in the main DataFrame.
+
+    This ensures that packaging materials are accounted for in the final stock
+    levels without affecting the initial fulfillment logic.
+
+    Args:
+        df (pd.DataFrame): The main analysis DataFrame, after the rule
+            engine has been applied. It must contain 'Final_Stock',
+            'Order_Fulfillment_Status', 'Order_Number', and the special
+            '_packaging_materials' column.
+
+    Returns:
+        pd.DataFrame: The DataFrame with adjusted 'Final_Stock' values.
+    """
+    # Filter for rows that need packaging adjustment
+    packaging_jobs = df[
+        (df["Order_Fulfillment_Status"] == "Fulfillable") & (df["_packaging_materials"].notna())
+    ].copy()
+
+    if packaging_jobs.empty:
+        return df
+
+    # Get unique orders to process, avoiding multiple deductions for the same order
+    unique_orders_with_packaging = packaging_jobs.drop_duplicates(subset=["Order_Number"])
+
+    for _, order_row in unique_orders_with_packaging.iterrows():
+        packaging_materials = order_row["_packaging_materials"]
+        if not isinstance(packaging_materials, list):
+            continue
+
+        for material in packaging_materials:
+            sku = material.get("sku")
+            quantity = material.get("quantity", 0)
+
+            if not sku or quantity == 0:
+                continue
+
+            # Find the rows for this packaging SKU in the main DataFrame
+            sku_mask = df["SKU"] == sku
+            if sku_mask.any():
+                # Deduct stock from the 'Final_Stock' column for this SKU
+                # This affects all rows for this SKU, which is correct as stock is global
+                df.loc[sku_mask, "Final_Stock"] -= quantity
+            else:
+                logger.warning(
+                    f"Packaging SKU '{sku}' for order {order_row['Order_Number']} not found in main data. "
+                    f"Stock not deducted."
+                )
+
+    return df
+
+
 def _normalize_unc_path(path):
     """Normalizes a path, which is especially useful for UNC paths on Windows."""
     if not path:
@@ -153,7 +256,15 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
         history_df = config.get("test_history_df", pd.DataFrame({"Order_Number": []}))
     logger.info("Data loaded successfully.")
 
-    # Validate dataframes
+    # --- Pre-analysis steps ---
+    # 1. Expand sets/bundles
+    set_mappings = config.get("set_mappings", {})
+    if set_mappings:
+        logger.info("Expanding sets/bundles based on config...")
+        orders_df = _expand_sets(orders_df, set_mappings)
+        logger.info(f"Set expansion complete. Order items count: {len(orders_df)}")
+
+    # 2. Validate dataframes
     validation_errors = _validate_dataframes(orders_df, stock_df, config)
     if validation_errors:
         error_message = "\n".join(validation_errors)
@@ -188,6 +299,12 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
         engine = RuleEngine(rules)
         final_df = engine.apply(final_df)
         logger.info("Rule engine application complete.")
+
+    # 2.7. Adjust stock for packaging materials added by rules
+    if "_packaging_materials" in final_df.columns:
+        logger.info("Adjusting stock for packaging materials...")
+        final_df = _adjust_stock_for_packaging(final_df)
+        logger.info("Packaging stock adjustment complete.")
 
     # 3. Save Excel report (skip in test mode)
     if stock_file_path is not None and orders_file_path is not None:

@@ -1,4 +1,30 @@
 {
+  "set_mappings": {
+    "SET_1": [
+      {
+        "sku": "Product_1",
+        "quantity": 1
+      },
+      {
+        "sku": "Product_2",
+        "quantity": 3
+      },
+      {
+        "sku": "Bag_1",
+        "quantity": 1
+      }
+    ],
+    "SET_2": [
+      {
+        "sku": "Product_A",
+        "quantity": 1
+      },
+      {
+        "sku": "Product_B",
+        "quantity": 1
+      }
+    ]
+  },
   "paths": {
     "input": {
       "stock_file": "data/input/EXCEL.csv",
@@ -25,7 +51,34 @@
       "Наличност"
     ]
   },
-  "rules": [],
+  "rules": [
+    {
+      "name": "Add DHL Packaging",
+      "match": "ALL",
+      "conditions": [
+        {
+          "field": "Shipping_Provider",
+          "operator": "equals",
+          "value": "DHL"
+        }
+      ],
+      "actions": [
+        {
+          "type": "ADD_PACKAGING",
+          "value": [
+            {
+              "sku": "BOX_MEDIUM",
+              "quantity": 1
+            },
+            {
+              "sku": "GREETING_CARD",
+              "quantity": 1
+            }
+          ]
+        }
+      ]
+    }
+  ],
   "packing_lists": [
     {
       "name": "All Fulfillable Orders",
