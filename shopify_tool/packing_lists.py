@@ -94,6 +94,12 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
             ~sorted_list["Order_Number"].duplicated(), ""
         )
 
+        # Show barcode path only for the first item of an order to avoid inserting it multiple times
+        if "Order_Barcode_Path" in sorted_list.columns:
+            sorted_list["Order_Barcode_Path"] = sorted_list["Order_Barcode_Path"].where(
+                ~sorted_list["Order_Number"].duplicated(), ""
+            )
+
         # Define the columns for the final print list
         columns_for_print = [
             "Destination_Country",
@@ -103,6 +109,9 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
             "Quantity",
             "Shipping_Provider",
         ]
+        if "Order_Barcode_Path" in sorted_list.columns:
+            columns_for_print.append("Order_Barcode_Path")
+
         print_list = sorted_list[columns_for_print]
 
         generation_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -110,6 +119,8 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
 
         # Rename columns to embed metadata into the header
         rename_map = {"Shipping_Provider": generation_timestamp, "Product_Name": output_filename}
+        if "Order_Barcode_Path" in print_list.columns:
+            rename_map["Order_Barcode_Path"] = "Barcode"
         print_list = print_list.rename(columns=rename_map)
 
         logger.info("Creating Excel file...")
@@ -183,6 +194,35 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
             worksheet.set_landscape()
             worksheet.repeat_rows(0)  # Repeat header row
             worksheet.fit_to_pages(1, 0)  # Fit to 1 page wide
+
+            # --- Barcode Image Insertion ---
+            if "Barcode" in print_list.columns:
+                barcode_col_idx = print_list.columns.get_loc("Barcode")
+                order_boundaries = print_list["Order_Number"].ne(print_list["Order_Number"].shift()).cumsum()
+                for row_num in range(len(print_list)):
+                    barcode_path = print_list.iloc[row_num, barcode_col_idx]
+                    if pd.notna(barcode_path) and os.path.isfile(barcode_path):
+                        # Determine the row type again to apply the correct border format
+                        is_top = (row_num == 0) or (order_boundaries.iloc[row_num] != order_boundaries.iloc[row_num - 1])
+                        is_bottom = (row_num == len(print_list) - 1) or (
+                            order_boundaries.iloc[row_num] != order_boundaries.iloc[row_num + 1]
+                        )
+                        row_type = "full" if is_top and is_bottom else "top" if is_top else "bottom" if is_bottom else "middle"
+
+                        worksheet.set_row(row_num + 1, 60)  # Set row height to 60px
+                        worksheet.write_blank(row_num + 1, barcode_col_idx, None, cell_formats[row_type])
+                        worksheet.insert_image(
+                            row_num + 1,
+                            barcode_col_idx,
+                            barcode_path,
+                            {
+                                "x_scale": 0.5,
+                                "y_scale": 0.5,
+                                "object_position": 1,  # Center horizontally and vertically
+                                "x_offset": 5,
+                                "y_offset": 5,
+                            },
+                        )
 
         logger.info(f"Report '{report_name}' created successfully.")
 

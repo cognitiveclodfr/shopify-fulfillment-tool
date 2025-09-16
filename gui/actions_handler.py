@@ -12,6 +12,7 @@ from shopify_tool.analysis import toggle_order_fulfillment
 from gui.settings_window_pyside import SettingsWindow
 from gui.report_selection_dialog import ReportSelectionDialog
 from gui.report_builder_window_pyside import ReportBuilderWindow
+from gui.fulfillment_window import FulfillmentWindow
 
 
 class ActionsHandler(QObject):
@@ -260,6 +261,16 @@ class ActionsHandler(QObject):
             return
         dialog = ReportBuilderWindow(self.mw.analysis_results_df, self.mw)
         dialog.exec()
+
+    def open_fulfillment_window(self):
+        """Opens the interactive Fulfillment Mode window."""
+        if self.mw.analysis_results_df.empty:
+            QMessageBox.warning(self.mw, "No Data", "Please run an analysis before starting Packer Mode.")
+            return
+
+        # Pass the main analysis dataframe to the window
+        dialog = FulfillmentWindow(self.mw.analysis_results_df, self.mw)
+        dialog.exec()  # Use exec() for a modal dialog
 
     def add_tag_manually(self, order_number):
         """Opens a dialog to add a manual tag to an order's 'Status_Note'.
