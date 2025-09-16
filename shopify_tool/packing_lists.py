@@ -102,8 +102,22 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
             "Product_Name",
             "Quantity",
             "Shipping_Provider",
+            "Barcode",
         ]
-        print_list = sorted_list[columns_for_print]
+
+        # Ensure Order_Barcode_Path is present, if not, add it with None values
+        if "Order_Barcode_Path" not in sorted_list.columns:
+            sorted_list["Order_Barcode_Path"] = None
+
+        # Add a placeholder for the Barcode column in the DataFrame
+        sorted_list["Barcode"] = ""
+
+        columns_to_select = [col for col in columns_for_print if col in sorted_list.columns]
+        # We need Order_Barcode_Path for the image insertion logic
+        if "Order_Barcode_Path" not in columns_to_select:
+            columns_to_select.append("Order_Barcode_Path")
+
+        print_list = sorted_list[columns_to_select]
 
         generation_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         output_filename = os.path.basename(output_file)
@@ -114,8 +128,10 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
 
         logger.info("Creating Excel file...")
         with pd.ExcelWriter(output_file, engine="xlsxwriter") as writer:
+            # We don't want to write the barcode path to the excel file, so we drop it
+            df_to_write = print_list.drop(columns=["Order_Barcode_Path"], errors='ignore')
             sheet_name = os.path.splitext(output_filename)[0]
-            print_list.to_excel(writer, sheet_name=sheet_name, index=False)
+            df_to_write.to_excel(writer, sheet_name=sheet_name, index=False)
 
             workbook = writer.book
             worksheet = writer.sheets[sheet_name]
@@ -132,10 +148,9 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
                 }
             )
 
-            for col_num, value in enumerate(print_list.columns):
+            for col_num, value in enumerate(df_to_write.columns):
                 worksheet.write(0, col_num, value, header_format)
 
-            # Define cell formats for different row positions (top, middle, bottom of an order)
             formats = {
                 "top": {"top": 2, "left": 1, "right": 1, "bottom": 1, "bottom_color": "#DCDCDC"},
                 "middle": {"left": 1, "right": 1, "bottom": 1, "bottom_color": "#DCDCDC"},
@@ -149,27 +164,48 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
                 props_centered = {**props_default, "align": "center"}
                 cell_formats[key + "_centered"] = workbook.add_format(props_centered)
 
-            # Apply borders to group items by order number
             order_boundaries = print_list["Order_Number"].ne(print_list["Order_Number"].shift()).cumsum()
+
+            # Get the column index for the barcode, if it exists.
+            try:
+                barcode_col_idx = df_to_write.columns.get_loc("Barcode")
+            except KeyError:
+                barcode_col_idx = -1
+
             for row_num in range(len(print_list)):
                 is_top = (row_num == 0) or (order_boundaries.iloc[row_num] != order_boundaries.iloc[row_num - 1])
                 is_bottom = (row_num == len(print_list) - 1) or (
                     order_boundaries.iloc[row_num] != order_boundaries.iloc[row_num + 1]
                 )
-
                 row_type = "full" if is_top and is_bottom else "top" if is_top else "bottom" if is_bottom else "middle"
 
-                for col_num, col_name in enumerate(print_list.columns):
+                # Set row height for barcode
+                if is_top:
+                    worksheet.set_row(row_num + 1, 60)
+
+                for col_num, col_name in enumerate(df_to_write.columns):
+                    # Use original columns_for_print to determine formatting, as df_to_write headers are modified
                     original_col_name = columns_for_print[col_num]
                     fmt_key = (
-                        row_type + "_centered" if original_col_name in ["Destination_Country", "Quantity"] else row_type
+                        row_type + "_centered" if original_col_name in ["Destination_Country", "Quantity", "Barcode"] else row_type
                     )
                     worksheet.write(row_num + 1, col_num, print_list.iloc[row_num, col_num], cell_formats[fmt_key])
 
+                # Insert barcode image
+                if is_top and barcode_col_idx != -1 and "Order_Barcode_Path" in print_list.columns:
+                    barcode_path = print_list.iloc[row_num]["Order_Barcode_Path"]
+                    if barcode_path and os.path.exists(barcode_path):
+                        worksheet.insert_image(row_num + 1, barcode_col_idx, barcode_path, {'x_scale': 0.5, 'y_scale': 0.5, 'object_position': 2})
+
+
             # Auto-adjust column widths
-            for i, col in enumerate(print_list.columns):
-                max_len = max(print_list[col].astype(str).map(len).max(), len(col)) + 2
-                original_col_name = columns_for_print[i]
+            for i, col in enumerate(df_to_write.columns):
+                original_col_name = columns_for_print[i] # Use original name for width logic
+                if original_col_name == "Barcode":
+                    max_len = 20 # Set a fixed width for the barcode column
+                else:
+                    max_len = max(df_to_write[col].astype(str).map(len).max(), len(col)) + 2
+
                 if original_col_name == "Destination_Country":
                     max_len = 5
                 elif original_col_name == "Product_Name":

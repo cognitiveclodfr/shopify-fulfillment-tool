@@ -1,5 +1,8 @@
 import pandas as pd
 import numpy as np
+import os
+import barcode
+from barcode.writer import ImageWriter
 
 
 def _generalize_shipping_method(method):
@@ -31,7 +34,7 @@ def _generalize_shipping_method(method):
     return method.title()
 
 
-def run_analysis(stock_df, orders_df, history_df):
+def run_analysis(stock_df, orders_df, history_df, output_dir_path):
     """Performs the core fulfillment analysis and simulation.
 
     This function is the heart of the fulfillment logic. It takes raw data,
@@ -48,9 +51,10 @@ def run_analysis(stock_df, orders_df, history_df):
         order type (Single/Multi), and repeat order status.
     6.  Generating summary reports for fulfilled and missing items.
     7.  Calculating final statistics.
+    8.  Generating barcodes for each unique order number.
 
     This function operates purely on DataFrames and does not perform any
-    file I/O.
+    file I/O, except for saving barcode images.
 
     Args:
         stock_df (pd.DataFrame): DataFrame with stock levels for each SKU.
@@ -60,13 +64,14 @@ def run_analysis(stock_df, orders_df, history_df):
             'Lineitem quantity'.
         history_df (pd.DataFrame): DataFrame with previously fulfilled order
             numbers. Requires an 'Order_Number' column.
+        output_dir_path (str): The path to the session's output directory.
 
     Returns:
         tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
             A tuple containing four elements:
             - final_df (pd.DataFrame): The main DataFrame with detailed results
               for every line item, including the calculated
-              'Order_Fulfillment_Status'.
+              'Order_Fulfillment_Status' and 'Order_Barcode_Path'.
             - summary_present_df (pd.DataFrame): A summary of all SKUs that
               will be fulfilled, aggregated by quantity.
             - summary_missing_df (pd.DataFrame): A summary of SKUs in
@@ -154,6 +159,35 @@ def run_analysis(stock_df, orders_df, history_df):
     final_df["System_note"] = np.where(final_df["Order_Number"].isin(history_df["Order_Number"]), "Repeat", "")
     final_df["Stock_Alert"] = ""  # Initialize the column
     final_df["Status_Note"] = ""  # Initialize column for user-defined rule tags
+
+    # --- Barcode Generation ---
+    barcode_dir = os.path.join(output_dir_path, "barcodes")
+    os.makedirs(barcode_dir, exist_ok=True)
+
+    unique_order_numbers = final_df["Order_Number"].unique()
+    barcode_paths = {}
+
+    code128 = barcode.get_barcode_class('code128')
+
+    for order_number in unique_order_numbers:
+        try:
+            # Sanitize order number for filename
+            safe_order_number = str(order_number).replace('/', '_').replace('\\', '_').replace('#', '')
+            # The save method adds the .png extension automatically
+            barcode_filepath_without_ext = os.path.join(barcode_dir, safe_order_number)
+
+            # Generate barcode
+            my_barcode = code128(str(order_number), writer=ImageWriter())
+            # save() returns the full path including the extension
+            saved_path = my_barcode.save(barcode_filepath_without_ext, options={"write_text": False})
+
+            barcode_paths[order_number] = saved_path
+        except Exception as e:
+            print(f"Error generating barcode for order {order_number}: {e}") # Replace with logger
+            barcode_paths[order_number] = None
+
+    final_df["Order_Barcode_Path"] = final_df["Order_Number"].map(barcode_paths)
+
     output_columns = [
         "Order_Number",
         "Order_Type",
@@ -171,6 +205,7 @@ def run_analysis(stock_df, orders_df, history_df):
         "Notes",
         "System_note",
         "Status_Note",
+        "Order_Barcode_Path",
     ]
     if "Total Price" in final_df.columns:
         # Insert 'Total Price' into the list at a specific position for consistent column order.

@@ -151,7 +151,12 @@ class UIManager:
         self.mw.settings_button = QPushButton("Open Profile Settings")
         self.mw.settings_button.setToolTip("Open the settings window for the active profile.")
 
+        self.mw.fulfillment_mode_button = QPushButton("Launch Packer Mode")
+        self.mw.fulfillment_mode_button.setToolTip("Open the interactive packing and fulfillment window.")
+        self.mw.fulfillment_mode_button.setEnabled(False) # Enabled after analysis
+
         actions_layout.addWidget(self.mw.run_analysis_button, 1)
+        actions_layout.addWidget(self.mw.fulfillment_mode_button, 1)
         actions_layout.addWidget(self.mw.settings_button)
         main_layout.addLayout(actions_layout)
 
@@ -263,6 +268,7 @@ class UIManager:
         self.mw.packing_list_button.setEnabled(not is_busy and is_data_loaded)
         self.mw.stock_export_button.setEnabled(not is_busy and is_data_loaded)
         self.mw.report_builder_button.setEnabled(not is_busy and is_data_loaded)
+        self.mw.fulfillment_mode_button.setEnabled(not is_busy and is_data_loaded)
         self.log.debug(f"UI busy state set to: {is_busy}")
 
     def update_results_table(self, data_df):

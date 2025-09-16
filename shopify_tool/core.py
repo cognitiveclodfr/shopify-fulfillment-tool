@@ -172,7 +172,9 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
 
     # 2. Run analysis (computation only)
     logger.info("Step 2: Running fulfillment simulation...")
-    final_df, summary_present_df, summary_missing_df, stats = analysis.run_analysis(stock_df, orders_df, history_df)
+    final_df, summary_present_df, summary_missing_df, stats = analysis.run_analysis(
+        stock_df, orders_df, history_df, output_dir_path
+    )
     logger.info("Analysis computation complete.")
 
     # 2.5. Add stock alerts based on config

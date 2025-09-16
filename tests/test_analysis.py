@@ -40,7 +40,7 @@ def test_generalize_shipping_method(input_method, expected_output):
     assert _generalize_shipping_method(input_method) == expected_output
 
 
-def test_fulfillment_prioritization_logic():
+def test_fulfillment_prioritization_logic(tmpdir):
     """Tests that the fulfillment logic correctly prioritizes multi-item orders."""
     # Create a stock of 4 for a single SKU. This is the key to the test.
     # It's enough to fulfill the two multi-item orders (2+2=4), but not any of the single-item orders.
@@ -68,7 +68,7 @@ def test_fulfillment_prioritization_logic():
 
     # With stock of 5, only the two multi-item orders should be fulfilled (2+2=4 items)
     # The single-item orders should not be fulfilled.
-    final_df, _, _, _ = run_analysis(stock_df, orders_df, history_df)
+    final_df, _, _, _ = run_analysis(stock_df, orders_df, history_df, str(tmpdir))
 
     # Check status of each order
     status_map = final_df.drop_duplicates(subset=["Order_Number"]).set_index("Order_Number")["Order_Fulfillment_Status"]
@@ -79,7 +79,7 @@ def test_fulfillment_prioritization_logic():
     assert status_map["1004"] == "Not Fulfillable"  # Priority 4
 
 
-def test_summary_missing_report():
+def test_summary_missing_report(tmpdir):
     """Tests that the missing items summary is correctly generated."""
     stock_df = pd.DataFrame({"Артикул": ["SKU-1"], "Име": ["P1"], "Наличност": [5]})
     orders_df = pd.DataFrame(
@@ -95,7 +95,7 @@ def test_summary_missing_report():
     )
     history_df = pd.DataFrame(columns=["Order_Number", "Execution_Date"])
 
-    _, _, summary_missing_df, _ = run_analysis(stock_df, orders_df, history_df)
+    _, _, summary_missing_df, _ = run_analysis(stock_df, orders_df, history_df, str(tmpdir))
 
     assert not summary_missing_df.empty
     assert len(summary_missing_df) == 1

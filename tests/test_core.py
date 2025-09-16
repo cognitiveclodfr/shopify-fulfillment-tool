@@ -27,7 +27,7 @@ def make_orders_df():
     )
 
 
-def test_run_full_analysis_basic():
+def test_run_full_analysis_basic(tmpdir):
     """Tests the basic in-memory execution of run_full_analysis."""
     stock_df = make_stock_df()
     orders_df = make_orders_df()
@@ -38,7 +38,7 @@ def test_run_full_analysis_basic():
     config["test_orders_df"] = orders_df
     config["test_history_df"] = pd.DataFrame({"Order_Number": []})
 
-    success, output_path, final_df, stats = core.run_full_analysis(None, None, None, ";", config)
+    success, output_path, final_df, stats = core.run_full_analysis(None, None, str(tmpdir), ";", config)
     assert success
     assert output_path is None
     assert "Final_Stock" in final_df.columns
@@ -197,7 +197,7 @@ def test_validate_dataframes_with_missing_columns():
     assert "Missing required column in Stock file: 'Наличност'" in errors
 
 
-def test_run_full_analysis_with_rules(mocker):
+def test_run_full_analysis_with_rules(mocker, tmpdir):
     """Tests that the rule engine is correctly called during a full analysis."""
     mock_engine_apply = mocker.patch("shopify_tool.rules.RuleEngine.apply")
     config = {
@@ -205,7 +205,7 @@ def test_run_full_analysis_with_rules(mocker):
         "test_orders_df": make_orders_df(),
         "rules": [{"if": [], "then": []}],  # Presence of rules triggers the engine
     }
-    core.run_full_analysis(None, None, None, ";", config)
+    core.run_full_analysis(None, None, str(tmpdir), ";", config)
     mock_engine_apply.assert_called_once()
 
 

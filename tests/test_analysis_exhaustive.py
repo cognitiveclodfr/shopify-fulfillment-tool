@@ -26,13 +26,13 @@ def make_orders_df():
     )
 
 
-def test_summary_missing_and_stats():
+def test_summary_missing_and_stats(tmpdir):
     """Tests the generation of missing summary and stats with complex scenarios."""
     stock_df = make_stock_df()
     orders_df = make_orders_df()
     history_df = pd.DataFrame({"Order_Number": []})
 
-    final_df, summary_present_df, summary_missing_df, stats = run_analysis(stock_df, orders_df, history_df)
+    final_df, summary_present_df, summary_missing_df, stats = run_analysis(stock_df, orders_df, history_df, str(tmpdir))
 
     # Both order O1 (A qty 3) and O2 (B qty 1, missing from stock) should be in missing summary
     missing_skus = set(summary_missing_df["SKU"].tolist())
@@ -46,13 +46,13 @@ def test_summary_missing_and_stats():
     assert "couriers_stats" in stats
 
 
-def test_repeat_system_note():
+def test_repeat_system_note(tmpdir):
     """Tests that a 'Repeat' system note is correctly added for historical orders."""
     stock_df = make_stock_df()
     orders_df = make_orders_df()
     history_df = pd.DataFrame({"Order_Number": ["O3"]})
 
-    final_df, _, _, _ = run_analysis(stock_df, orders_df, history_df)
+    final_df, _, _, _ = run_analysis(stock_df, orders_df, history_df, str(tmpdir))
     # Rows from order O3 should have System_note == 'Repeat'
     notes = final_df[final_df["Order_Number"] == "O3"]["System_note"].unique()
     assert any(n == "Repeat" for n in notes)
