@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 sys.modules['PySide6.QtMultimedia'] = MagicMock()
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from gui.fulfillment_window import FulfillmentWindow
+from gui.fulfillment_window import FulfillmentWindow  # noqa: E402
 
 @pytest.fixture
 def fulfillment_data():

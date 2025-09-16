@@ -203,11 +203,20 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
                     barcode_path = print_list.iloc[row_num, barcode_col_idx]
                     if pd.notna(barcode_path) and os.path.isfile(barcode_path):
                         # Determine the row type again to apply the correct border format
-                        is_top = (row_num == 0) or (order_boundaries.iloc[row_num] != order_boundaries.iloc[row_num - 1])
+                        is_top = (row_num == 0) or (
+                            order_boundaries.iloc[row_num] != order_boundaries.iloc[row_num - 1]
+                        )
                         is_bottom = (row_num == len(print_list) - 1) or (
                             order_boundaries.iloc[row_num] != order_boundaries.iloc[row_num + 1]
                         )
-                        row_type = "full" if is_top and is_bottom else "top" if is_top else "bottom" if is_bottom else "middle"
+                        if is_top and is_bottom:
+                            row_type = "full"
+                        elif is_top:
+                            row_type = "top"
+                        elif is_bottom:
+                            row_type = "bottom"
+                        else:
+                            row_type = "middle"
 
                         worksheet.set_row(row_num + 1, 60)  # Set row height to 60px
                         worksheet.write_blank(row_num + 1, barcode_col_idx, None, cell_formats[row_type])

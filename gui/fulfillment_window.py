@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QTableView,
-    QHeaderView,
     QGroupBox,
     QStyle,
 )
@@ -105,7 +104,9 @@ class FulfillmentTableModel(QAbstractTableModel):
                     self._data.loc[index, "Status"] = "Complete"
 
                 model_index_row = self._data.index.get_loc(index)
-                self.dataChanged.emit(self.index(model_index_row, 0), self.index(model_index_row, self.columnCount() - 1))
+                start_index = self.index(model_index_row, 0)
+                end_index = self.index(model_index_row, self.columnCount() - 1)
+                self.dataChanged.emit(start_index, end_index)
                 return True, "Item collected."
 
         return False, "All units for this SKU already collected."
@@ -280,8 +281,10 @@ class FulfillmentWindow(QDialog):
         elif style == "success":
             self.status_label.setStyleSheet("background-color: #C8E6C9; padding: 10px; border-radius: 5px;")
         elif style == "success_final":
-             self.status_label.setStyleSheet("background-color: #4CAF50; color: white; padding: 10px; border-radius: 5px;")
-        else: # info
+            self.status_label.setStyleSheet(
+                "background-color: #4CAF50; color: white; padding: 10px; border-radius: 5px;"
+            )
+        else:  # info
             self.status_label.setStyleSheet("background-color: #BBDEFB; padding: 10px; border-radius: 5px;")
 
 
