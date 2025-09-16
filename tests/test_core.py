@@ -247,3 +247,43 @@ def test_create_packing_list_creates_dir(tmp_path):
     report_config = {"name": "Test", "output_filename": str(output_file)}
     core.create_packing_list_report(make_orders_df(), report_config)
     assert output_dir.exists()
+
+
+def test_run_full_analysis_creates_barcodes(tmp_path):
+    """Tests that run_full_analysis correctly generates barcode files."""
+    # 1. Setup
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    stock_file = tmp_path / "stock.csv"
+    stock_file.write_text("Артикул;Име;Наличност\nSKU-1;Item 1;10\nSKU-2;Item 2;5")
+    orders_file = tmp_path / "orders.csv"
+    orders_file.write_text(
+        "Name,Lineitem sku,Lineitem quantity,Shipping Method,Shipping Country,Tags,Notes\n"
+        "1001,SKU-1,1,dhl,BG,,\n"
+        "1002,SKU-2,2,dpd,DE,,"
+    )
+    config = {
+        "settings": {"stock_csv_delimiter": ";"},
+        "column_mappings": {"orders_required": ["Name"], "stock_required": ["Артикул"]},
+        "rules": [],
+    }
+
+    # 2. Run the analysis
+    success, _, final_df, _ = core.run_full_analysis(
+        str(stock_file), str(orders_file), str(output_dir), ";", config
+    )
+
+    # 3. Assert results
+    assert success
+    # Check that the barcode path column was added
+    assert "Order_Barcode_Path" in final_df.columns
+    # Check that the barcodes directory was created
+    barcode_dir = output_dir / "barcodes"
+    assert barcode_dir.exists()
+    # Check that barcode files were created for each unique order
+    assert (barcode_dir / "1001.png").exists()
+    assert (barcode_dir / "1002.png").exists()
+    # Check that the path in the dataframe is correct
+    # The Order_Number is read as an integer by pandas, so we select by int.
+    path_from_df = final_df[final_df["Order_Number"] == 1001]["Order_Barcode_Path"].iloc[0]
+    assert path_from_df == str(barcode_dir / "1001.png")

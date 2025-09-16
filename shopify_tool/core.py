@@ -6,6 +6,8 @@ from . import analysis, packing_lists, stock_export
 from .rules import RuleEngine
 from .utils import get_persistent_data_path
 import numpy as np
+import barcode
+from barcode.writer import ImageWriter
 
 SYSTEM_TAGS = ["Repeat", "Priority", "Error"]
 
@@ -174,6 +176,39 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
     logger.info("Step 2: Running fulfillment simulation...")
     final_df, summary_present_df, summary_missing_df, stats = analysis.run_analysis(stock_df, orders_df, history_df)
     logger.info("Analysis computation complete.")
+
+    # Barcode Generation
+    logger.info("Step 2.1: Generating barcodes...")
+    try:
+        barcode_dir = os.path.join(output_dir_path, "barcodes")
+        os.makedirs(barcode_dir, exist_ok=True)
+
+        unique_order_numbers = final_df["Order_Number"].unique()
+        barcode_paths = {}
+
+        for order_number in unique_order_numbers:
+            try:
+                # Use Code128, which is a common standard
+                code128 = barcode.get_barcode_class('code128')
+                # Generate barcode with the order number as content
+                barcode_instance = code128(str(order_number), writer=ImageWriter())
+                # Save the barcode image
+                # The save method automatically adds the .png extension, so we provide the name without it.
+                barcode_path = os.path.join(barcode_dir, f"{order_number}")
+                barcode_instance.save(barcode_path, options={"write_text": False})
+                barcode_paths[order_number] = f"{barcode_path}.png"
+            except Exception as e:
+                logger.error(f"Failed to generate barcode for order {order_number}: {e}")
+                barcode_paths[order_number] = None  # Indicate failure
+
+        final_df["Order_Barcode_Path"] = final_df["Order_Number"].map(barcode_paths)
+        logger.info(f"Barcode generation complete. {len(unique_order_numbers)} barcodes created.")
+    except Exception as e:
+        logger.error(f"An error occurred during barcode generation: {e}", exc_info=True)
+        # If the whole process fails, add an empty column to prevent crashes downstream
+        if "Order_Barcode_Path" not in final_df.columns:
+            final_df["Order_Barcode_Path"] = None
+
 
     # 2.5. Add stock alerts based on config
     low_stock_threshold = config.get("settings", {}).get("low_stock_threshold")

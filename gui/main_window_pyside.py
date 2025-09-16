@@ -219,6 +219,7 @@ class MainWindow(QMainWindow):
 
         # Main actions
         self.run_analysis_button.clicked.connect(self.actions_handler.run_analysis)
+        self.fulfillment_mode_button.clicked.connect(self.actions_handler.open_fulfillment_window)
         self.settings_button.clicked.connect(self.actions_handler.open_settings_window)
 
         # Reports
