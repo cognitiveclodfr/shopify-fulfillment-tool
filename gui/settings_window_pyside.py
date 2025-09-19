@@ -119,6 +119,7 @@ class SettingsWindow(QDialog):
         main_layout.addWidget(self.tab_widget)
 
         self.create_general_tab()
+        self.create_shopify_api_tab()
         self.create_rules_tab()
         self.create_packing_lists_tab()
         self.create_stock_exports_tab()
@@ -160,6 +161,27 @@ class SettingsWindow(QDialog):
         self.templates_path_edit.setText(paths.get("templates", ""))
         self.stock_output_path_edit.setText(paths.get("output_dir_stock", ""))
         self.tab_widget.addTab(tab, "General & Paths")
+
+    def create_shopify_api_tab(self):
+        """Creates and populates the 'Shopify API' settings tab."""
+        tab = QWidget()
+        layout = QFormLayout(tab)
+
+        self.shopify_shop_url_edit = QLineEdit()
+        self.shopify_api_version_edit = QLineEdit()
+        self.shopify_admin_api_token_edit = QLineEdit()
+        self.shopify_admin_api_token_edit.setEchoMode(QLineEdit.Password)
+
+        layout.addRow(QLabel("Shop URL:"), self.shopify_shop_url_edit)
+        layout.addRow(QLabel("API Version:"), self.shopify_api_version_edit)
+        layout.addRow(QLabel("Admin API Token:"), self.shopify_admin_api_token_edit)
+
+        creds = self.config_data.get("shopify_api_credentials", {})
+        self.shopify_shop_url_edit.setText(creds.get("shop_url", ""))
+        self.shopify_api_version_edit.setText(creds.get("api_version", ""))
+        self.shopify_admin_api_token_edit.setText(creds.get("admin_api_token", ""))
+
+        self.tab_widget.addTab(tab, "Shopify API")
 
     def create_rules_tab(self):
         """Creates the 'Rules' tab for dynamically managing automation rules."""
@@ -713,6 +735,13 @@ class SettingsWindow(QDialog):
         window to retrieve the updated configuration.
         """
         try:
+            # Shopify API Tab
+            if "shopify_api_credentials" not in self.config_data:
+                self.config_data["shopify_api_credentials"] = {}
+            self.config_data["shopify_api_credentials"]["shop_url"] = self.shopify_shop_url_edit.text()
+            self.config_data["shopify_api_credentials"]["api_version"] = self.shopify_api_version_edit.text()
+            self.config_data["shopify_api_credentials"]["admin_api_token"] = self.shopify_admin_api_token_edit.text()
+
             # General Tab
             self.config_data["settings"]["stock_csv_delimiter"] = self.stock_delimiter_edit.text()
             self.config_data["settings"]["low_stock_threshold"] = int(self.low_stock_edit.text())

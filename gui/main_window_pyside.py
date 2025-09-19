@@ -296,7 +296,17 @@ class MainWindow(QMainWindow):
         # Use the base profile's settings, or default to an empty config
         default_profile_structure = {"rules": [], "packing_lists": [], "stock_exports": []}
         base_config = self.config["profiles"].get(base_profile_name, default_profile_structure)
-        self.config["profiles"][name] = json.loads(json.dumps(base_config)) # Deep copy
+        new_profile_config = json.loads(json.dumps(base_config)) # Deep copy
+
+        # Ensure the new profile has the Shopify API credentials structure
+        if "shopify_api_credentials" not in new_profile_config:
+            new_profile_config["shopify_api_credentials"] = {
+                "shop_url": "your-shop-name.myshopify.com",
+                "api_version": "2024-04",
+                "admin_api_token": ""
+            }
+
+        self.config["profiles"][name] = new_profile_config
         self._save_config()
         self.log_activity("Profiles", f"Created new profile: {name}")
         return True

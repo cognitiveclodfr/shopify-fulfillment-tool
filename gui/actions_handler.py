@@ -68,7 +68,6 @@ class ActionsHandler(QObject):
             os.makedirs(session_path, exist_ok=True)
             self.mw.session_path = session_path
             self.mw.session_path_label.setText(f"Current Session: {os.path.basename(self.mw.session_path)}")
-            self.mw.load_orders_btn.setEnabled(True)
             self.mw.load_stock_btn.setEnabled(True)
             self.mw.log_activity("Session", f"New session started. Output: {self.mw.session_path}")
         except Exception as e:
@@ -90,11 +89,10 @@ class ActionsHandler(QObject):
         stock_delimiter = self.mw.active_profile_config["settings"]["stock_csv_delimiter"]
         worker = Worker(
             core.run_full_analysis,
-            self.mw.stock_file_path,
-            self.mw.orders_file_path,
-            self.mw.session_path,
-            stock_delimiter,
-            self.mw.active_profile_config,
+            stock_file_path=self.mw.stock_file_path,
+            output_dir_path=self.mw.session_path,
+            stock_delimiter=stock_delimiter,
+            config=self.mw.active_profile_config,
         )
         worker.signals.result.connect(self.on_analysis_complete)
         worker.signals.error.connect(self.on_task_error)

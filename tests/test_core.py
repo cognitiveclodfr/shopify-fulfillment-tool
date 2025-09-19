@@ -27,18 +27,19 @@ def make_orders_df():
     )
 
 
-def test_run_full_analysis_basic():
+def test_run_full_analysis_basic(mocker):
     """Tests the basic in-memory execution of run_full_analysis."""
+    mocker.patch("shopify_tool.core._fetch_orders_from_shopify_api", return_value=(make_orders_df(), None))
     stock_df = make_stock_df()
-    orders_df = make_orders_df()
     # set threshold to 4 so final stock 3 will be flagged as Low Stock
-    config = {"settings": {"low_stock_threshold": 4}, "tagging_rules": {}}
+    config = {"settings": {"low_stock_threshold": 4}, "rules": []}
     # inject test dfs
     config["test_stock_df"] = stock_df
-    config["test_orders_df"] = orders_df
     config["test_history_df"] = pd.DataFrame({"Order_Number": []})
 
-    success, output_path, final_df, stats = core.run_full_analysis(None, None, None, ";", config)
+    success, output_path, final_df, stats = core.run_full_analysis(
+        stock_file_path=None, output_dir_path=None, stock_delimiter=";", config=config
+    )
     assert success
     assert output_path is None
     assert "Final_Stock" in final_df.columns
@@ -47,7 +48,7 @@ def test_run_full_analysis_basic():
     assert any(mask_rows["Stock_Alert"].str.contains("Low Stock"))
 
 
-def test_full_run_with_file_io(tmp_path):
+def test_full_run_with_file_io(tmp_path, mocker):
     """
     An integration-style test for the core module that uses the file system.
     """
@@ -62,9 +63,8 @@ def test_full_run_with_file_io(tmp_path):
     stock_file = tmp_path / "stock.csv"
     stock_df.to_csv(stock_file, index=False, sep=";")
 
-    orders_df = make_orders_df()
-    orders_file = tmp_path / "orders.csv"
-    orders_df.to_csv(orders_file, index=False)
+    mocker.patch("shopify_tool.core._fetch_orders_from_shopify_api", return_value=(make_orders_df(), None))
+
 
     # 3. Create a config dictionary pointing to our temp files
     config = {
@@ -77,7 +77,7 @@ def test_full_run_with_file_io(tmp_path):
 
     # 4. Run the main analysis function
     success, analysis_path, final_df, stats = core.run_full_analysis(
-        str(stock_file), str(orders_file), str(output_dir), ";", config
+        stock_file_path=str(stock_file), output_dir_path=str(output_dir), stock_delimiter=";", config=config
     )
 
     # 5. Assert main analysis results
@@ -145,20 +145,22 @@ def test_validate_csv_headers_generic_exception(mocker):
     assert "An unexpected error occurred" in missing[0]
 
 
-def test_run_full_analysis_file_not_found(mocker):
-    """Tests run_full_analysis behavior when input files do not exist."""
+def test_run_full_analysis_stock_file_not_found(mocker):
+    """Tests run_full_analysis behavior when the stock file does not exist."""
     mocker.patch("os.path.exists", return_value=False)
-    success, msg, _, _ = core.run_full_analysis("fake", "fake", "fake", ";", {})
+    mocker.patch("shopify_tool.core._fetch_orders_from_shopify_api", return_value=(make_orders_df(), None))
+    success, msg, _, _ = core.run_full_analysis("fake_stock.csv", "fake_output", ";", {})
     assert not success
-    assert "input files were not found" in msg
+    assert "Stock file not found" in msg
 
 
 def test_run_full_analysis_validation_fails(mocker):
     """Tests run_full_analysis behavior when DataFrame validation fails."""
+    mocker.patch("shopify_tool.core._fetch_orders_from_shopify_api", return_value=(pd.DataFrame(), None))
     # This mocks the internal _validate_dataframes function to return errors
     mocker.patch("shopify_tool.core._validate_dataframes", return_value=["Missing column 'X'"])
     success, msg, _, _ = core.run_full_analysis(
-        None, None, None, ";", {"test_stock_df": pd.DataFrame(), "test_orders_df": pd.DataFrame()}
+        stock_file_path=None, output_dir_path=None, stock_delimiter=";", config={"test_stock_df": pd.DataFrame()}
     )
     assert not success
     assert "Missing column 'X'" in msg
@@ -199,13 +201,13 @@ def test_validate_dataframes_with_missing_columns():
 
 def test_run_full_analysis_with_rules(mocker):
     """Tests that the rule engine is correctly called during a full analysis."""
+    mocker.patch("shopify_tool.core._fetch_orders_from_shopify_api", return_value=(make_orders_df(), None))
     mock_engine_apply = mocker.patch("shopify_tool.rules.RuleEngine.apply")
     config = {
         "test_stock_df": make_stock_df(),
-        "test_orders_df": make_orders_df(),
         "rules": [{"if": [], "then": []}],  # Presence of rules triggers the engine
     }
-    core.run_full_analysis(None, None, None, ";", config)
+    core.run_full_analysis(stock_file_path=None, output_dir_path=None, stock_delimiter=";", config=config)
     mock_engine_apply.assert_called_once()
 
 
@@ -216,10 +218,13 @@ def test_run_full_analysis_updates_history(tmp_path, mocker):
     output_dir.mkdir()
     stock_file = tmp_path / "stock.csv"
     stock_file.write_text("Артикул;Име;Наличност\nSKU-1;Item 1;10")
-    orders_file = tmp_path / "orders.csv"
-    orders_file.write_text(
-        "Name,Lineitem sku,Lineitem quantity,Shipping Method,Shipping Country,Tags,Notes\n1001,SKU-1,1,dhl,BG,,\n"
-    )
+
+    orders_df = pd.DataFrame({
+        "Name": ["1001"], "Lineitem sku": ["SKU-1"], "Lineitem quantity": [1],
+        "Shipping Method": ["dhl"], "Shipping Country": ["BG"], "Tags": [""], "Notes": [""]
+    })
+    mocker.patch("shopify_tool.core._fetch_orders_from_shopify_api", return_value=(orders_df, None))
+
     history_file = tmp_path / "history.csv"
     history_file.write_text("Order_Number,Execution_Date\n999,2023-01-01")
 
@@ -232,7 +237,7 @@ def test_run_full_analysis_updates_history(tmp_path, mocker):
     }
 
     # Run analysis
-    core.run_full_analysis(str(stock_file), str(orders_file), str(output_dir), ";", config)
+    core.run_full_analysis(stock_file_path=str(stock_file), output_dir_path=str(output_dir), stock_delimiter=";", config=config)
 
     # Check that history file was updated
     history_df = pd.read_csv(history_file)

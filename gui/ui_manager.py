@@ -81,6 +81,11 @@ class UIManager:
         self.mw.orders_file_status_label = QLabel("")
         self.mw.load_orders_btn.setEnabled(False)
 
+        # Hide the orders file selection widgets as it's now handled by API
+        self.mw.load_orders_btn.setVisible(False)
+        self.mw.orders_file_path_label.setVisible(False)
+        self.mw.orders_file_status_label.setVisible(False)
+
         self.mw.load_stock_btn = QPushButton("Load Stock File (.csv)")
         self.mw.load_stock_btn.setToolTip("Select the inventory/stock CSV file.")
         self.mw.stock_file_path_label = QLabel("Stock file not selected")

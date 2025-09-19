@@ -2,6 +2,7 @@ import os
 import logging
 import pandas as pd
 from datetime import datetime
+import shopify
 from . import analysis, packing_lists, stock_export
 from .rules import RuleEngine
 from .utils import get_persistent_data_path
@@ -94,12 +95,75 @@ def validate_csv_headers(file_path, required_columns, delimiter=","):
         return False, [f"An unexpected error occurred: {e}"]
 
 
-def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_delimiter, config):
+def _fetch_orders_from_shopify_api(api_credentials):
+    """Fetches open orders from Shopify and returns them as a DataFrame.
+
+    Args:
+        api_credentials (dict): A dictionary containing 'shop_url',
+                                'api_version', and 'admin_api_token'.
+
+    Returns:
+        pd.DataFrame | None: A DataFrame of orders formatted for the analysis,
+                             or None if an error occurs.
+    """
+    try:
+        shop_url = api_credentials["shop_url"]
+        api_version = api_credentials["api_version"]
+        token = api_credentials["admin_api_token"]
+
+        if not all([shop_url, api_version, token]):
+            logger.error("Shopify API credentials are not fully configured.")
+            return None, "Shopify API credentials are not fully configured in the active profile."
+
+        logger.info(f"Connecting to Shopify store: {shop_url}")
+        session = shopify.Session(shop_url, api_version, token)
+        shopify.ShopifyResource.activate_session(session)
+
+        logger.info("Fetching open orders from Shopify...")
+        all_orders_list = []
+
+        # Fetch all pages of open orders
+        page = shopify.Order.find(status="open")
+        while page:
+            for order in page:
+                order_data = order.to_dict()
+                for item in order_data.get('line_items', []):
+                    all_orders_list.append({
+                        "Name": order_data.get('name'),
+                        "Lineitem quantity": item.get('quantity'),
+                        "Lineitem name": item.get('name'),
+                        "Lineitem sku": item.get('sku'),
+                        "Shipping Method": order_data.get('shipping_lines')[0].get('title') if order_data.get('shipping_lines') else "N/A",
+                        "Shipping Country": order_data.get('shipping_address', {}).get('country_code'),
+                        "Tags": order_data.get('tags'),
+                        "Notes": order_data.get('note'),
+                        "Total": order_data.get('total_price')
+                    })
+            if page.has_next_page():
+                page = page.next_page()
+            else:
+                break
+
+        shopify.ShopifyResource.clear_session()
+        logger.info(f"Successfully fetched {len(all_orders_list)} line items from Shopify.")
+
+        if not all_orders_list:
+            return pd.DataFrame(), None # Return empty DataFrame if no orders found
+
+        return pd.DataFrame(all_orders_list), None
+
+    except Exception as e:
+        logger.error(f"Failed to fetch orders from Shopify API: {e}", exc_info=True)
+        shopify.ShopifyResource.clear_session()
+        return None, f"Failed to fetch orders from Shopify API: {e}"
+
+
+def run_full_analysis(stock_file_path, output_dir_path, stock_delimiter, config):
     """Orchestrates the entire fulfillment analysis process.
 
     This function serves as the main entry point for the core analysis logic.
     It performs the following steps:
-    1. Loads stock and order data from CSV files.
+    1. Loads stock data from a CSV file and fetches order data from Shopify API.
     2. Validates that the data contains the required columns.
     3. Loads historical fulfillment data.
     4. Runs the fulfillment simulation to determine order statuses.
@@ -110,8 +174,6 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
     Args:
         stock_file_path (str | None): Path to the stock data CSV file. Can be
             None for testing purposes if a DataFrame is provided in `config`.
-        orders_file_path (str | None): Path to the Shopify orders export CSV
-            file. Can be None for testing.
         output_dir_path (str): Path to the directory where the output report
             will be saved.
         stock_delimiter (str): The delimiter used in the stock CSV file.
@@ -132,26 +194,51 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
               successful, otherwise None.
     """
     logger.info("--- Starting Full Analysis Process ---")
+
+    history_df = pd.DataFrame(columns=["Order_Number", "Execution_Date"])
+
     # 1. Load data
-    logger.info("Step 1: Loading data files...")
-    if stock_file_path is not None and orders_file_path is not None:
-        # Normalize paths to handle UNC paths from network shares correctly
+    logger.info("Step 1: Loading data...")
+
+    # Load stock data from file
+    if stock_file_path is not None:
         stock_file_path = _normalize_unc_path(stock_file_path)
-        orders_file_path = _normalize_unc_path(orders_file_path)
-
-        if not os.path.exists(stock_file_path) or not os.path.exists(orders_file_path):
-            return False, "One or both input files were not found.", None, None
-
+        if not os.path.exists(stock_file_path):
+            return False, "Stock file not found.", None, None
         logger.info(f"Reading stock file from normalized path: {stock_file_path}")
         stock_df = pd.read_csv(stock_file_path, delimiter=stock_delimiter)
-        logger.info(f"Reading orders file from normalized path: {orders_file_path}")
-        orders_df = pd.read_csv(orders_file_path)
-    else:
-        # For testing: allow passing DataFrames directly
+    else: # For testing
         stock_df = config.get("test_stock_df")
+
+    # Fetch order data from Shopify API
+    if "test_orders_df" not in config:
+        api_creds = config.get("shopify_api_credentials", {})
+        orders_df, error_msg = _fetch_orders_from_shopify_api(api_creds)
+        if error_msg:
+            return False, error_msg, None, None
+    else: # For testing
         orders_df = config.get("test_orders_df")
-        history_df = config.get("test_history_df", pd.DataFrame({"Order_Number": []}))
-    logger.info("Data loaded successfully.")
+
+    if "test_history_df" in config:
+        history_df = config.get("test_history_df")
+    elif stock_file_path is not None:
+        # Use a persistent path for the history file
+        history_path = get_persistent_data_path("fulfillment_history.csv")
+        try:
+            history_df = pd.read_csv(history_path)
+            logger.info(f"Loaded {len(history_df)} records from fulfillment history.")
+        except FileNotFoundError:
+            logger.warning("Fulfillment history not found. A new one will be created.")
+
+
+    if orders_df is None:
+        # This can happen if API fetching fails and we are not in test mode
+        return False, "Could not retrieve orders.", None, None
+
+    if orders_df.empty:
+        logger.warning("No open orders found on Shopify. Analysis will continue with an empty order set.")
+    else:
+        logger.info(f"Successfully loaded {len(orders_df.Name.unique())} orders from Shopify API.")
 
     # Validate dataframes
     validation_errors = _validate_dataframes(orders_df, stock_df, config)
@@ -159,16 +246,6 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
         error_message = "\n".join(validation_errors)
         logger.error(f"Validation Error: {error_message}")
         return False, error_message, None, None
-
-    # Use a persistent path for the history file to avoid permission errors on network drives
-    history_path = get_persistent_data_path("fulfillment_history.csv")
-    if stock_file_path is not None and orders_file_path is not None:
-        try:
-            history_df = pd.read_csv(history_path)
-            logger.info(f"Loaded {len(history_df)} records from fulfillment history.")
-        except FileNotFoundError:
-            history_df = pd.DataFrame(columns=["Order_Number", "Execution_Date"])
-            logger.warning("Fulfillment history not found. A new one will be created.")
 
     # 2. Run analysis (computation only)
     logger.info("Step 2: Running fulfillment simulation...")
@@ -190,7 +267,7 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
         logger.info("Rule engine application complete.")
 
     # 3. Save Excel report (skip in test mode)
-    if stock_file_path is not None and orders_file_path is not None:
+    if stock_file_path is not None:
         logger.info("Step 3: Saving analysis report to Excel...")
         if not os.path.exists(output_dir_path):
             os.makedirs(output_dir_path)
