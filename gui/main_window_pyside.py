@@ -214,7 +214,6 @@ class MainWindow(QMainWindow):
 
         # Session and file loading
         self.new_session_btn.clicked.connect(self.actions_handler.create_new_session)
-        self.load_orders_btn.clicked.connect(self.file_handler.select_orders_file)
         self.load_stock_btn.clicked.connect(self.file_handler.select_stock_file)
 
         # Main actions
