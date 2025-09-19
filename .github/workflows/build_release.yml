@@ -52,7 +52,7 @@ jobs:
 
   build:
     name: Build Executable
-    needs: [lint, test]
+    needs: [test]
     runs-on: windows-latest
     # Only run build job for releases, not on every push/pr
     if: github.event_name == 'release'
