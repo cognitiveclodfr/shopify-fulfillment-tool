@@ -96,8 +96,9 @@ def test_full_run_with_file_io(tmp_path):
     # Stock Export
     export_report_config = config["stock_exports"][0]
     export_report_config["output_filename"] = str(output_dir / export_report_config["output_filename"])
+    packaging_rules = config.get("packaging_rules", {})
     export_success, export_msg = core.create_stock_export_report(
-        final_df, export_report_config
+        final_df, export_report_config, packaging_rules=packaging_rules
     )
     assert export_success
     assert os.path.exists(export_report_config["output_filename"])
@@ -179,7 +180,7 @@ def test_create_stock_export_report_exception(mocker):
     mocker.patch("shopify_tool.stock_export.create_stock_export", side_effect=Exception("Disk full"))
     analysis_df = pd.DataFrame()
     report_config = {"name": "FailExport", "output_filename": "/tmp/bad.xls"}
-    success, msg = core.create_stock_export_report(analysis_df, report_config)
+    success, msg = core.create_stock_export_report(analysis_df, report_config, packaging_rules={})
     assert not success
     assert "Failed to create stock export" in msg
 
@@ -247,3 +248,42 @@ def test_create_packing_list_creates_dir(tmp_path):
     report_config = {"name": "Test", "output_filename": str(output_file)}
     core.create_packing_list_report(make_orders_df(), report_config)
     assert output_dir.exists()
+
+
+def test_courier_mapping_is_applied(tmp_path):
+    """
+    Tests that courier_mappings from the config are correctly applied to the
+    Shipping_Provider column, using names that the general logic wouldn't catch.
+    """
+    # 1. Create mock input files with non-standard courier names
+    stock_df = make_stock_df()
+    stock_file = tmp_path / "stock.csv"
+    stock_df.to_csv(stock_file, index=False, sep=";")
+
+    orders_df = make_orders_df()
+    # Use names that will ONLY match via the specific mapping
+    orders_df["Shipping Method"] = ["MyCustomDHL", "MyCustomDPD"]
+    orders_file = tmp_path / "orders.csv"
+    orders_df.to_csv(orders_file, index=False)
+
+    # 2. Create a config with courier_mappings
+    config = {
+        "settings": {"stock_csv_delimiter": ";"},
+        "column_mappings": {"orders_required": ["Name", "Lineitem sku"], "stock_required": ["Артикул", "Наличност"]},
+        "courier_mappings": {
+            "mycustomdhl": "DHL-Standard", # Mappings should be case-insensitive
+            "mycustomdpd": "DPD-Express"
+        },
+        "rules": [],
+    }
+
+    # 3. Run the main analysis function
+    success, _, final_df, _ = core.run_full_analysis(
+        str(stock_file), str(orders_file), str(tmp_path), ";", config
+    )
+
+    # 4. Assert that the specific mappings were applied
+    assert success
+    # These values should ONLY appear if the mapping logic works
+    assert "DHL-Standard" in final_df["Shipping_Provider"].values
+    assert "DPD-Express" in final_df["Shipping_Provider"].values

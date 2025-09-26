@@ -1,10 +1,12 @@
 import logging
 import pandas as pd
+from collections import defaultdict
+from . import analysis
 
 logger = logging.getLogger("ShopifyToolLogger")
 
 
-def create_stock_export(analysis_df, output_file, report_name="Stock Export", filters=None):
+def create_stock_export(analysis_df, output_file, report_name="Stock Export", filters=None, packaging_rules=None):
     """Creates a stock export .xls file from scratch.
 
     This function generates a stock export file programmatically using pandas,
@@ -36,21 +38,11 @@ def create_stock_export(analysis_df, output_file, report_name="Stock Export", fi
         query_parts = ["Order_Fulfillment_Status == 'Fulfillable'"]
         if filters:
             for f in filters:
-                field = f.get("field")
-                operator = f.get("operator")
-                value = f.get("value")
-
+                field, operator, value = f.get("field"), f.get("operator"), f.get("value")
                 if not all([field, operator, value is not None]):
                     logger.warning(f"Skipping invalid filter: {f}")
                     continue
-
-                # Correctly quote string values for the query
-                if isinstance(value, str):
-                    formatted_value = repr(value)
-                else:
-                    # For lists (for 'in'/'not in') and numbers, no extra quotes are needed.
-                    formatted_value = value
-
+                formatted_value = repr(value) if isinstance(value, str) else value
                 query_parts.append(f"`{field}` {operator} {formatted_value}")
 
         full_query = " & ".join(query_parts)
@@ -58,27 +50,40 @@ def create_stock_export(analysis_df, output_file, report_name="Stock Export", fi
 
         if filtered_items.empty:
             logger.warning(f"Report '{report_name}': No items found matching the criteria.")
-            # Still create an empty file with headers
             export_df = pd.DataFrame(columns=["Артикул", "Наличност"])
         else:
-            # Summarize quantities by SKU
+            # 1. Summarize product quantities by SKU
             sku_summary = filtered_items.groupby("SKU")["Quantity"].sum().astype(int).reset_index()
-            sku_summary = sku_summary[sku_summary["Quantity"] > 0]
 
+            # 2. Calculate packaging materials based on order tags
+            packaging_materials = defaultdict(int)
+            if packaging_rules:
+                unique_orders = filtered_items.drop_duplicates(subset=["Order_Number"])
+                for _, order_row in unique_orders.iterrows():
+                    order_tags = analysis.parse_tags_from_note(order_row.get("Status_Note", ""))
+                    for tag in order_tags:
+                        if tag in packaging_rules:
+                            for sku, qty in packaging_rules[tag].items():
+                                packaging_materials[sku] += qty
+
+            # 3. Combine product and packaging summaries
+            if packaging_materials:
+                packaging_df = pd.DataFrame(list(packaging_materials.items()), columns=["SKU", "Quantity"])
+                sku_summary = pd.concat([sku_summary, packaging_df]).groupby("SKU", as_index=False)["Quantity"].sum()
+
+            # 4. Create the final export DataFrame
+            sku_summary = sku_summary[sku_summary["Quantity"] > 0]
             if sku_summary.empty:
                 logger.warning(f"Report '{report_name}': No items with a positive quantity to export.")
                 export_df = pd.DataFrame(columns=["Артикул", "Наличност"])
             else:
                 logger.info(f"Found {len(sku_summary)} unique SKUs to write for report '{report_name}'.")
-                # Create the final DataFrame in the required format
-                export_df = pd.DataFrame(
-                    {
-                        "Артикул": sku_summary["SKU"],
-                        "Наличност": sku_summary["Quantity"],
-                    }
-                )
+                export_df = pd.DataFrame({
+                    "Артикул": sku_summary["SKU"],
+                    "Наличност": sku_summary["Quantity"],
+                })
 
-        # Save to an .xls file
+        # 5. Save to an .xls file
         try:
             with pd.ExcelWriter(output_file, engine="xlwt") as writer:
                 export_df.to_excel(writer, index=False, sheet_name="Sheet1")

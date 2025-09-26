@@ -19,8 +19,10 @@ The general data flow is as follows:
 3.  **Validation**: The application validates the headers of the CSV files against the **Column Mappings** defined in the active profile.
 4.  **Analysis**: The user clicks "Run Analysis".
     -   `gui_main.py` calls `shopify_tool.core.run_full_analysis()`.
-    -   The `core` module reads the CSVs, applies **Courier Mappings**, and runs the main fulfillment simulation logic from `shopify_tool.analysis`.
-    -   The `core` module then applies the **Rule Engine** (`shopify_tool.rules`) to the analysis results.
+    -   The `core` module reads the CSVs and runs the main fulfillment simulation logic from `shopify_tool.analysis`.
+    -   The `analysis` module now handles all courier name standardization, prioritizing `courier_mappings` from the config over its general rules.
+    -   The `core` module pre-processes the data to create aggregated, order-level columns (e.g., `order_skus_list`) if any order-level rules are defined.
+    -   The `core` module then applies the **Rule Engine** (`shopify_tool.rules`) to the potentially enriched analysis results.
     -   The final `pandas.DataFrame` is returned to the GUI.
 5.  **Display**: The GUI displays the DataFrame in an interactive table.
 6.  **Report Generation**:
@@ -52,6 +54,7 @@ Each profile object contains the following keys:
 -   `paths`: Default file paths.
 -   `column_mappings`: Defines how user CSV columns map to internal data fields.
 -   `courier_mappings`: Standardizes courier names.
+-   `packaging_rules`: Defines mappings between order tags and packaging material SKUs for automatic stock write-offs.
 -   `rules`: A list of automation rules for the Rule Engine.
 -   `packing_lists`: A list of templates for packing list reports.
 -   `stock_exports`: A list of templates for stock export reports.
@@ -94,19 +97,22 @@ This module acts as the main API for the backend. It orchestrates the other back
 -   `create_packing_list_report()`, `create_stock_export_report()`: These functions take the analysis DataFrame and a specific report configuration, and call the appropriate module to generate the file.
 
 ### `analysis.py`
-Contains the pure business logic for the fulfillment simulation.
--   `run_analysis()`: Takes clean DataFrames for orders and stock. It determines which orders are fulfillable based on available stock, prioritizing multi-item orders over single-item orders to maximize the number of completed orders.
+Contains the pure business logic for the fulfillment simulation and shared data helpers.
+-   `run_analysis()`: Takes clean DataFrames for orders and stock, plus an optional `courier_mappings` dictionary. It determines which orders are fulfillable and standardizes shipping provider names, prioritizing the custom mappings.
+-   `parse_tags_from_note()` & `rebuild_tags_string()`: New shared helper functions that handle the parsing and rebuilding of tag strings from the `Status_Note` field, ensuring consistent `|TAG1|TAG2|` formatting across the application.
 -   `toggle_order_fulfillment()`: Contains the logic to manually mark an order as "Fulfillable" or "Not Fulfillable" and correctly recalculates the resulting stock changes.
 
 ### `rules.py`
-Implements the flexible "IF/THEN" rule engine.
+Implements the flexible "IF/THEN" rule engine. This module has been significantly enhanced.
 -   `RuleEngine` class:
-    -   Initialized with a list of rule configurations from the active profile.
-    -   The `apply()` method iterates through each rule, evaluates its conditions against the DataFrame, and executes the specified actions on the matching rows.
-    -   `OPERATOR_MAP`: A dictionary that maps the string operators from `config.json` (e.g., "contains") to the internal Python functions that perform the comparison.
+    -   **Tag Management**: Actions now use the centralized `analysis.parse_tags_from_note()` helper for robust, format-agnostic tag manipulation. New actions `REMOVE_TAG`, `REPLACE_TAG`, and `CLEAR_TAGS` have been added.
+    -   **Order-Level Matching**: The engine now supports a `match_level: "order"` property in rules. When this is present, the engine evaluates conditions against aggregated fields that represent the entire order.
+    -   `_get_matching_rows()`: This method now contains separate logic paths for item-level and order-level matching to efficiently apply rules.
+    -   `OPERATOR_MAP`: Has been expanded with new operators for lists/sets, such as `contains all`, `contains any`, and `contains only`.
 
 ### `packing_lists.py` & `stock_export.py`
 These modules are responsible for generating the final report files.
+-   `create_stock_export()`: This function now accepts an optional `packaging_rules` dictionary. If provided, it inspects the tags of each order being exported and adds the corresponding packaging material SKUs and quantities to the final summary.
 -   `create_packing_list()`: Takes the main DataFrame and a report configuration. It dynamically builds a pandas query string from the `filters` list, applies it to the DataFrame, excludes any specified SKUs, sorts the results for optimal picking, and formats the output into a clean Excel file using `xlsxwriter`.
 
 ## 4. GUI Deep Dive (`gui/` & `gui_main.py`)

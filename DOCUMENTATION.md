@@ -129,6 +129,50 @@ Each rule consists of **Conditions** (the "IF" part) and **Actions** (the "THEN"
 | **`SET_PRIORITY`**        | Sets the `Priority` of the order (e.g., to "High"). This can be used with report filters to create high-priority packing lists.                                                                                                                                                                                                                                  |
 | **`EXCLUDE_FROM_REPORT`** | Hides the order from all generated reports. The order remains visible in the main table.                                                                                                                                                                                                                                                                          |
 | **`EXCLUDE_SKU`**         | A specialized action that sets the quantity of a specific SKU within a matching order to zero, effectively removing it from fulfillment for that order. **Use with caution,** as it can lead to partial shipments. The SKU to exclude is specified in the "Value" field of the action. |
+| **`REMOVE_TAG`**          | Removes a specific tag from the `Status_Note` column. The value should be the exact tag to remove.                                                                                                                                                                                                                                  |
+| **`REPLACE_TAG`**         | Replaces an existing tag with a new one. The value must be in the format `OLD_TAG,NEW_TAG`.                                                                                                                                                                                                                                          |
+| **`CLEAR_TAGS`**          | Completely removes all tags from the `Status_Note` column, leaving it blank.                                                                                                                                                                                                                                                            |
+| **`ADD_TAG_TO_ORDER`**    | Similar to `ADD_TAG`, but designed for order-level rules. It applies a tag to all line items of an order that matches an order-level condition.                                                                                                                                                                                         |
+
+### Advanced: Order-Level Rules
+
+The Rule Engine can now analyze an entire order at once, not just individual line items. This allows for powerful rules based on combinations of items within an order.
+
+To enable this, set the **`match_level`** property of a rule to **`"order"`**. When you do this, you gain access to new fields and operators.
+
+**New Aggregated Fields for Order-Level Rules:**
+
+| Field Name          | Description                                         | Example Value                  |
+| :------------------ | :-------------------------------------------------- | :----------------------------- |
+| `order_skus_list`   | A list of all SKUs present in the entire order.     | `['SKU-A', 'SKU-B', 'SKU-C']`  |
+| `order_tags_set`    | A unique set of all tags applied to the entire order. | `{'FRAGILE', 'BOX'}`           |
+
+**New Operators for Order-Level Rules:**
+
+These operators are designed to work with the new list/set fields. The `value` for these operators should be a comma-separated string of items.
+
+| Operator          | Description                                                                    | Example Usage                                                    |
+| :---------------- | :----------------------------------------------------------------------------- | :--------------------------------------------------------------- |
+| `contains all`    | The field (e.g., `order_skus_list`) contains every one of the specified items. | `order_skus_list` contains all `SKU-A,SKU-B`                     |
+| `contains any`    | The field contains at least one of the specified items.                        | `order_skus_list` contains any `PROMO-1,PROMO-2`                 |
+| `contains only`   | The field contains *exactly* the specified items and no others.                | `order_skus_list` contains only `SKU-C` (for single-item orders) |
+
+**Example Order-Level Rule:**
+
+This rule applies the `Double Tracking` tag to any order that contains **both** `01-FACE-1001` and `02-FACE-1001`.
+
+```json
+{
+  "name": "Set Double Tracking for specific SKU combination",
+  "match_level": "order",
+  "conditions": [
+    { "field": "order_skus_list", "operator": "contains all", "value": "01-FACE-1001,02-FACE-1001" }
+  ],
+  "actions": [
+    { "type": "ADD_TAG_TO_ORDER", "value": "Double Tracking" }
+  ]
+}
+```
 
 ## 5. In-Depth Guide: Reports and Exports
 
@@ -160,10 +204,54 @@ Filters in reports use a different, more direct set of operators than the Rule E
 2.  A dialog will appear showing your configured report templates.
 3.  Select a report and click "Generate". The file will be saved in the current session's output folder.
 
-## 6. Advanced Topics & FAQ
+## 6. Packaging Material Automation
+
+The tool can automatically add packaging materials (like boxes, tape, and bubble wrap) to your **Stock Exports**. This allows you to accurately track and write off your packaging inventory.
+
+This feature works by linking tags on an order to specific packaging SKUs.
+
+### How It Works
+
+1.  You define your packaging rules in your profile's `config.json` file.
+2.  You use the **Rule Engine** to tag orders (e.g., add a "BOX" tag to all single-item orders).
+3.  When you generate a **Stock Export**, the tool looks at the tags on each fulfillable order in that report.
+4.  If an order's tag matches a rule in your packaging configuration, the specified packaging SKUs are automatically added to the final stock export list.
+
+### Configuration
+
+To set this up, you need to manually edit your profile's `config.json` file. You can access this by going to **Settings > Profiles > Open Profiles Folder**.
+
+Add a new section called `packaging_rules` to your config file. This section contains key-value pairs where:
+-   The **key** is the tag from the `Status_Note` column.
+-   The **value** is an object where each key is a packaging SKU and its value is the quantity to add.
+
+**Example `packaging_rules` in `config.json`:**
+
+```json
+"packaging_rules": {
+  "BOX": {
+    "PACK-BOX-S": 1
+  },
+  "Double": {
+    "PACK-BOX-M": 1,
+    "PACK-TAPE": 1
+  },
+  "FRAGILE": {
+    "PACK-BUBBLE": 2
+  }
+}
+```
+
+**In this example:**
+-   Any order with the `BOX` tag will add 1 `PACK-BOX-S` to the stock export.
+-   Any order with the `Double` tag will add 1 `PACK-BOX-M` and 1 `PACK-TAPE`.
+-   If an order has both `FRAGILE` and `BOX` tags, it will get materials from both rules (`PACK-BUBBLE`: 2 and `PACK-BOX-S`: 1).
+
+## 7. Advanced Topics & FAQ
 
 **How do I handle orders with both fragile and non-fragile items?**
 - Create a rule that adds a "FRAGILE" tag if an order contains a fragile SKU. Then, create two packing lists: one that *includes* only orders with the "FRAGILE" tag, and another that *excludes* them. This lets you process them in separate batches.
+- You can also link the "FRAGILE" tag to bubble wrap using the **Packaging Material Automation** feature to ensure it's deducted from your stock.
 
 **Can I prepare a report for a specific courier?**
 - Yes. Create a new Packing List template. Add a filter where `Shipping_Provider` == `[Courier Name]`. When you generate this report, it will only contain orders for that courier.

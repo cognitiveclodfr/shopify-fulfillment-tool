@@ -103,3 +103,54 @@ def test_create_stock_export_skips_invalid_filter(tmp_path, sample_analysis_df, 
     assert os.path.exists(output_path)
     result_df = pd.read_excel(output_path)
     assert len(result_df) == 2 # SKU-A and SKU-B
+
+
+def test_packaging_rules_are_applied(tmp_path):
+    """
+    Tests that packaging materials are correctly added to the stock export
+    based on tags in the Status_Note column.
+    """
+    # 1. Create a sample DataFrame with tagged orders
+    analysis_df = pd.DataFrame({
+        "Order_Number": ["#1001", "#1002", "#1002", "#1003"],
+        "Order_Fulfillment_Status": ["Fulfillable", "Fulfillable", "Fulfillable", "Fulfillable"],
+        "SKU": ["SKU-A", "SKU-B", "SKU-C", "SKU-D"],
+        "Quantity": [1, 2, 1, 3],
+        "Status_Note": ["|BOX|", "|Double|", "|Double|", "|FRAGILE|BOX|"]
+    })
+
+    # 2. Define packaging rules
+    packaging_rules = {
+        "BOX": {"PACK-BOX-S": 1},
+        "Double": {"PACK-BOX-M": 1, "PACK-TAPE": 1},
+        "FRAGILE": {"PACK-BUBBLE": 2}
+    }
+
+    # 3. Generate the stock export
+    output_path = tmp_path / "stock_export_with_packaging.xls"
+    stock_export.create_stock_export(
+        analysis_df, str(output_path), packaging_rules=packaging_rules
+    )
+
+    # 4. Read the output and validate its content
+    assert os.path.exists(output_path)
+    result_df = pd.read_excel(output_path)
+
+    # 5. Define expected output
+    # Original SKUs: SKU-A: 1, SKU-B: 2, SKU-C: 1, SKU-D: 3
+    # Packaging SKUs:
+    # Order #1001 (BOX): PACK-BOX-S: 1
+    # Order #1002 (Double): PACK-BOX-M: 1, PACK-TAPE: 1
+    # Order #1003 (FRAGILE, BOX): PACK-BUBBLE: 2, PACK-BOX-S: 1
+    # Total Packaging: PACK-BOX-S: 2, PACK-BOX-M: 1, PACK-TAPE: 1, PACK-BUBBLE: 2
+    expected_data = {
+        "Артикул": ["SKU-A", "SKU-B", "SKU-C", "SKU-D", "PACK-BOX-S", "PACK-BOX-M", "PACK-TAPE", "PACK-BUBBLE"],
+        "Наличност": [1, 2, 1, 3, 2, 1, 1, 2]
+    }
+    expected_df = pd.DataFrame(expected_data)
+
+    # Sort both dataframes for consistent comparison
+    result_df = result_df.sort_values(by="Артикул").reset_index(drop=True)
+    expected_df = expected_df.sort_values(by="Артикул").reset_index(drop=True)
+
+    pd.testing.assert_frame_equal(result_df, expected_df)

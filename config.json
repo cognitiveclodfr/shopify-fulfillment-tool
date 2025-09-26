@@ -25,6 +25,12 @@
       "Наличност"
     ]
   },
+  "courier_mappings": {},
+  "packaging_rules": {
+    "BOX": { "PACK-BOX-S": 1 },
+    "Double": { "PACK-BOX-M": 1, "PACK-TAPE": 1 },
+    "FRAGILE": { "PACK-BUBBLE": 2 }
+  },
   "rules": [],
   "packing_lists": [
     {

@@ -172,7 +172,10 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
 
     # 2. Run analysis (computation only)
     logger.info("Step 2: Running fulfillment simulation...")
-    final_df, summary_present_df, summary_missing_df, stats = analysis.run_analysis(stock_df, orders_df, history_df)
+    courier_mappings = config.get("courier_mappings", {})
+    final_df, summary_present_df, summary_missing_df, stats = analysis.run_analysis(
+        stock_df, orders_df, history_df, courier_mappings=courier_mappings
+    )
     logger.info("Analysis computation complete.")
 
     # 2.5. Add stock alerts based on config
@@ -180,6 +183,27 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
     if low_stock_threshold is not None and "Final_Stock" in final_df.columns:
         logger.info(f"Applying low stock threshold: < {low_stock_threshold}")
         final_df["Stock_Alert"] = np.where(final_df["Final_Stock"] < low_stock_threshold, "Low Stock", "")
+
+    # 2.5.5. Pre-process for order-level rules
+    # This block creates aggregated columns for rules that need to evaluate
+    # the entire order rather than just a single line item.
+    if any(rule.get("match_level") == "order" for rule in config.get("rules", [])):
+        logger.info("Pre-processing data for order-level rules...")
+        # Aggregate SKUs into a list for each order
+        order_skus = final_df.groupby("Order_Number")["SKU"].apply(list)
+        final_df["order_skus_list"] = final_df["Order_Number"].map(order_skus)
+
+        # Aggregate tags into a set for each order
+        def aggregate_tags(series):
+            # Using the same parsing logic as the rule engine for consistency
+            tag_set = set()
+            for note in series.dropna():
+                tag_set.update(analysis.parse_tags_from_note(note))
+            return tag_set
+
+        order_tags = final_df.groupby("Order_Number")["Status_Note"].apply(aggregate_tags)
+        final_df["order_tags_set"] = final_df["Order_Number"].map(order_tags)
+        logger.info("Order-level data aggregation complete.")
 
     # 2.6. Apply the new rule engine
     rules = config.get("rules", [])
@@ -307,12 +331,13 @@ def get_unique_column_values(df, column_name):
         return []
 
 
-def create_stock_export_report(analysis_df, report_config):
+def create_stock_export_report(analysis_df, report_config, packaging_rules=None):
     """Generates a single stock export report based on a configuration.
 
     Args:
         analysis_df (pd.DataFrame): The main analysis DataFrame.
         report_config (dict): The configuration for the specific stock export.
+        packaging_rules (dict, optional): Rules for adding packaging materials.
 
     Returns:
         tuple[bool, str]: A tuple containing a success flag and a status message.
@@ -332,6 +357,7 @@ def create_stock_export_report(analysis_df, report_config):
             output_filename,
             report_name=report_name,
             filters=filters,
+            packaging_rules=packaging_rules,
         )
         success_message = f"Stock export '{report_name}' created successfully at '{output_filename}'."
         return True, success_message

@@ -38,14 +38,14 @@ def test_add_tag_with_simple_rule(sample_df):
 
     # Check that rows with 'DHL' got the new note
     dhl_rows = result_df[result_df["Shipping_Provider"] == "DHL"]
-    assert all(dhl_rows["Status_Note"].str.contains("DHL-SHIP"))
+    assert all(dhl_rows["Status_Note"].str.contains("|DHL-SHIP|"))
 
     # Check that other rows did not get the note
     other_rows = result_df[result_df["Shipping_Provider"] != "DHL"]
     assert not any(other_rows["Status_Note"].str.contains("DHL-SHIP"))
 
-    # Check that a pre-existing note was preserved
-    assert "Repeat, DHL-SHIP" in result_df.loc[4, "Status_Note"]
+    # Check that a pre-existing note was preserved and format is correct
+    assert result_df.loc[4, "Status_Note"] == "|DHL-SHIP|Repeat|"
 
 
 def test_set_priority_with_multiple_conditions_all(sample_df):
@@ -296,6 +296,127 @@ def test_add_tag_to_nan_note(sample_df):
     engine = RuleEngine(rules)
     result_df = engine.apply(df)
 
-    # The note for order #1001 should now be 'NewTag'
+    # The note for order #1001 should now contain '|NewTag|'
     note = result_df.loc[result_df["Order_Number"] == "#1001", "Status_Note"].iloc[0]
-    assert note == "NewTag"
+    assert "|NewTag|" in note
+
+
+def test_new_tag_management_actions(sample_df):
+    """
+    Tests the new tag actions: ADD_TAG, REMOVE_TAG, REPLACE_TAG, CLEAR_TAGS
+    using the new structured |TAG| format.
+    """
+    df = sample_df.copy()
+    # Setup initial state for a specific order
+    df.loc[df["Order_Number"] == "#1002", "Status_Note"] = "|InitialTag|ExistingTag|"
+
+    # 1. Test ADD_TAG: should add a new tag and not duplicate an existing one
+    rules_add = [
+        {
+            "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1002"}],
+            "actions": [
+                {"type": "ADD_TAG", "value": "NewTag"},
+                {"type": "ADD_TAG", "value": "ExistingTag"} # Should not be added again
+            ]
+        }
+    ]
+    engine_add = RuleEngine(rules_add)
+    result_df = engine_add.apply(df.copy())
+    note = result_df.loc[result_df["Order_Number"] == "#1002", "Status_Note"].iloc[0]
+    assert note == "|ExistingTag|InitialTag|NewTag|"
+
+    # 2. Test REMOVE_TAG
+    rules_remove = [
+        {
+            "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1002"}],
+            "actions": [{"type": "REMOVE_TAG", "value": "InitialTag"}]
+        }
+    ]
+    engine_remove = RuleEngine(rules_remove)
+    result_df = engine_remove.apply(df.copy())
+    note = result_df.loc[result_df["Order_Number"] == "#1002", "Status_Note"].iloc[0]
+    assert note == "|ExistingTag|"
+
+    # 3. Test REPLACE_TAG
+    rules_replace = [
+        {
+            "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1002"}],
+            "actions": [{"type": "REPLACE_TAG", "value": "InitialTag,ReplacedTag"}]
+        }
+    ]
+    engine_replace = RuleEngine(rules_replace)
+    result_df = engine_replace.apply(df.copy())
+    note = result_df.loc[result_df["Order_Number"] == "#1002", "Status_Note"].iloc[0]
+    assert note == "|ExistingTag|ReplacedTag|"
+
+    # 4. Test CLEAR_TAGS
+    rules_clear = [
+        {
+            "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1002"}],
+            "actions": [{"type": "CLEAR_TAGS"}]
+        }
+    ]
+    engine_clear = RuleEngine(rules_clear)
+    result_df = engine_clear.apply(df.copy())
+    note = result_df.loc[result_df["Order_Number"] == "#1002", "Status_Note"].iloc[0]
+    assert note == ""
+
+
+def test_order_level_rules_with_new_operators(sample_df):
+    """
+    Tests rules with `match_level: "order"` and the new list/set operators.
+    """
+    df = sample_df.copy()
+
+    # Manually create the aggregated columns to simulate the pre-processing in core.py
+    # Order #1001: [SKU-A, SKU-B]
+    # Order #1002: [SKU-C]
+    # Order #1003: [SKU-D]
+    # Order #1004: [SKU-E]
+    order_skus = df.groupby("Order_Number")["SKU"].apply(list)
+    df["order_skus_list"] = df["Order_Number"].map(order_skus)
+
+    # Rule 1: 'contains all' - should match order #1001
+    rule_contains_all = {
+        "name": "Test Contains All",
+        "match_level": "order",
+        "conditions": [{"field": "order_skus_list", "operator": "contains all", "value": "SKU-A,SKU-B"}],
+        "actions": [{"type": "ADD_TAG_TO_ORDER", "value": "ContainsAllMatch"}]
+    }
+
+    # Rule 2: 'contains any' - should match orders #1001 and #1002
+    rule_contains_any = {
+        "name": "Test Contains Any",
+        "match_level": "order",
+        "conditions": [{"field": "order_skus_list", "operator": "contains any", "value": "SKU-B,SKU-C"}],
+        "actions": [{"type": "ADD_TAG_TO_ORDER", "value": "ContainsAnyMatch"}]
+    }
+
+    # Rule 3: 'contains only' - should match order #1002
+    rule_contains_only = {
+        "name": "Test Contains Only",
+        "match_level": "order",
+        "conditions": [{"field": "order_skus_list", "operator": "contains only", "value": "SKU-C"}],
+        "actions": [{"type": "ADD_TAG_TO_ORDER", "value": "ContainsOnlyMatch"}]
+    }
+
+    engine = RuleEngine([rule_contains_all, rule_contains_any, rule_contains_only])
+    result_df = engine.apply(df)
+
+    # Assertions for Rule 1
+    order_1001_notes = result_df[result_df["Order_Number"] == "#1001"]["Status_Note"]
+    assert all(order_1001_notes.str.contains("ContainsAllMatch"))
+
+    # Assertions for Rule 2
+    order_1001_notes = result_df[result_df["Order_Number"] == "#1001"]["Status_Note"]
+    order_1002_notes = result_df[result_df["Order_Number"] == "#1002"]["Status_Note"]
+    assert all(order_1001_notes.str.contains("ContainsAnyMatch"))
+    assert all(order_1002_notes.str.contains("ContainsAnyMatch"))
+
+    # Assertions for Rule 3
+    order_1002_notes = result_df[result_df["Order_Number"] == "#1002"]["Status_Note"]
+    assert all(order_1002_notes.str.contains("ContainsOnlyMatch"))
+
+    # Check that other orders were not tagged
+    order_1003_note = result_df[result_df["Order_Number"] == "#1003"]["Status_Note"].iloc[0]
+    assert "Contains" not in order_1003_note

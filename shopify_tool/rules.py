@@ -1,4 +1,5 @@
 import pandas as pd
+from . import analysis
 
 
 """Implements a configurable rule engine to process and modify order data.
@@ -20,6 +21,7 @@ The core components are:
 
 # A mapping from user-friendly operator names to internal function names
 OPERATOR_MAP = {
+    # Standard operators
     "equals": "_op_equals",
     "does not equal": "_op_not_equals",
     "contains": "_op_contains",
@@ -30,6 +32,10 @@ OPERATOR_MAP = {
     "ends with": "_op_ends_with",
     "is empty": "_op_is_empty",
     "is not empty": "_op_is_not_empty",
+    # Order-level list/set operators
+    "contains all": "_op_contains_all",
+    "contains any": "_op_contains_any",
+    "contains only": "_op_contains_only",
 }
 
 # --- Operator Implementations ---
@@ -78,12 +84,38 @@ def _op_ends_with(series_val, rule_val):
 
 def _op_is_empty(series_val, rule_val):
     """Returns True where the series value is null or an empty string."""
+    # For lists/sets, empty means it's a NaN/None or an empty list/set
+    if series_val.dtype == 'object' and series_val.apply(lambda x: isinstance(x, (list, set))).any():
+        return series_val.isna() | (series_val.str.len() == 0)
     return series_val.isnull() | (series_val == "")
 
 
 def _op_is_not_empty(series_val, rule_val):
     """Returns True where the series value is not null and not an empty string."""
+    # For lists/sets, not empty means it's not NaN/None and has items
+    if series_val.dtype == 'object' and series_val.apply(lambda x: isinstance(x, (list, set))).any():
+        return series_val.notna() & (series_val.str.len() > 0)
     return series_val.notna() & (series_val != "")
+
+
+def _op_contains_all(series_val, rule_val):
+    """Returns True if the list/set in the series contains all specified items."""
+    # rule_val is expected to be a comma-separated string
+    required_items = set(item.strip() for item in rule_val.split(','))
+    # The series contains sets, so we check for subset
+    return series_val.apply(lambda s: isinstance(s, (list, set)) and required_items.issubset(s))
+
+
+def _op_contains_any(series_val, rule_val):
+    """Returns True if the list/set in the series contains any of the specified items."""
+    required_items = set(item.strip() for item in rule_val.split(','))
+    return series_val.apply(lambda s: isinstance(s, (list, set)) and not required_items.isdisjoint(s))
+
+
+def _op_contains_only(series_val, rule_val):
+    """Returns True if the list/set in the series contains exactly the specified items."""
+    required_items = set(item.strip() for item in rule_val.split(','))
+    return series_val.apply(lambda s: isinstance(s, (list, set)) and set(s) == required_items)
 
 
 class RuleEngine:
@@ -151,9 +183,8 @@ class RuleEngine:
                     needed_columns.add("Priority")
                 elif action_type == "EXCLUDE_FROM_REPORT":
                     needed_columns.add("_is_excluded")
-                elif action_type == "EXCLUDE_SKU":
-                    needed_columns.add("Status_Note")
-                elif action_type == "ADD_TAG":
+                # All tag actions modify Status_Note
+                elif action_type in ["ADD_TAG", "REMOVE_TAG", "REPLACE_TAG", "CLEAR_TAGS", "EXCLUDE_SKU"]:
                     needed_columns.add("Status_Note")
 
         # Add only the necessary columns if they don't already exist
@@ -171,6 +202,8 @@ class RuleEngine:
         either "AND" (all conditions must match) or "OR" (any condition can
         match) logic, as specified by the rule's 'match' property.
 
+        This now supports both item-level and order-level matching.
+
         Args:
             df (pd.DataFrame): The DataFrame to evaluate.
             rule (dict): The rule dictionary containing the conditions.
@@ -182,33 +215,53 @@ class RuleEngine:
         """
         match_type = rule.get("match", "ALL").upper()
         conditions = rule.get("conditions", [])
+        match_level = rule.get("match_level", "item") # Default to 'item'
 
         if not conditions:
             return pd.Series([False] * len(df), index=df.index)
 
-        # Get a boolean Series for each individual condition
+        # For order-level matching, we evaluate conditions once per order, then map the results
+        # back to all line items belonging to that order.
+        if match_level == "order":
+            # Create a smaller DataFrame with one row per order to avoid redundant computation
+            order_df = df.drop_duplicates(subset=["Order_Number"]).set_index("Order_Number")
+
+            condition_results = []
+            for cond in conditions:
+                field, op, value = cond.get("field"), cond.get("operator"), cond.get("value")
+                if not all([field, op, field in order_df.columns, op in OPERATOR_MAP]):
+                    continue
+                op_func = globals()[OPERATOR_MAP[op]]
+                condition_results.append(op_func(order_df[field], value))
+
+            if not condition_results:
+                return pd.Series([False] * len(df), index=df.index)
+
+            # Combine results and get a Series of matching Order_Numbers
+            if match_type == "ALL":
+                order_matches = pd.concat(condition_results, axis=1).all(axis=1)
+            else: # ANY
+                order_matches = pd.concat(condition_results, axis=1).any(axis=1)
+
+            # Map the boolean result back to the original df
+            matching_order_numbers = order_df[order_matches].index
+            return df["Order_Number"].isin(matching_order_numbers)
+
+        # --- Original item-level matching logic ---
         condition_results = []
         for cond in conditions:
-            field = cond.get("field")
-            operator = cond.get("operator")
-            value = cond.get("value")
-
-            if not all([field, operator, field in df.columns, operator in OPERATOR_MAP]):
+            field, op, value = cond.get("field"), cond.get("operator"), cond.get("value")
+            if not all([field, op, field in df.columns, op in OPERATOR_MAP]):
                 continue
-
-            op_func_name = OPERATOR_MAP[operator]
-            op_func = globals()[op_func_name]
+            op_func = globals()[OPERATOR_MAP[op]]
             condition_results.append(op_func(df[field], value))
 
         if not condition_results:
             return pd.Series([False] * len(df), index=df.index)
 
-        # Combine the individual condition results based on the match type
         if match_type == "ALL":
-            # ALL (AND logic)
             return pd.concat(condition_results, axis=1).all(axis=1)
-        else:
-            # ANY (OR logic)
+        else: # ANY
             return pd.concat(condition_results, axis=1).any(axis=1)
 
     def _execute_actions(self, df, matches, actions):
@@ -224,41 +277,72 @@ class RuleEngine:
                 to apply the actions to.
             actions (list[dict]): A list of action dictionaries to execute.
         """
+        df_to_modify = df.loc[matches].copy()
+        if df_to_modify.empty:
+            return
+
         for action in actions:
             action_type = action.get("type", "").upper()
             value = action.get("value")
 
             if action_type == "ADD_TAG":
-                # Per user feedback, ADD_TAG should modify Status_Note, not Tags
-                current_notes = df.loc[matches, "Status_Note"].fillna("").astype(str)
+                def process_note(note):
+                    tags = analysis.parse_tags_from_note(note)
+                    tags.add(value)
+                    return analysis.rebuild_tags_string(tags)
+                df_to_modify["Status_Note"] = df_to_modify["Status_Note"].apply(process_note)
 
-                # Append new tag, handling empty notes and preventing duplicates
-                def append_note(note):
-                    if value in note.split(", "):
-                        return note
-                    return f"{note}, {value}" if note else value
+            elif action_type == "REMOVE_TAG":
+                def process_note(note):
+                    tags = analysis.parse_tags_from_note(note)
+                    tags.discard(value)
+                    return analysis.rebuild_tags_string(tags)
+                df_to_modify["Status_Note"] = df_to_modify["Status_Note"].apply(process_note)
 
-                new_notes = current_notes.apply(append_note)
-                df.loc[matches, "Status_Note"] = new_notes
+            elif action_type == "REPLACE_TAG":
+                if isinstance(value, str) and "," in value:
+                    old_tag, new_tag = value.split(",", 1)
+                    def process_note(note):
+                        tags = analysis.parse_tags_from_note(note)
+                        if old_tag in tags:
+                            tags.remove(old_tag)
+                            tags.add(new_tag)
+                        return analysis.rebuild_tags_string(tags)
+                    df_to_modify["Status_Note"] = df_to_modify["Status_Note"].apply(process_note)
+
+            elif action_type == "ADD_TAG_TO_ORDER":
+                # This action is functionally identical to ADD_TAG because the matching
+                # logic already ensures all items for the order are selected.
+                # The logic is kept separate for clarity and future extension.
+                def process_note(note):
+                    tags = analysis.parse_tags_from_note(note)
+                    tags.add(value)
+                    return analysis.rebuild_tags_string(tags)
+                df_to_modify["Status_Note"] = df_to_modify["Status_Note"].apply(process_note)
+
+            elif action_type == "CLEAR_TAGS":
+                df_to_modify["Status_Note"] = ""
 
             elif action_type == "SET_STATUS":
-                df.loc[matches, "Order_Fulfillment_Status"] = value
+                df_to_modify["Order_Fulfillment_Status"] = value
 
             elif action_type == "SET_PRIORITY":
-                df.loc[matches, "Priority"] = value
+                df_to_modify["Priority"] = value
 
             elif action_type == "EXCLUDE_FROM_REPORT":
-                df.loc[matches, "_is_excluded"] = True
+                df_to_modify["_is_excluded"] = True
 
             elif action_type == "EXCLUDE_SKU":
-                # This is a complex, destructive action.
-                # For now, we will just mark it for potential later processing.
-                # A full implementation would require re-evaluating the entire order.
-                # A simple approach is to set its quantity to 0 and flag it.
-                if "SKU" in df.columns and "Quantity" in df.columns:
+                if "SKU" in df_to_modify.columns and "Quantity" in df_to_modify.columns:
                     sku_to_exclude = value
-                    # We need to find rows that match the rule AND the SKU
-                    sku_matches = df["SKU"] == sku_to_exclude
-                    final_matches = matches & sku_matches
-                    df.loc[final_matches, "Quantity"] = 0
-                    df.loc[final_matches, "Status_Note"] = df.loc[final_matches, "Status_Note"] + " SKU_EXCLUDED"
+                    sku_matches = df_to_modify["SKU"] == sku_to_exclude
+                    df_to_modify.loc[sku_matches, "Quantity"] = 0
+
+                    def process_note(note):
+                        tags = analysis.parse_tags_from_note(note)
+                        tags.add("SKU_EXCLUDED")
+                        return analysis.rebuild_tags_string(tags)
+                    df_to_modify.loc[sku_matches, "Status_Note"] = df_to_modify.loc[sku_matches, "Status_Note"].apply(process_note)
+
+        # Update the original DataFrame with the changes
+        df.update(df_to_modify)

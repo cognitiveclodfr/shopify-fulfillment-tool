@@ -2,36 +2,67 @@ import pandas as pd
 import numpy as np
 
 
-def _generalize_shipping_method(method):
+def parse_tags_from_note(note: str) -> set:
+    """Parses a tag string into a set of tags, handling legacy and new formats."""
+    if not isinstance(note, str) or not note:
+        return set()
+    # New format: |TAG1|TAG2|
+    if note.startswith('|') and note.endswith('|'):
+        tags = set(note.strip('|').split('|'))
+    # Legacy format: TAG1, TAG2, TAG3
+    else:
+        tags = set(t.strip() for t in note.split(','))
+    tags.discard('')  # Remove any empty tags that might result from splitting
+    return tags
+
+
+def rebuild_tags_string(tags: set) -> str:
+    """Builds a tag string from a set of tags in the new format."""
+    if not tags:
+        return ""
+    # Sorting ensures consistent output for testing and readability
+    return f"|{'|'.join(sorted(list(tags)))}|"
+
+
+def _generalize_shipping_method(method, custom_mappings=None):
     """Standardizes raw shipping method names to a consistent format.
 
-    Takes a raw shipping method string, converts it to lowercase, and maps it
-    to a standardized provider name (e.g., 'dhl express' becomes 'DHL').
-    If the method is not recognized, it returns a title-cased version of the
-    input. Handles NaN values by returning 'Unknown'.
+    It first checks for a user-defined mapping in `custom_mappings`. If no
+    match is found, it falls back to a set of general rules. If still no match,
+    it returns a title-cased version of the input.
 
     Args:
         method (str | float): The raw shipping method from the orders file.
-            Can be a float (NaN) for empty values.
+        custom_mappings (dict | None): A dictionary of custom courier mappings.
+            Keys are lowercase raw names, values are the desired standardized names.
 
     Returns:
         str: The standardized shipping provider name.
     """
     if pd.isna(method):
         return "Unknown"
-    method = str(method).lower()
-    if not method:
+
+    method_lower = str(method).lower()
+    if not method_lower:
         return "Unknown"
-    if "dhl" in method:
+
+    # 1. Check for a custom mapping first (case-insensitive)
+    if custom_mappings and method_lower in custom_mappings:
+        return custom_mappings[method_lower]
+
+    # 2. Fallback to general rules
+    if "dhl" in method_lower:
         return "DHL"
-    if "dpd" in method:
+    if "dpd" in method_lower:
         return "DPD"
-    if "international shipping" in method:
+    if "international shipping" in method_lower:
         return "PostOne"
+
+    # 3. Default to title case if no rules match
     return method.title()
 
 
-def run_analysis(stock_df, orders_df, history_df):
+def run_analysis(stock_df, orders_df, history_df, courier_mappings=None):
     """Performs the core fulfillment analysis and simulation.
 
     This function is the heart of the fulfillment logic. It takes raw data,
@@ -148,7 +179,12 @@ def run_analysis(stock_df, orders_df, history_df):
     )  # If an item was not fulfilled, its final stock is its initial stock
     final_df["Order_Type"] = np.where(final_df["item_count"] > 1, "Multi", "Single")
     final_df["Stock"] = final_df["Stock"].fillna(0)
-    final_df["Shipping_Provider"] = final_df["Shipping Method"].apply(_generalize_shipping_method)
+    # Make custom mappings keys lowercase for case-insensitive matching
+    lower_courier_mappings = {k.lower(): v for k, v in courier_mappings.items()} if courier_mappings else {}
+
+    final_df["Shipping_Provider"] = final_df["Shipping Method"].apply(
+        _generalize_shipping_method, custom_mappings=lower_courier_mappings
+    )
     final_df["Order_Fulfillment_Status"] = final_df["Order_Number"].map(fulfillment_results)
     final_df["Destination_Country"] = np.where(final_df["Shipping_Provider"] == "DHL", final_df["Shipping Country"], "")
     final_df["System_note"] = np.where(final_df["Order_Number"].isin(history_df["Order_Number"]), "Repeat", "")
