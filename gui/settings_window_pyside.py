@@ -49,7 +49,10 @@ class SettingsWindow(QDialog):
 
     # Constants for builders
     FILTER_OPERATORS = ["==", "!=", "in", "not in", "contains"]
-    ACTION_TYPES = ["ADD_TAG", "SET_STATUS", "SET_PRIORITY", "EXCLUDE_FROM_REPORT", "EXCLUDE_SKU"]
+    ACTION_TYPES = [
+        "ADD_TAG", "REMOVE_TAG", "REPLACE_TAG", "CLEAR_TAGS", "ADD_TAG_TO_ORDER",
+        "SET_STATUS", "SET_PRIORITY", "EXCLUDE_FROM_REPORT", "EXCLUDE_SKU"
+    ]
 
     # Operators grouped by the data type they apply to
     OPERATORS_BY_TYPE = {
@@ -59,6 +62,9 @@ class SettingsWindow(QDialog):
         ],
         "numeric": [
             "equals", "does not equal", "is greater than", "is less than",
+        ],
+        "list": [ # New type for order-level fields
+            "contains all", "contains any", "contains only",
         ],
         "general": [ # Apply to all types
             "is empty", "is not empty"
@@ -106,9 +112,14 @@ class SettingsWindow(QDialog):
         # Determine available columns and their types for dynamic dropdowns
         self.filterable_columns = []
         self.numeric_columns = []
+        self.order_level_fields = ["order_skus_list", "order_tags_set"]
         if not self.analysis_df.empty:
             self.filterable_columns = sorted(self.analysis_df.columns.tolist())
             self.numeric_columns = self.analysis_df.select_dtypes(include='number').columns.tolist()
+            # Add order-level fields to the list if they exist in the dataframe
+            for field in self.order_level_fields:
+                if field not in self.filterable_columns and field in self.analysis_df.columns:
+                    self.filterable_columns.append(field)
 
         self.setWindowTitle("Application Settings")
         self.setMinimumSize(800, 700)
@@ -188,13 +199,18 @@ class SettingsWindow(QDialog):
                 blank rule.
         """
         if not isinstance(config, dict):
-            config = {"name": "New Rule", "match": "ALL", "conditions": [], "actions": []}
+            config = {"name": "New Rule", "match": "ALL", "match_level": "item", "conditions": [], "actions": []}
         rule_box = QGroupBox()
         rule_layout = QVBoxLayout(rule_box)
         header_layout = QHBoxLayout()
         header_layout.addWidget(QLabel("Rule Name:"))
         name_edit = QLineEdit(config.get("name", ""))
         header_layout.addWidget(name_edit)
+        header_layout.addWidget(QLabel("Level:"))
+        match_level_combo = QComboBox()
+        match_level_combo.addItems(["item", "order"])
+        match_level_combo.setCurrentText(config.get("match_level", "item"))
+        header_layout.addWidget(match_level_combo)
         delete_rule_btn = QPushButton("Delete Rule")
         header_layout.addWidget(delete_rule_btn)
         rule_layout.addLayout(header_layout)
@@ -226,6 +242,7 @@ class SettingsWindow(QDialog):
             "group_box": rule_box,
             "name_edit": name_edit,
             "match_combo": match_combo,
+            "match_level_combo": match_level_combo,
             "conditions_layout": conditions_rows_layout,
             "actions_layout": actions_rows_layout,
             "conditions": [],
@@ -235,6 +252,10 @@ class SettingsWindow(QDialog):
         add_condition_btn.clicked.connect(lambda: self.add_condition_row(widget_refs))
         add_action_btn.clicked.connect(lambda: self.add_action_row(widget_refs))
         delete_rule_btn.clicked.connect(lambda: self._delete_widget_from_list(widget_refs, self.rule_widgets))
+        match_level_combo.currentTextChanged.connect(
+            lambda: self._on_rule_match_level_changed(widget_refs)
+        )
+        self._on_rule_match_level_changed(widget_refs)
         for cond_config in config.get("conditions", []):
             self.add_condition_row(widget_refs, cond_config)
         for act_config in config.get("actions", []):
@@ -301,6 +322,25 @@ class SettingsWindow(QDialog):
             lambda: self._delete_row_from_list(row_widget, rule_widget_refs["conditions"], condition_refs)
         )
 
+    def _on_rule_match_level_changed(self, rule_widget_refs):
+        """Updates the available fields when the rule's match_level changes."""
+        match_level = rule_widget_refs["match_level_combo"].currentText()
+        for condition_ref in rule_widget_refs["conditions"]:
+            field_combo = condition_ref["field"]
+            current_field = field_combo.currentText()
+            field_combo.blockSignals(True)
+            field_combo.clear()
+            if match_level == "order":
+                available_fields = [f for f in self.order_level_fields if f in self.analysis_df.columns]
+                field_combo.addItems(available_fields)
+            else:
+                item_level_cols = [f for f in self.filterable_columns if f not in self.order_level_fields]
+                field_combo.addItems(item_level_cols)
+            if current_field in [field_combo.itemText(i) for i in range(field_combo.count())]:
+                field_combo.setCurrentText(current_field)
+            field_combo.blockSignals(False)
+            self._on_rule_field_changed(field_combo.currentText(), condition_ref, {})
+
     def _on_rule_field_changed(self, field, condition_refs, config=None):
         """Handler for when the rule's field is changed. Updates the operator list."""
         if config is None:
@@ -312,7 +352,9 @@ class SettingsWindow(QDialog):
         op_combo.clear()
 
         # Populate operators based on field type
-        if field in self.numeric_columns:
+        if field in self.order_level_fields:
+            operators = self.OPERATORS_BY_TYPE["list"] + self.OPERATORS_BY_TYPE["general"]
+        elif field in self.numeric_columns:
             operators = self.OPERATORS_BY_TYPE["numeric"] + self.OPERATORS_BY_TYPE["general"]
         else:
             operators = self.OPERATORS_BY_TYPE["text"] + self.OPERATORS_BY_TYPE["general"]
@@ -745,6 +787,7 @@ class SettingsWindow(QDialog):
                     {
                         "name": rule_w["name_edit"].text(),
                         "match": rule_w["match_combo"].currentText(),
+                        "match_level": rule_w["match_level_combo"].currentText(),
                         "conditions": conditions,
                         "actions": actions,
                     }
