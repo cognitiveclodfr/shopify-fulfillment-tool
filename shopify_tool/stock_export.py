@@ -1,3 +1,79 @@
+"""Stock Export Generator - Courier-Specific Inventory Allocation Files.
+
+This module generates stock export files that inform couriers (DHL, DPD, PostOne)
+about which products and quantities have been allocated for their shipments.
+These files are typically imported into courier systems or warehouse management
+software.
+
+Purpose:
+    After fulfillment analysis determines which orders can be shipped, this
+    module creates per-courier inventory lists showing exactly which SKUs and
+    quantities are being sent with that courier. This helps with:
+    - Courier capacity planning
+    - Warehouse pre-picking
+    - Integration with courier pickup systems
+    - Stock reconciliation
+
+File Format:
+    Exports are generated in legacy Excel format (.xls) for compatibility with
+    older warehouse systems. The format is minimal:
+    - Column 1: Артикул (SKU) - Product identifier
+    - Column 2: Наличност (Stock) - Quantity allocated
+
+    Note: Column names are in Bulgarian/Cyrillic to match courier system
+          expectations. This is intentional for this specific use case.
+
+Algorithm:
+    1. Filter analysis DataFrame by provided criteria (e.g., Shipping_Provider == "DHL")
+    2. Group filtered items by SKU, summing quantities
+    3. Create simple two-column DataFrame
+    4. Export to .xls format
+
+Key Differences from Packing Lists:
+    - Packing lists: Order-centric (for warehouse pickers)
+    - Stock exports: SKU-centric (for courier/system integration)
+
+    Packing List: Order #123 needs SKU-A×2, SKU-B×1
+    Stock Export: SKU-A: 50 total, SKU-B: 30 total (across all orders)
+
+Performance:
+    - Very fast (aggregation is O(n) where n = number of items)
+    - Typical generation time: <0.5 seconds for 1000+ items
+    - .xls format slightly slower than .xlsx but more compatible
+
+Filtering Example:
+    >>> # Export only DHL stock
+    >>> create_stock_export(
+    ...     analysis_df,
+    ...     "output/DHL_stock_2024-01-15.xls",
+    ...     report_name="DHL Stock Export",
+    ...     filters=[{"field": "Shipping_Provider", "operator": "==", "value": "DHL"}]
+    ... )
+
+    Result: DHL_stock_2024-01-15.xls with:
+    Артикул    | Наличност
+    -----------|----------
+    SKU-001    | 25
+    SKU-002    | 12
+    SKU-003    | 8
+
+Implementation Notes:
+    - Uses xlwt engine for .xls (legacy Excel format)
+    - Handles edge case where xlwt engine not registered in pandas
+    - Creates empty file with headers if no matching items
+    - Filters out SKUs with zero or negative quantities
+
+Integration Points:
+    - Called by core.create_stock_export_report()
+    - Configured via settings_window_pyside.py (Stock Exports tab)
+    - Filters defined in config['stock_exports'] list
+
+Related:
+    - packing_lists.py: Order-level reports for warehouse picking
+    - core.py: Report orchestration
+    - settings_window_pyside.py: Stock export template configuration
+"""
+
 import logging
 import pandas as pd
 
