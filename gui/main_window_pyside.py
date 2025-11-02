@@ -1,3 +1,73 @@
+"""Main Application Window - Central Hub for Shopify Fulfillment Tool.
+
+This module implements the primary application window that serves as the
+central hub for all user interactions. It orchestrates the complex interplay
+between UI components, data processing, and configuration management.
+
+Architecture:
+    The MainWindow follows a delegation pattern, distributing responsibilities
+    across specialized handler objects:
+    - UIManager: Widget creation and layout
+    - FileHandler: File selection and validation
+    - ActionsHandler: Business logic execution
+    - ProfileManagerDialog: Profile CRUD operations
+
+Key Responsibilities:
+    1. Application lifecycle management (init, close, session persistence)
+    2. Profile system management (load, save, switch, create, delete)
+    3. Configuration migration and validation
+    4. UI state coordination across tabs and widgets
+    5. Data model management (analysis_results_df, proxy filtering)
+    6. Event routing (signals/slots between components)
+
+Profile System:
+    Multi-profile support allows users to maintain separate configurations
+    for different warehouses or workflows. Each profile contains:
+    - Settings (delimiters, thresholds, paths)
+    - Rules (automation logic)
+    - Packing Lists (report templates)
+    - Stock Exports (courier templates)
+    - Column Mappings (CSV field definitions)
+
+    Profiles are stored in a single config.json with structure:
+    {
+        "active_profile": "Warehouse-A",
+        "profiles": {
+            "Warehouse-A": {...},
+            "Warehouse-B": {...}
+        }
+    }
+
+Session Persistence:
+    On close, the application saves:
+    - Current analysis DataFrame
+    - Visible column selection
+    These are restored on next launch if user confirms.
+
+    ⚠️ CRITICAL ISSUE (see CRITICAL_ANALYSIS.md Section 7.1):
+        Uses pickle for session data (security risk, not human-readable)
+        Recommended: Replace with Parquet + JSON
+
+Data Flow:
+    User Action → Signal → Handler Method → Backend Function → Update DataFrame
+    → Emit data_changed Signal → Update All Views (table, stats, logs)
+
+Thread Safety:
+    - Most operations run on main UI thread
+    - Long-running tasks (analysis, reports) use QThreadPool Workers
+    - Workers emit signals back to main thread for UI updates
+
+Critical Issues:
+    - Section 3.2: Config migration in __init__ (should be extracted)
+    - Section 7.1: Pickle for session persistence (security risk)
+    - Section 3.1: Direct method calls from ProfileManagerDialog (tight coupling)
+
+Memory Management:
+    - analysis_results_df can be large (10k+ rows)
+    - Proxy model adds overhead for filtering/sorting
+    - Session pickle can grow to several MB
+"""
+
 import sys
 import os
 import json

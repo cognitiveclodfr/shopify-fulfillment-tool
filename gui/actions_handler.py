@@ -1,3 +1,68 @@
+"""Actions Handler - Business Logic Orchestrator for UI Events.
+
+This module implements the ActionsHandler class which serves as a mediator
+between the UI (MainWindow) and the backend (shopify_tool modules). It
+translates user actions (button clicks, menu selections) into business
+logic execution.
+
+Architecture:
+    The ActionsHandler follows the Mediator pattern, decoupling the UI from
+    the backend. Instead of MainWindow directly calling backend functions,
+    it delegates to ActionsHandler which:
+    1. Validates prerequisites
+    2. Prepares parameters
+    3. Creates Worker threads for long-running tasks
+    4. Handles callbacks and errors
+    5. Updates UI state
+
+Key Features:
+    - Background thread execution for long-running operations
+    - Centralized error handling with user-friendly messages
+    - Signal emission for cross-component communication
+    - Session management (create dated folders)
+    - Report generation orchestration
+
+Worker Pattern:
+    Long-running tasks (analysis, report generation) are executed in
+    background threads using the Worker class. This prevents UI freezing:
+
+    MainWindow Button Click → ActionsHandler Method → Create Worker Thread
+    → Worker runs backend function → Worker emits result signal
+    → ActionsHandler handles result → Updates MainWindow DataFrame
+    → Emits data_changed signal → UI refreshes
+
+Signals:
+    data_changed: Emitted when analysis_results_df is modified. Connected to
+                  MainWindow._update_all_views() to refresh table, stats, etc.
+
+Thread Safety:
+    - ActionsHandler runs on main UI thread
+    - Workers run on QThreadPool threads
+    - Signals ensure thread-safe UI updates (Qt's signal/slot mechanism)
+
+Use Cases:
+    - Create new session → Generate dated output folder
+    - Run analysis → Validate files, run in background, update UI
+    - Toggle order status → Recalculate stock, update DataFrame
+    - Generate reports → Filter data, create Excel, show success
+
+Integration:
+    - MainWindow: Creates ActionsHandler, connects signals, calls methods
+    - Worker: Executes backend functions in background threads
+    - Backend (core, analysis, rules): Pure business logic, no UI knowledge
+
+Example Flow:
+    1. User clicks "Run Analysis" button
+    2. MainWindow signal → ActionsHandler.run_analysis()
+    3. ActionsHandler creates Worker with core.run_full_analysis()
+    4. Worker runs in background thread
+    5. Worker emits result signal
+    6. ActionsHandler.on_analysis_complete() handles result
+    7. Updates MainWindow.analysis_results_df
+    8. Emits data_changed signal
+    9. MainWindow._update_all_views() refreshes UI
+"""
+
 import os
 import logging
 from datetime import datetime
