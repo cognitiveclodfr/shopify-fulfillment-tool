@@ -1,21 +1,95 @@
+"""Fulfillment Analysis Engine - Core Stock Allocation Algorithm.
+
+This module implements the core business logic for simulating order fulfillment
+based on available stock levels. It uses a greedy allocation algorithm that
+prioritizes multi-item orders to maximize the number of complete orders shipped.
+
+Algorithm Overview:
+    1. Data Cleaning: Standardize column names, fill missing values
+    2. Prioritization: Sort orders (multi-item first, then by order number)
+    3. Stock Simulation: Iterate through orders, allocate stock if available
+    4. Enrichment: Add shipping provider, order type, repeat detection
+    5. Summary Generation: Aggregate fulfillable and missing items
+    6. Statistics: Calculate final metrics
+
+CRITICAL ISSUES (see CRITICAL_ANALYSIS.md Section 4):
+    - Hardcoded Cyrillic column names ('Артикул', 'Наличност', 'Име')
+      Should be replaced with configurable column_mappings
+    - Hardcoded shipping method standardization in _generalize_shipping_method
+      Conflicts with courier_mappings configuration system
+    - Mixed language comments (Ukrainian + English)
+      Should be standardized to English
+
+Performance Characteristics:
+    - Time: O(n log n + n*m) where n=orders, m=avg items/order
+    - Space: O(n) for DataFrames
+    - Efficient for typical warehouse sizes (<10k orders)
+
+Stock Allocation Strategy:
+    Uses greedy "all-or-nothing" approach:
+    - Each order is evaluated completely before allocation
+    - Stock is only deducted if entire order can be fulfilled
+    - No partial fulfillment or optimization across orders
+    - Multi-item orders processed first to avoid fragmentation
+
+Example:
+    Stock: {A: 10, B: 5}
+    Order1 (multi): A×3, B×2  → Can fulfill, stock: {A: 7, B: 3}
+    Order2 (multi): A×5, B×4  → Cannot fulfill (B insufficient)
+    Order3 (single): A×2      → Can fulfill, stock: {A: 5, B: 3}
+"""
+
 import pandas as pd
 import numpy as np
 
 
 def _generalize_shipping_method(method):
-    """Standardizes raw shipping method names to a consistent format.
+    """Standardizes raw shipping method names to provider names.
 
-    Takes a raw shipping method string, converts it to lowercase, and maps it
-    to a standardized provider name (e.g., 'dhl express' becomes 'DHL').
-    If the method is not recognized, it returns a title-cased version of the
-    input. Handles NaN values by returning 'Unknown'.
+    ⚠️ CRITICAL ISSUE - HARDCODED MAPPINGS:
+        This function contains hardcoded courier name mappings that CONFLICT
+        with the configurable courier_mappings system in the settings.
+
+        Problem: Users can define courier mappings in the UI, but this function
+                 ignores them and uses its own hardcoded logic.
+
+        Impact: Maintenance burden, user confusion, inconsistent behavior
+
+        Solution: See CRITICAL_ANALYSIS.md Section 4.2 for recommended fix
+                  (Remove this function, use courier_mappings from config)
+
+    Current Behavior:
+        - Searches for substrings: 'dhl', 'dpd', 'international shipping'
+        - Returns standardized names: 'DHL', 'DPD', 'PostOne'
+        - Falls back to title-cased input if no match
+        - Handles NaN as 'Unknown'
 
     Args:
-        method (str | float): The raw shipping method from the orders file.
-            Can be a float (NaN) for empty values.
+        method (str | float): Raw shipping method from orders CSV.
+            May be NaN for missing values.
 
     Returns:
-        str: The standardized shipping provider name.
+        str: Standardized shipping provider name
+
+    Examples:
+        >>> _generalize_shipping_method('DHL Express Worldwide')
+        'DHL'
+        >>> _generalize_shipping_method('dpd economy')
+        'DPD'
+        >>> _generalize_shipping_method('Some Custom Courier')
+        'Some Custom Courier'  # Title-cased fallback
+        >>> _generalize_shipping_method(np.nan)
+        'Unknown'
+
+    Issues:
+        1. Cannot be customized by users
+        2. Duplicates functionality of config['courier_mappings']
+        3. Substring matching can cause false positives
+        4. No validation or error logging
+
+    Historical Note:
+        Created before courier_mappings config system existed.
+        Should be deprecated and removed in favor of configurable approach.
     """
     if pd.isna(method):
         return "Unknown"
@@ -101,8 +175,34 @@ def run_analysis(stock_df, orders_df, history_df):
     orders_clean_df = orders_clean_df.rename(columns=rename_map)
     orders_clean_df = orders_clean_df.dropna(subset=["SKU"])
 
+    # ==================================================================
+    # ⚠️ CRITICAL ISSUE - HARDCODED CYRILLIC COLUMN NAMES
+    # ==================================================================
+    # Problem: Column names are hardcoded in Bulgarian/Russian ('Артикул',
+    #          'Наличност', 'Име') instead of using configurable column_mappings.
+    #
+    # Impact:
+    #   - Not internationalized (breaks for non-Cyrillic users)
+    #   - Violates existing column_mappings architecture
+    #   - Hard to maintain for non-Cyrillic-speaking developers
+    #   - Inconsistent with English-named orders columns
+    #
+    # Solution: Use column_mappings from config (see CRITICAL_ANALYSIS.md Section 4.1)
+    #   stock_cols = column_mappings["stock"]
+    #   stock_clean_df = stock_df[[stock_cols["sku"], stock_cols["name"], stock_cols["stock"]]].copy()
+    #   stock_clean_df = stock_clean_df.rename(columns={
+    #       stock_cols["sku"]: "SKU",
+    #       stock_cols["name"]: "Product_Name",
+    #       stock_cols["stock"]: "Stock"
+    #   })
+    #
+    # Current hardcoded implementation (SHOULD BE REPLACED):
     stock_clean_df = stock_df[["Артикул", "Име", "Наличност"]].copy()
-    stock_clean_df = stock_clean_df.rename(columns={"Артикул": "SKU", "Име": "Product_Name", "Наличност": "Stock"})
+    stock_clean_df = stock_clean_df.rename(columns={
+        "Артикул": "SKU",      # Bulgarian: Article/SKU
+        "Име": "Product_Name",  # Bulgarian: Name
+        "Наличност": "Stock"    # Bulgarian: Stock/Availability
+    })
     stock_clean_df = stock_clean_df.dropna(subset=["SKU"])
     stock_clean_df = stock_clean_df.drop_duplicates(subset=["SKU"], keep="first")
 
@@ -118,16 +218,29 @@ def run_analysis(stock_df, orders_df, history_df):
     live_stock = pd.Series(stock_clean_df.Stock.values, index=stock_clean_df.SKU).to_dict()
     fulfillment_results = {}
 
+    # ==================================================================
+    # STOCK ALLOCATION LOOP - Greedy Algorithm
+    # ==================================================================
+    # For each order (in priority sequence):
+    #   1. Check if ALL items are available in current stock
+    #   2. If yes: Mark as fulfillable and deduct stock
+    #   3. If no: Mark as not fulfillable, don't deduct anything
+    #
+    # This is an "all-or-nothing" approach - no partial fulfillment.
     for order_number in prioritized_orders["Order_Number"]:
         order_items = orders_with_counts[orders_with_counts["Order_Number"] == order_number]
         can_fulfill_order = True
-        # Перевіряємо, чи можна виконати замовлення
+
+        # Check if the order can be fulfilled (all items available)
+        # NOTE: Ukrainian comment was "Перевіряємо, чи можна виконати замовлення"
         for _, item in order_items.iterrows():
             sku, required_qty = item["SKU"], item["Quantity"]
             if required_qty > live_stock.get(sku, 0):
                 can_fulfill_order = False
                 break
-        # Якщо так, списуємо товари
+
+        # If fulfillable, allocate stock (write off the items)
+        # NOTE: Ukrainian comment was "Якщо так, списуємо товари"
         if can_fulfill_order:
             fulfillment_results[order_number] = "Fulfillable"
             for _, item in order_items.iterrows():

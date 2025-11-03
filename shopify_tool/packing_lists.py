@@ -1,3 +1,69 @@
+"""Packing List Generator - Formatted Excel Reports for Warehouse Operations.
+
+This module generates professionally formatted packing lists in Excel format (.xlsx)
+that warehouse staff use to pick and pack orders. The lists are highly customized
+with advanced formatting, sorting, and filtering capabilities.
+
+Key Features:
+    - Dynamic filtering by shipping provider, country, or any DataFrame column
+    - SKU exclusion for items packed separately (e.g., promotional items)
+    - Smart sorting (by courier priority, then order number, then SKU)
+    - Visual grouping with borders to distinguish orders
+    - Auto-adjusted column widths for readability
+    - Print-optimized layout (A4 landscape, repeated headers)
+    - Embedded metadata (timestamp, filename) in headers
+
+Report Structure:
+    The generated packing list is a flat table with these columns:
+    - Destination_Country: Shown only for first item of each order
+    - Order_Number: Unique order identifier
+    - SKU: Product identifier
+    - Product_Name: Full product name (width-limited for printing)
+    - Quantity: Items to pick
+    - Shipping_Provider: DHL, DPD, PostOne, etc.
+
+Visual Features:
+    - Orders separated by thick borders (top and bottom)
+    - Items within order have thin horizontal separators
+    - Centered alignment for Country and Quantity columns
+    - Custom header row with bold, centered text on gray background
+    - Column widths optimized for content
+
+Filtering Strategy:
+    Filters are applied using pandas.DataFrame.query() syntax. Multiple
+    filters are combined with AND logic. Example:
+        filters = [
+            {"field": "Shipping_Provider", "operator": "==", "value": "DHL"},
+            {"field": "Destination_Country", "operator": "!=", "value": "BG"}
+        ]
+    Results in query: "Shipping_Provider == 'DHL' & Destination_Country != 'BG'"
+
+Performance:
+    - Efficient for typical warehouse volumes (<1000 orders)
+    - Excel formatting is I/O bound (disk writes)
+    - Typical generation time: 0.5-2 seconds depending on order count
+
+Use Cases:
+    - Daily packing lists per courier
+    - Country-specific packing lists
+    - Priority order lists (VIP, Express)
+    - Exclude promotional items packed separately
+
+Example:
+    >>> create_packing_list(
+    ...     analysis_df,
+    ...     "output/DHL_packing_list.xlsx",
+    ...     report_name="DHL Orders",
+    ...     filters=[{"field": "Shipping_Provider", "operator": "==", "value": "DHL"}],
+    ...     exclude_skus=["PROMO-ITEM-01"]
+    ... )
+
+Related:
+    - stock_export.py: Generates stock allocation files for couriers
+    - core.py: Orchestrates report generation
+    - settings_window_pyside.py: UI for configuring packing list templates
+"""
+
 import pandas as pd
 import os
 import logging

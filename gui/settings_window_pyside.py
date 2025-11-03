@@ -1,3 +1,32 @@
+"""Settings Window - Dynamic Configuration UI for Shopify Fulfillment Tool.
+
+This module implements a comprehensive, dynamically-generated settings dialog
+that allows users to configure all aspects of their fulfillment workflow.
+
+Architecture:
+    The SettingsWindow follows a Model-View pattern where configuration data
+    (model) is presented through dynamically created Qt widgets (view). Unlike
+    traditional static forms, this window generates its UI structure based on
+    the config_data content, supporting unlimited rules, conditions, and reports.
+
+Key Features:
+    - Dynamic widget generation based on config structure
+    - Intelligent value widgets (ComboBox for known values, LineEdit for free text)
+    - Bidirectional data binding (widgets ↔ config_data)
+    - Deep copy isolation (changes only applied on save)
+    - Context-aware operator lists (numeric vs text fields)
+
+Critical Issues (see CRITICAL_ANALYSIS.md Section 2):
+    - Monolithic save_settings method needs extraction
+    - Repetitive widget creation code needs factory pattern
+    - JSON-based deep copy is inefficient
+    - Missing validation before save
+    - Complex signal/slot management for dynamic widgets
+
+Thread Safety:
+    Modal dialog running on main UI thread. No special threading needed.
+"""
+
 import sys
 import json
 import pandas as pd

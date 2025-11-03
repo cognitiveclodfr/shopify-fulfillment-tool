@@ -1,3 +1,59 @@
+"""Core Orchestration Module - Main Entry Point for Fulfillment Analysis.
+
+This module serves as the central orchestrator for the entire fulfillment analysis
+workflow. It coordinates between CSV loading, data validation, the analysis engine,
+rule application, and report generation.
+
+Architecture:
+    The core module follows a facade pattern, providing a simplified interface
+    to the complex subsystems:
+    - File I/O and validation
+    - Analysis engine (shopify_tool.analysis)
+    - Rule engine (shopify_tool.rules)
+    - Report generators (packing_lists, stock_export)
+
+Key Functions:
+    run_full_analysis: Main orchestration function
+        CSV Loading → Validation → Analysis → Rules → Save → Return Results
+
+    create_packing_list_report: Generates formatted packing lists
+    create_stock_export_report: Generates courier stock export files
+    validate_csv_headers: Fast CSV column validation (header only)
+
+Error Handling Strategy:
+    Uses tuple returns (success, message, data, stats) instead of exceptions.
+    This allows the GUI to gracefully handle errors without try/except everywhere.
+
+    CRITICAL ISSUE (see CRITICAL_ANALYSIS.md Section 5.1):
+        Inconsistent return formats across functions:
+        - validate_csv_headers returns (bool, list)
+        - run_full_analysis returns (bool, str, DataFrame|None, dict|None)
+        - report functions return (bool, str)
+
+        Recommendation: Use Result objects for consistency
+
+Data Flow:
+    1. GUI calls run_full_analysis(file_paths, config)
+    2. Core loads CSVs into DataFrames
+    3. Core validates required columns exist
+    4. Core calls analysis.run_analysis(stock_df, orders_df, history_df)
+    5. Core applies RuleEngine to results
+    6. Core saves results to Excel
+    7. Core returns (success, message, results_df, stats) to GUI
+
+Thread Safety:
+    Not thread-safe. Should only be called from GUI main thread or
+    background Worker threads (which don't share state).
+
+Performance:
+    Bottlenecks:
+    - CSV loading (I/O bound)
+    - analysis.run_analysis (CPU bound, O(n*m))
+    - Excel writing (I/O bound)
+
+    Typical execution time: 1-3 seconds for 1000 orders
+"""
+
 import os
 import logging
 import pandas as pd
@@ -7,6 +63,12 @@ from .rules import RuleEngine
 from .utils import get_persistent_data_path
 import numpy as np
 
+# ==================================================================
+# MODULE CONSTANTS
+# ==================================================================
+
+# Tags that are added by the system (vs user-defined tags)
+# Used to distinguish automated tags from manual ones
 SYSTEM_TAGS = ["Repeat", "Priority", "Error"]
 
 logger = logging.getLogger("ShopifyToolLogger")
