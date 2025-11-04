@@ -282,7 +282,7 @@ class MainWindow(QMainWindow):
         """
         # Client management
         self.profile_combo.currentIndexChanged.connect(self.set_active_client)
-        self.manage_profiles_btn.clicked.connect(self.open_client_selector)
+        self.manage_profiles_btn.clicked.connect(self.open_client_manager)
 
         # Session and file loading
         self.new_session_btn.clicked.connect(self.actions_handler.create_new_session)
@@ -348,12 +348,10 @@ class MainWindow(QMainWindow):
 
     def set_active_client(self, client_id_or_index):
         """Switch to a different client."""
-        # Handle both direct calls (with client_id) and combo box signals (with index)
+        # Handle both direct calls and combo box signals
         if isinstance(client_id_or_index, int):
-            # Called from combo box - get client_id from data
             client_id = self.profile_combo.itemData(client_id_or_index)
         else:
-            # Called directly with client_id
             client_id = client_id_or_index
 
         if not client_id or client_id == self.active_client_id:
@@ -363,9 +361,16 @@ class MainWindow(QMainWindow):
             # Load new client config
             client_config = self.client_manager.load_config(client_id)
 
+            # Validate config has required structure
+            if "shopify" not in client_config:
+                raise ValueError(f"Client config missing 'shopify' section")
+
             # Update active state
             self.active_client_id = client_id
             self.active_profile_config = client_config.get("shopify", {})
+
+            # Ensure client session directory exists
+            self.client_manager.ensure_client_session_dir(client_id)
 
             # Log the switch
             client_name = client_config.get("name", client_id)
@@ -387,7 +392,7 @@ class MainWindow(QMainWindow):
                 "Client Switch Error",
                 f"Could not switch to selected client:\n\n{e}"
             )
-            # Revert combo box to current client
+            # Revert combo box
             if self.active_client_id:
                 index = self.profile_combo.findData(self.active_client_id)
                 if index >= 0:
@@ -395,32 +400,133 @@ class MainWindow(QMainWindow):
                     self.profile_combo.setCurrentIndex(index)
                     self.profile_combo.blockSignals(False)
 
-    def open_client_selector(self):
-        """Show simple client selection dialog."""
+    def open_client_manager(self):
+        """Open client management dialog."""
         try:
+            from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem, QPushButton
+            from PySide6.QtCore import Qt
+
             clients = self.client_manager.list_clients()
-            if not clients:
-                QMessageBox.information(self, "No Clients", "No clients found")
-                return
 
-            # Show list of clients
-            names = [f"{c['name']} ({c['client_id']})" for c in clients]
-            choice, ok = QInputDialog.getItem(
-                self,
-                "Select Client",
-                "Choose client:",
-                names,
-                0,
-                False
-            )
+            # Create simple dialog
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Client Management")
+            dialog.setMinimumWidth(400)
 
-            if ok and choice:
-                # Extract client_id from choice
-                client_id = choice.split('(')[1].rstrip(')')
-                self.set_active_client(client_id)
+            layout = QVBoxLayout(dialog)
+
+            # Client list
+            list_label = QLabel("Active Clients:")
+            layout.addWidget(list_label)
+
+            client_list = QListWidget()
+            for client in clients:
+                item = QListWidgetItem(f"{client['name']} ({client['client_id']})")
+                item.setData(Qt.UserRole, client['client_id'])
+                client_list.addItem(item)
+            layout.addWidget(client_list)
+
+            # Buttons
+            btn_layout = QHBoxLayout()
+
+            # New Client button
+            new_btn = QPushButton("Create New Client")
+            new_btn.clicked.connect(lambda: self._create_new_client_dialog(dialog, client_list))
+            btn_layout.addWidget(new_btn)
+
+            # Delete Client button
+            delete_btn = QPushButton("Delete Client")
+            delete_btn.clicked.connect(lambda: self._delete_client_dialog(client_list))
+            btn_layout.addWidget(delete_btn)
+
+            # Switch Client button
+            switch_btn = QPushButton("Switch to Selected")
+            switch_btn.clicked.connect(lambda: self._switch_to_selected_client(dialog, client_list))
+            btn_layout.addWidget(switch_btn)
+
+            # Close button
+            close_btn = QPushButton("Close")
+            close_btn.clicked.connect(dialog.accept)
+            btn_layout.addWidget(close_btn)
+
+            layout.addLayout(btn_layout)
+
+            dialog.exec()
+
         except Exception as e:
-            logging.error(f"Error in client selector: {e}", exc_info=True)
-            QMessageBox.warning(self, "Error", f"Failed to show client selector:\n\n{e}")
+            logging.error(f"Error opening client manager: {e}", exc_info=True)
+            QMessageBox.critical(self, "Error", f"Failed to open client manager:\n\n{e}")
+
+    def _create_new_client_dialog(self, parent_dialog, client_list):
+        """Create new client dialog."""
+        name, ok = QInputDialog.getText(
+            parent_dialog,
+            "Create New Client",
+            "Enter client name:"
+        )
+
+        if ok and name:
+            client_id = f"CLIENT_{name.upper().replace(' ', '_')}"
+
+            success = self.client_manager.create_client(client_id, name)
+
+            if success:
+                QMessageBox.information(parent_dialog, "Success", f"Client '{name}' created successfully")
+
+                # Refresh list
+                from PySide6.QtWidgets import QListWidgetItem
+                from PySide6.QtCore import Qt
+
+                client_list.clear()
+                clients = self.client_manager.list_clients()
+                for client in clients:
+                    item = QListWidgetItem(f"{client['name']} ({client['client_id']})")
+                    item.setData(Qt.UserRole, client['client_id'])
+                    client_list.addItem(item)
+            else:
+                QMessageBox.warning(parent_dialog, "Error", "Failed to create client")
+
+    def _delete_client_dialog(self, client_list):
+        """Delete selected client."""
+        current_item = client_list.currentItem()
+        if not current_item:
+            QMessageBox.warning(self, "No Selection", "Please select a client to delete")
+            return
+
+        from PySide6.QtCore import Qt
+        client_id = current_item.data(Qt.UserRole)
+
+        reply = QMessageBox.question(
+            self,
+            "Confirm Delete",
+            f"Are you sure you want to delete client:\n\n{current_item.text()}\n\n"
+            f"This will mark the client as inactive.",
+            QMessageBox.Yes | QMessageBox.No
+        )
+
+        if reply == QMessageBox.Yes:
+            success = self.client_manager.delete_client(client_id)
+            if success:
+                QMessageBox.information(self, "Success", "Client deleted (marked inactive)")
+                client_list.takeItem(client_list.currentRow())
+            else:
+                QMessageBox.warning(self, "Error", "Failed to delete client")
+
+    def _switch_to_selected_client(self, dialog, client_list):
+        """Switch to selected client and close dialog."""
+        current_item = client_list.currentItem()
+        if not current_item:
+            QMessageBox.warning(dialog, "No Selection", "Please select a client")
+            return
+
+        from PySide6.QtCore import Qt
+        client_id = current_item.data(Qt.UserRole)
+        self.set_active_client(client_id)
+        dialog.accept()
+
+    def open_client_selector(self):
+        """Legacy method - redirect to open_client_manager."""
+        self.open_client_manager()
 
     def filter_table(self):
         """Applies the current filter settings to the results table view.

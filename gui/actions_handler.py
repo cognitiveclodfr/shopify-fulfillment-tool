@@ -114,31 +114,51 @@ class ActionsHandler(QObject):
         self.log = logging.getLogger(__name__)
 
     def create_new_session(self):
-        """Creates a new, unique, date-stamped session folder for output files.
-
-        This folder is used as the destination for all reports generated
-        during the current work session. Upon successful creation, it enables
-        the file loading buttons in the UI.
-        """
+        """Create a new analysis session folder on the server."""
         try:
-            base_output_dir = self.mw.active_profile_config["paths"].get("output_dir_stock", "data/output")
-            os.makedirs(base_output_dir, exist_ok=True)
-            date_str = datetime.now().strftime("%Y-%m-%d")
-            session_id = 1
-            while True:
-                session_path = os.path.join(base_output_dir, f"{date_str}_session_{session_id}")
-                if not os.path.exists(session_path):
-                    break
-                session_id += 1
-            os.makedirs(session_path, exist_ok=True)
-            self.mw.session_path = session_path
-            self.mw.session_path_label.setText(f"Current Session: {os.path.basename(self.mw.session_path)}")
-            self.mw.load_orders_btn.setEnabled(True)
-            self.mw.load_stock_btn.setEnabled(True)
-            self.mw.log_activity("Session", f"New session started. Output: {self.mw.session_path}")
+            if not self.mw.active_client_id:
+                QMessageBox.warning(
+                    self.mw,
+                    "No Client Selected",
+                    "Please select a client first."
+                )
+                return
+
+            # Generate session name with timestamp
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            session_name = f"Session_{timestamp}"
+
+            # Get session directory path from ClientManager
+            session_dir = self.mw.client_manager.get_session_dir(
+                self.mw.active_client_id,
+                session_name
+            )
+
+            # Create session directory
+            session_dir.mkdir(parents=True, exist_ok=True)
+
+            # Log success
+            self.mw.log_activity(
+                "Session",
+                f"Created new session: {session_name}"
+            )
+
+            QMessageBox.information(
+                self.mw,
+                "Session Created",
+                f"New session created:\n\n{session_dir}"
+            )
+
+            logging.info(f"Created session: {session_dir}")
+
         except Exception as e:
-            self.log.error(f"Failed to create new session: {e}", exc_info=True)
-            QMessageBox.critical(self.mw, "Session Error", f"Could not create a new session folder.\nError: {e}")
+            logging.error(f"Failed to create session: {e}", exc_info=True)
+            QMessageBox.critical(
+                self.mw,
+                "Session Creation Error",
+                f"Failed to create session:\n\n{e}"
+            )
 
     def run_analysis(self):
         """Triggers the main fulfillment analysis in a background thread.
@@ -202,20 +222,38 @@ class ActionsHandler(QObject):
         QMessageBox.critical(self.mw, "Task Exception", msg)
 
     def open_settings_window(self):
-        """Opens the settings dialog window for the active client.
+        """Open the settings editor for the active client."""
+        try:
+            if not self.mw.active_client_id:
+                QMessageBox.warning(
+                    self.mw,
+                    "No Client Selected",
+                    "Please select a client first."
+                )
+                return
 
-        If the settings are saved in the dialog, it updates the active client's
-        configuration and saves it to the server.
-        """
-        dialog = SettingsWindow(self.mw, self.mw.active_profile_config, self.mw.analysis_results_df)
-        if dialog.exec():
-            # Update active config
-            self.mw.active_profile_config = dialog.config_data
-            # Save to server
-            self.mw._save_client_config()
+            # Pass active_profile_config (shopify section)
+            dialog = SettingsWindow(
+                self.mw,
+                self.mw.active_profile_config,
+                self.mw.analysis_results_df
+            )
 
-            self.mw.log_activity("Settings", f"Settings for client '{self.mw.active_client_id}' saved.")
-            self.log.info(f"Settings for client '{self.mw.active_client_id}' saved.")
+            if dialog.exec():
+                # User clicked Save
+                self.mw.active_profile_config = dialog.config_data
+                self.mw._save_client_config()
+
+                self.mw.log_activity("Settings", "Settings updated successfully")
+                logging.info("Settings updated for client")
+
+        except Exception as e:
+            logging.error(f"Failed to open settings: {e}", exc_info=True)
+            QMessageBox.critical(
+                self.mw,
+                "Settings Error",
+                f"Failed to open settings:\n\n{e}"
+            )
 
     def open_report_selection_dialog(self, report_type):
         """Opens a dialog to select and generate a pre-configured report.
