@@ -43,7 +43,7 @@ Example Usage:
 import json
 import logging
 import os
-import msvcrt
+import time
 import traceback
 from datetime import datetime
 from pathlib import Path
@@ -58,8 +58,9 @@ class ClientManager:
     Manages client configurations with file locking for multi-PC access.
 
     This class provides thread-safe and multi-process safe operations for managing
-    client configurations stored on a shared file server. It uses Windows file locking
-    (msvcrt.locking) to ensure data integrity when multiple PCs access the same files.
+    client configurations stored on a shared file server. It uses lock files and
+    retry logic to ensure data integrity when multiple PCs access the same files
+    over network shares.
 
     Attributes:
         base_path (Path): Base path to the fulfillment tool directory on the server
@@ -74,9 +75,11 @@ class ClientManager:
         >>> config = manager.load_config("CLIENT_ABC")
     """
 
-    # Lock timeout in seconds
-    LOCK_TIMEOUT = 5
-    LOCK_RETRY_DELAY = 0.1
+    # Retry configuration
+    MAX_READ_RETRIES = 3
+    MAX_WRITE_RETRIES = 3
+    RETRY_DELAY = 0.5
+    LOCK_WAIT_TIMEOUT = 5
 
     def __init__(self, base_path: str):
         """
@@ -163,7 +166,7 @@ class ClientManager:
 
     def _read_json_with_lock(self, file_path: Path) -> Dict[str, Any]:
         """
-        Read JSON file with shared lock.
+        Read JSON file with retry logic for network share compatibility.
 
         Args:
             file_path: Path to the JSON file
@@ -178,88 +181,117 @@ class ClientManager:
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
 
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                # Acquire shared lock for reading
-                msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
-                try:
-                    data = json.load(f)
-                    logger.debug(f"Successfully read file: {file_path}")
-                    return data
-                finally:
-                    # Unlock the file
-                    msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
-        except BlockingIOError:
-            logger.warning(f"File is locked, retrying: {file_path}")
-            import time
-            time.sleep(self.LOCK_RETRY_DELAY)
-            # Retry once
+        max_retries = self.MAX_READ_RETRIES
+        retry_delay = self.RETRY_DELAY
+
+        for attempt in range(max_retries):
             try:
                 with open(file_path, 'r', encoding='utf-8') as f:
-                    msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
-                    try:
-                        data = json.load(f)
-                        logger.debug(f"Successfully read file on retry: {file_path}")
-                        return data
-                    finally:
-                        msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
-            except Exception as e:
-                logger.error(f"Failed to read file after retry: {file_path}\n{traceback.format_exc()}")
+                    data = json.load(f)
+                logger.debug(f"Successfully read file: {file_path}")
+                return data
+            except json.JSONDecodeError as e:
+                logger.error(f"Invalid JSON in file {file_path}: {e}\n{traceback.format_exc()}")
                 raise
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON in file {file_path}: {e}\n{traceback.format_exc()}")
-            raise
-        except Exception as e:
-            logger.error(f"Error reading file {file_path}: {e}\n{traceback.format_exc()}")
-            raise
+            except (IOError, OSError) as e:
+                if attempt < max_retries - 1:
+                    logger.warning(
+                        f"Read attempt {attempt + 1} failed for {file_path}: {e}. Retrying..."
+                    )
+                    time.sleep(retry_delay * (attempt + 1))
+                else:
+                    logger.error(
+                        f"Failed to read file after {max_retries} attempts: {file_path}\n"
+                        f"{traceback.format_exc()}"
+                    )
+                    raise
+            except Exception as e:
+                logger.error(f"Error reading file {file_path}: {e}\n{traceback.format_exc()}")
+                raise
 
     def _write_json_with_lock(self, file_path: Path, data: Dict[str, Any]) -> None:
         """
-        Write JSON file with exclusive lock.
+        Write JSON file with lock file approach for network share compatibility.
+
+        Uses a temporary lock file and atomic rename to ensure data integrity
+        during concurrent access over network shares.
 
         Args:
             file_path: Path to the JSON file
             data: Data to write as JSON
 
         Raises:
-            IOError: If unable to acquire lock or write file
+            IOError: If unable to write file
         """
+        lock_file = file_path.parent / f"{file_path.name}.lock"
+        max_retries = self.MAX_WRITE_RETRIES
+        retry_delay = self.RETRY_DELAY
+
+        # Wait for existing lock to be released
+        lock_wait_iterations = int(self.LOCK_WAIT_TIMEOUT / 0.5)
+        for _ in range(lock_wait_iterations):
+            if not lock_file.exists():
+                break
+            logger.debug(f"Waiting for lock file to be released: {lock_file}")
+            time.sleep(0.5)
+        else:
+            logger.warning(f"Lock file still exists after {self.LOCK_WAIT_TIMEOUT}s, proceeding anyway")
+
+        # Create lock file
+        try:
+            lock_file.touch(exist_ok=False)  # Fail if exists
+            logger.debug(f"Created lock file: {lock_file}")
+        except FileExistsError:
+            logger.warning(f"Lock file exists, writing anyway: {lock_file}")
+
         try:
             # Ensure parent directory exists
             file_path.parent.mkdir(parents=True, exist_ok=True)
 
-            with open(file_path, 'w', encoding='utf-8') as f:
-                # Acquire exclusive lock for writing
-                msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+            # Write to temporary file first
+            temp_file = file_path.parent / f"{file_path.name}.tmp"
+
+            for attempt in range(max_retries):
                 try:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
-                    f.flush()
-                    os.fsync(f.fileno())
-                    logger.debug(f"Successfully wrote file: {file_path}")
-                finally:
-                    # Unlock the file
-                    msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
-        except BlockingIOError:
-            logger.warning(f"File is locked, retrying: {file_path}")
-            import time
-            time.sleep(self.LOCK_RETRY_DELAY)
-            # Retry once
-            try:
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
-                    try:
+                    with open(temp_file, 'w', encoding='utf-8') as f:
                         json.dump(data, f, ensure_ascii=False, indent=2)
                         f.flush()
                         os.fsync(f.fileno())
-                        logger.debug(f"Successfully wrote file on retry: {file_path}")
-                    finally:
-                        msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+
+                    # Atomic move/replace
+                    temp_file.replace(file_path)
+                    logger.debug(f"Successfully wrote file: {file_path}")
+                    break
+
+                except (IOError, OSError) as e:
+                    if attempt < max_retries - 1:
+                        logger.warning(
+                            f"Write attempt {attempt + 1} failed for {file_path}: {e}. Retrying..."
+                        )
+                        time.sleep(retry_delay * (attempt + 1))
+                    else:
+                        logger.error(
+                            f"Failed to write file after {max_retries} attempts: {file_path}\n"
+                            f"{traceback.format_exc()}"
+                        )
+                        raise
+                except Exception as e:
+                    logger.error(f"Error writing file {file_path}: {e}\n{traceback.format_exc()}")
+                    raise
+
+        finally:
+            # Always remove lock file and temp file
+            try:
+                lock_file.unlink(missing_ok=True)
+                logger.debug(f"Removed lock file: {lock_file}")
             except Exception as e:
-                logger.error(f"Failed to write file after retry: {file_path}\n{traceback.format_exc()}")
-                raise
-        except Exception as e:
-            logger.error(f"Error writing file {file_path}: {e}\n{traceback.format_exc()}")
-            raise
+                logger.warning(f"Failed to remove lock file: {e}")
+
+            try:
+                if temp_file.exists():
+                    temp_file.unlink()
+            except Exception as e:
+                logger.warning(f"Failed to remove temp file: {e}")
 
     def _get_default_config(self, client_id: str, name: str) -> Dict[str, Any]:
         """
