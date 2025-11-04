@@ -4,7 +4,6 @@ A professional desktop application for streamlining Shopify order fulfillment op
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![PySide6](https://img.shields.io/badge/GUI-PySide6-green.svg)](https://www.qt.io/qt-for-python)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ## 🎯 What Does It Do?
 
@@ -226,11 +225,6 @@ pytest
 # Run tests with coverage
 pytest --cov=shopify_tool --cov=gui
 
-# Format code
-ruff format .
-
-# Check code quality
-ruff check .
 ```
 
 ### Running Tests
@@ -290,7 +284,6 @@ Test files mirror the source structure in the `tests/` directory.
 - **pytest** - Testing framework
 - **pytest-qt** - Qt testing utilities
 - **pytest-mock** - Mocking support
-- **ruff** - Fast Python linter and formatter
 - **PyInstaller** - Executable packaging
 
 ## 🤝 Contributing
@@ -306,12 +299,8 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ### Code Style
 - Follow PEP 8 guidelines
 - Use Google-style docstrings
-- Run `ruff format` before committing
 - Ensure all tests pass
 
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 🐛 Bug Reports & Feature Requests
 
