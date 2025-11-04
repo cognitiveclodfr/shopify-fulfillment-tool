@@ -131,12 +131,12 @@ class UIManager:
         group = QGroupBox("Actions")
         main_layout = QVBoxLayout(group)
 
-        # Profile selection
+        # Client selection
         profile_layout = QHBoxLayout()
-        profile_layout.addWidget(QLabel("Active Profile:"))
+        profile_layout.addWidget(QLabel("Client:"))
         self.mw.profile_combo = QComboBox()
         self.mw.profile_combo.setMinimumWidth(150)
-        self.mw.manage_profiles_btn = QPushButton("Manage...")
+        self.mw.manage_profiles_btn = QPushButton("Switch Client")
         profile_layout.addWidget(self.mw.profile_combo, 1)
         profile_layout.addWidget(self.mw.manage_profiles_btn)
         main_layout.addLayout(profile_layout)
@@ -148,8 +148,8 @@ class UIManager:
         self.mw.run_analysis_button.setEnabled(False)
         self.mw.run_analysis_button.setToolTip("Start the fulfillment analysis based on the loaded files.")
 
-        self.mw.settings_button = QPushButton("Open Profile Settings")
-        self.mw.settings_button.setToolTip("Open the settings window for the active profile.")
+        self.mw.settings_button = QPushButton("Open Client Settings")
+        self.mw.settings_button.setToolTip("Open the settings window for the active client.")
 
         actions_layout.addWidget(self.mw.run_analysis_button, 1)
         actions_layout.addWidget(self.mw.settings_button)
