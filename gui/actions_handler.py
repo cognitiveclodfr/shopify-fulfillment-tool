@@ -202,22 +202,20 @@ class ActionsHandler(QObject):
         QMessageBox.critical(self.mw, "Task Exception", msg)
 
     def open_settings_window(self):
-        """Opens the settings dialog window for the active profile.
+        """Opens the settings dialog window for the active client.
 
-        If the settings are saved in the dialog, it updates the active profile's
-        configuration in the main config object and saves it to file.
+        If the settings are saved in the dialog, it updates the active client's
+        configuration and saves it to the server.
         """
         dialog = SettingsWindow(self.mw, self.mw.active_profile_config, self.mw.analysis_results_df)
         if dialog.exec():
-            # Update the active profile's config with the data from the dialog
-            self.mw.config["profiles"][self.mw.active_profile_name] = dialog.config_data
-            self.mw._save_config()  # Use the centralized save method
-
-            # Refresh the active config in the main window
+            # Update active config
             self.mw.active_profile_config = dialog.config_data
+            # Save to server
+            self.mw._save_client_config()
 
-            self.mw.log_activity("Settings", f"Settings for profile '{self.mw.active_profile_name}' saved.")
-            self.log.info(f"Settings for profile '{self.mw.active_profile_name}' saved.")
+            self.mw.log_activity("Settings", f"Settings for client '{self.mw.active_client_id}' saved.")
+            self.log.info(f"Settings for client '{self.mw.active_client_id}' saved.")
 
     def open_report_selection_dialog(self, report_type):
         """Opens a dialog to select and generate a pre-configured report.
@@ -229,7 +227,7 @@ class ActionsHandler(QObject):
         reports_config = self.mw.active_profile_config.get(report_type, [])
         if not reports_config:
             msg = (f"No {report_type.replace('_', ' ')} configured in the active "
-                   f"profile ('{self.mw.active_profile_name}').")
+                   f"client ('{self.mw.active_client_id}').")
             QMessageBox.information(self.mw, "No Reports", msg)
             return
         dialog = ReportSelectionDialog(report_type, reports_config, self.mw)

@@ -73,13 +73,13 @@ class FileHandler:
         if file_type == "orders":
             path = self.mw.orders_file_path
             label = self.mw.orders_file_status_label
-            required_cols = self.mw.config.get("column_mappings", {}).get("orders_required", [])
+            required_cols = self.mw.active_profile_config.get("column_mappings", {}).get("orders_required", [])
             delimiter = ","
         else:  # stock
             path = self.mw.stock_file_path
             label = self.mw.stock_file_status_label
-            required_cols = self.mw.config.get("column_mappings", {}).get("stock_required", [])
-            delimiter = self.mw.config.get("settings", {}).get("stock_csv_delimiter", ";")
+            required_cols = self.mw.active_profile_config.get("column_mappings", {}).get("stock_required", [])
+            delimiter = self.mw.active_profile_config.get("settings", {}).get("stock_csv_delimiter", ";")
 
         if not path:
             self.log.warning(f"Validation skipped for '{file_type}': path is missing.")
