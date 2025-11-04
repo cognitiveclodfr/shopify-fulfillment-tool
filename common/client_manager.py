@@ -164,6 +164,49 @@ class ClientManager:
         """
         return self._get_client_dir(client_id) / "sku_mapping.json"
 
+    def get_session_dir(self, client_id: str, session_name: str = None) -> Path:
+        """
+        Get the session directory path for a client.
+
+        Args:
+            client_id: The client identifier
+            session_name: Optional session name. If None, returns client's sessions root.
+
+        Returns:
+            Path to session directory
+
+        Example:
+            >>> manager.get_session_dir("CLIENT_001")
+            Path("\\\\SERVER\\...\\SESSIONS\\CLIENT_001")
+            >>> manager.get_session_dir("CLIENT_001", "2025-11-04_Session_001")
+            Path("\\\\SERVER\\...\\SESSIONS\\CLIENT_001\\2025-11-04_Session_001")
+        """
+        client_sessions_dir = self.sessions_dir / client_id
+
+        if session_name:
+            return client_sessions_dir / session_name
+        else:
+            return client_sessions_dir
+
+    def ensure_client_session_dir(self, client_id: str) -> bool:
+        """
+        Ensure client's session directory exists.
+
+        Args:
+            client_id: The client identifier
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            client_sessions_dir = self.get_session_dir(client_id)
+            client_sessions_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Ensured session directory exists: {client_sessions_dir}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to create session directory for {client_id}: {e}")
+            return False
+
     def _read_json_with_lock(self, file_path: Path) -> Dict[str, Any]:
         """
         Read JSON file with retry logic for network share compatibility.
@@ -313,22 +356,55 @@ class ClientManager:
             "created_at": now,
             "updated_at": now,
             "shopify": {
-                "column_mappings": {},
+                # Column mappings for CSV validation
+                "column_mappings": {
+                    "orders": {
+                        "name": "Name",
+                        "sku": "Lineitem sku",
+                        "quantity": "Lineitem quantity",
+                        "shipping_provider": "Shipping Provider",
+                        "fulfillment_status": "Fulfillment Status",
+                        "financial_status": "Financial Status",
+                        "order_number": "Name"
+                    },
+                    "stock": {
+                        "sku": "Артикул",
+                        "stock": "Наличност"
+                    },
+                    "orders_required": ["Name", "Lineitem sku", "Lineitem quantity"],
+                    "stock_required": ["Артикул", "Наличност"]
+                },
+
+                # General settings
+                "settings": {
+                    "stock_csv_delimiter": ";",
+                    "low_stock_threshold": 10
+                },
+
+                # Courier name standardization
                 "courier_mappings": {
                     "type": "pattern_matching",
                     "case_sensitive": False,
-                    "rules": [],
+                    "rules": [
+                        {"pattern": "dhl", "standardized_name": "DHL"},
+                        {"pattern": "speedy", "standardized_name": "Speedy"},
+                        {"pattern": "econt", "standardized_name": "Econt"},
+                        {"pattern": "dpd", "standardized_name": "DPD"},
+                        {"pattern": "ups", "standardized_name": "UPS"}
+                    ],
                     "default": "Other"
                 },
+
+                # Automation rules
                 "rules": [],
+
+                # Report templates
                 "packing_lists": [],
                 "stock_exports": [],
+
+                # Additional config
                 "virtual_products": {},
                 "deduction_rules": {}
-            },
-            "packing": {
-                "required_columns": [],
-                "barcode_settings": {}
             }
         }
 
