@@ -16,13 +16,18 @@ NOTE: This test requires GUI components and test fixtures.
 It's marked as integration test and may need to be run with specific fixtures.
 """
 
-import pytest
 import sys
+import os
+import pytest
 import tempfile
 import shutil
 from pathlib import Path
 from datetime import datetime
 from PySide6.QtWidgets import QApplication
+
+# Add parent directory to path to allow imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+
 from common.client_manager import ClientManager
 
 

@@ -7,10 +7,16 @@ These tests verify that the ClientManager correctly:
 3. Creates session directories correctly
 """
 
+import sys
+import os
 import pytest
 import tempfile
 import shutil
 from pathlib import Path
+
+# Add parent directory to path to allow imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+
 from common.client_manager import ClientManager
 
 

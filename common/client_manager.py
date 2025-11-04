@@ -1,4 +1,4 @@
-"""
+r"""
 Client Manager Module
 
 This module provides centralized client configuration management for the fulfillment tool.
@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 
 
 class ClientManager:
-    """
+    r"""
     Manages client configurations with file locking for multi-PC access.
 
     This class provides thread-safe and multi-process safe operations for managing
@@ -82,7 +82,7 @@ class ClientManager:
     LOCK_WAIT_TIMEOUT = 5
 
     def __init__(self, base_path: str):
-        """
+        r"""
         Initialize the ClientManager with the server path.
 
         Args:
@@ -780,7 +780,7 @@ class ClientManager:
             return False
 
     def get_client_path(self, client_id: str) -> Path:
-        """
+        r"""
         Get the directory path for a specific client.
 
         Args:

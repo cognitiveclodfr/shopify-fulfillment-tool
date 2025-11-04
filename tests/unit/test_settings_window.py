@@ -7,9 +7,14 @@ These tests verify that the SettingsWindow correctly:
 3. Creates widgets successfully
 """
 
-import pytest
 import sys
+import os
+import pytest
 from PySide6.QtWidgets import QApplication
+
+# Add parent directory to path to allow imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+
 from gui.settings_window_pyside import SettingsWindow
 
 
