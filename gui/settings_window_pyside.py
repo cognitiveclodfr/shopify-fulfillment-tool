@@ -666,7 +666,7 @@ class SettingsWindow(QDialog):
         self.column_mapping_widgets["orders"] = {}
         for key, value in self.config_data["column_mappings"]["orders"].items():
             label = QLabel(f"{key.replace('_', ' ').title()}:")
-            line_edit = QLineEdit(value)
+            line_edit = QLineEdit(str(value) if value is not None else "")
             orders_layout.addRow(label, line_edit)
             self.column_mapping_widgets["orders"][key] = line_edit
         column_mappings_layout.addWidget(orders_box)
@@ -677,7 +677,7 @@ class SettingsWindow(QDialog):
         self.column_mapping_widgets["stock"] = {}
         for key, value in self.config_data["column_mappings"]["stock"].items():
             label = QLabel(f"{key.replace('_', ' ').title()}:")
-            line_edit = QLineEdit(value)
+            line_edit = QLineEdit(str(value) if value is not None else "")
             stock_layout.addRow(label, line_edit)
             self.column_mapping_widgets["stock"][key] = line_edit
         column_mappings_layout.addWidget(stock_box)
@@ -710,9 +710,9 @@ class SettingsWindow(QDialog):
         row_widget = QWidget()
         row_layout = QHBoxLayout(row_widget)
 
-        original_edit = QLineEdit(original_name)
+        original_edit = QLineEdit(str(original_name) if original_name is not None else "")
         original_edit.setPlaceholderText("Original Name")
-        standardized_edit = QLineEdit(standardized_name)
+        standardized_edit = QLineEdit(str(standardized_name) if standardized_name is not None else "")
         standardized_edit.setPlaceholderText("Standardized Name")
         delete_btn = QPushButton("X")
 

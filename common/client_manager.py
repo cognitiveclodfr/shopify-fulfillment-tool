@@ -559,9 +559,12 @@ class ClientManager:
         """
         Create a new client with default configuration.
 
+        Config structure matches the reference exactly, with unique values
+        for client_id, name, created_at, updated_at per client.
+
         Args:
-            client_id: The client identifier (e.g., "CLIENT_001")
-            name: The client's display name
+            client_id: Unique identifier (e.g., "CLIENT_MYTHOS")
+            name: Display name (e.g., "Mythos")
 
         Returns:
             True if successful, False otherwise
@@ -571,40 +574,93 @@ class ClientManager:
             True
         """
         client_dir = self._get_client_dir(client_id)
-        config_path = self._get_config_path(client_id)
+
+        if client_dir.exists():
+            logger.error(f"Client already exists: {client_id}")
+            return False
 
         try:
-            # Check if client already exists
-            if client_dir.exists():
-                logger.warning(f"Client already exists: {client_id}")
-                return False
-
             # Create client directory
             client_dir.mkdir(parents=True, exist_ok=True)
-            logger.debug(f"Created client directory: {client_dir}")
 
-            # Create default config
-            config = self._get_default_config(client_id, name)
+            # Create config with EXACT reference structure
+            now = datetime.utcnow().isoformat()
 
-            # Save config
-            self._write_json_with_lock(config_path, config)
+            default_config = {
+                "client_id": client_id,
+                "name": name,
+                "active": True,
+                "created_at": now,
+                "updated_at": now,
+                "shopify": {
+                    "column_mappings": {
+                        "orders": {
+                            "name": "Name",
+                            "sku": "Lineitem sku",
+                            "quantity": "Lineitem quantity",
+                            "shipping_provider": "Shipping Provider",
+                            "fulfillment_status": "Fulfillment Status",
+                            "financial_status": "Financial Status",
+                            "order_number": "Name"
+                        },
+                        "stock": {
+                            "sku": "Артикул",
+                            "stock": "Наличност"
+                        },
+                        "orders_required": [
+                            "Name",
+                            "Lineitem sku",
+                            "Lineitem quantity"
+                        ],
+                        "stock_required": [
+                            "Артикул",
+                            "Наличност"
+                        ]
+                    },
+                    "settings": {
+                        "stock_csv_delimiter": ";",
+                        "low_stock_threshold": 10
+                    },
+                    "courier_mappings": {
+                        "type": "pattern_matching",
+                        "case_sensitive": False,
+                        "rules": [
+                            {"pattern": "dhl", "standardized_name": "DHL"},
+                            {"pattern": "speedy", "standardized_name": "Speedy"},
+                            {"pattern": "econt", "standardized_name": "Econt"},
+                            {"pattern": "dpd", "standardized_name": "DPD"},
+                            {"pattern": "ups", "standardized_name": "UPS"}
+                        ],
+                        "default": "Other"
+                    },
+                    "rules": [],
+                    "packing_lists": [],
+                    "stock_exports": [],
+                    "virtual_products": {},
+                    "deduction_rules": {}
+                }
+            }
+
+            # Write config to file
+            config_path = self._get_config_path(client_id)
+            self._write_json_with_lock(config_path, default_config)
 
             # Create empty SKU mapping file
             sku_mapping_path = self._get_sku_mapping_path(client_id)
             self._write_json_with_lock(sku_mapping_path, {})
 
-            logger.info(f"Created new client: {client_id} ({name})")
+            # Create client's session directory
+            self.ensure_client_session_dir(client_id)
+
+            logger.info(f"Successfully created client: {client_id} ({name})")
             return True
 
         except Exception as e:
-            logger.error(f"Error creating client {client_id}: {e}\n{traceback.format_exc()}")
-            # Clean up on failure
-            try:
-                if client_dir.exists():
-                    import shutil
-                    shutil.rmtree(client_dir)
-            except Exception as cleanup_error:
-                logger.error(f"Error cleaning up after failed creation: {cleanup_error}")
+            logger.error(f"Failed to create client {client_id}: {e}\n{traceback.format_exc()}")
+            # Cleanup on failure
+            if client_dir.exists():
+                import shutil
+                shutil.rmtree(client_dir, ignore_errors=True)
             return False
 
     def delete_client(self, client_id: str) -> bool:

@@ -1,6 +1,6 @@
 import os
 import logging
-from PySide6.QtWidgets import QFileDialog
+from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from shopify_tool import core
 
@@ -35,6 +35,15 @@ class FileHandler:
         triggers header validation for the file, and checks if the application
         is ready to run the analysis.
         """
+        # Check session exists
+        if not hasattr(self.mw, 'session_path') or not self.mw.session_path:
+            QMessageBox.warning(
+                self.mw,
+                "No Active Session",
+                "Please create a session before loading files."
+            )
+            return
+
         filepath, _ = QFileDialog.getOpenFileName(self.mw, "Select Orders File", "", "CSV files (*.csv)")
         if filepath:
             self.mw.orders_file_path = filepath
@@ -50,6 +59,15 @@ class FileHandler:
         triggers header validation for the file, and checks if the application
         is ready to run the analysis.
         """
+        # Check session exists
+        if not hasattr(self.mw, 'session_path') or not self.mw.session_path:
+            QMessageBox.warning(
+                self.mw,
+                "No Active Session",
+                "Please create a session before loading files."
+            )
+            return
+
         filepath, _ = QFileDialog.getOpenFileName(self.mw, "Select Stock File", "", "CSV files (*.csv)")
         if filepath:
             self.mw.stock_file_path = filepath
