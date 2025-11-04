@@ -116,48 +116,52 @@ class ActionsHandler(QObject):
     def create_new_session(self):
         """Create a new analysis session folder on the server."""
         try:
+            # Validate client is selected
             if not self.mw.active_client_id:
                 QMessageBox.warning(
                     self.mw,
                     "No Client Selected",
-                    "Please select a client first."
+                    "Please select a client before creating a session."
                 )
                 return
 
-            # Generate session name with timestamp
-            from datetime import datetime
+            # Generate unique session name
             timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
             session_name = f"Session_{timestamp}"
 
             # Get session directory path from ClientManager
-            session_dir = self.mw.client_manager.get_session_dir(
+            # Path format: SESSIONS/{CLIENT_ID}/{SESSION_NAME}/
+            session_path = self.mw.client_manager.get_session_dir(
                 self.mw.active_client_id,
                 session_name
             )
 
-            # Create session directory
-            session_dir.mkdir(parents=True, exist_ok=True)
+            # Create the directory
+            session_path.mkdir(parents=True, exist_ok=True)
 
-            # Log success
-            self.mw.log_activity(
-                "Session",
-                f"Created new session: {session_name}"
-            )
+            # CRITICAL: Store session path on MainWindow
+            self.mw.session_path = str(session_path)
 
+            # Log activity
+            self.mw.log_activity("Session", f"Created session: {session_name}")
+            logging.info(f"Session created: {session_path}")
+
+            # Notify user
             QMessageBox.information(
                 self.mw,
                 "Session Created",
-                f"New session created:\n\n{session_dir}"
+                f"Session created successfully:\n\n"
+                f"Name: {session_name}\n"
+                f"Path: {session_path}\n\n"
+                f"You can now load Orders and Stock files."
             )
-
-            logging.info(f"Created session: {session_dir}")
 
         except Exception as e:
             logging.error(f"Failed to create session: {e}", exc_info=True)
             QMessageBox.critical(
                 self.mw,
-                "Session Creation Error",
-                f"Failed to create session:\n\n{e}"
+                "Session Creation Failed",
+                f"Could not create session:\n\n{e}"
             )
 
     def run_analysis(self):

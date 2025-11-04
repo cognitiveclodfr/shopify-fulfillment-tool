@@ -260,6 +260,54 @@ class MainWindow(QMainWindow):
                 f"Failed to save configuration:\n\n{e}"
             )
 
+    def _get_default_shopify_config(self):
+        """
+        Get default shopify configuration section.
+
+        This returns ONLY the 'shopify' section of the config.
+        Top-level fields (client_id, name, etc.) are handled by ClientManager.
+        """
+        return {
+            "column_mappings": {
+                "orders": {
+                    "name": "Name",
+                    "sku": "Lineitem sku",
+                    "quantity": "Lineitem quantity",
+                    "shipping_provider": "Shipping Provider",
+                    "fulfillment_status": "Fulfillment Status",
+                    "financial_status": "Financial Status",
+                    "order_number": "Name"
+                },
+                "stock": {
+                    "sku": "Артикул",
+                    "stock": "Наличност"
+                },
+                "orders_required": ["Name", "Lineitem sku", "Lineitem quantity"],
+                "stock_required": ["Артикул", "Наличност"]
+            },
+            "settings": {
+                "stock_csv_delimiter": ";",
+                "low_stock_threshold": 10
+            },
+            "courier_mappings": {
+                "type": "pattern_matching",
+                "case_sensitive": False,
+                "rules": [
+                    {"pattern": "dhl", "standardized_name": "DHL"},
+                    {"pattern": "speedy", "standardized_name": "Speedy"},
+                    {"pattern": "econt", "standardized_name": "Econt"},
+                    {"pattern": "dpd", "standardized_name": "DPD"},
+                    {"pattern": "ups", "standardized_name": "UPS"}
+                ],
+                "default": "Other"
+            },
+            "rules": [],
+            "packing_lists": [],
+            "stock_exports": [],
+            "virtual_products": {},
+            "deduction_rules": {}
+        }
+
     def setup_logging(self):
         """Sets up the Qt-based logging handler.
 
@@ -358,16 +406,34 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            # Load new client config
+            # Load client config from server
             client_config = self.client_manager.load_config(client_id)
 
-            # Validate config has required structure
+            # Validate and repair config if needed
+            needs_save = False
+
+            # Ensure 'shopify' section exists
             if "shopify" not in client_config:
-                raise ValueError(f"Client config missing 'shopify' section")
+                logging.warning(f"Client {client_id} missing 'shopify' section, adding default")
+                client_config["shopify"] = self._get_default_shopify_config()
+                needs_save = True
+
+            # Validate all required keys in shopify section
+            default_shopify = self._get_default_shopify_config()
+            for key, default_value in default_shopify.items():
+                if key not in client_config["shopify"]:
+                    logging.warning(f"Client {client_id} missing shopify.{key}, adding default")
+                    client_config["shopify"][key] = default_value
+                    needs_save = True
+
+            # Save repaired config back to server
+            if needs_save:
+                self.client_manager.save_config(client_id, client_config)
+                logging.info(f"Repaired and saved config for client {client_id}")
 
             # Update active state
             self.active_client_id = client_id
-            self.active_profile_config = client_config.get("shopify", {})
+            self.active_profile_config = client_config["shopify"]
 
             # Ensure client session directory exists
             self.client_manager.ensure_client_session_dir(client_id)
@@ -392,7 +458,7 @@ class MainWindow(QMainWindow):
                 "Client Switch Error",
                 f"Could not switch to selected client:\n\n{e}"
             )
-            # Revert combo box
+            # Revert combo box to previous selection
             if self.active_client_id:
                 index = self.profile_combo.findData(self.active_client_id)
                 if index >= 0:
@@ -407,6 +473,9 @@ class MainWindow(QMainWindow):
             from PySide6.QtCore import Qt
 
             clients = self.client_manager.list_clients()
+
+            # Track newly created client
+            newly_created_client = {"client_id": None}
 
             # Create simple dialog
             dialog = QDialog(self)
@@ -431,7 +500,7 @@ class MainWindow(QMainWindow):
 
             # New Client button
             new_btn = QPushButton("Create New Client")
-            new_btn.clicked.connect(lambda: self._create_new_client_dialog(dialog, client_list))
+            new_btn.clicked.connect(lambda: self._create_new_client_dialog(dialog, client_list, newly_created_client))
             btn_layout.addWidget(new_btn)
 
             # Delete Client button
@@ -451,13 +520,24 @@ class MainWindow(QMainWindow):
 
             layout.addLayout(btn_layout)
 
-            dialog.exec()
+            result = dialog.exec()
+
+            # After dialog closes, refresh UI and select newly created client if any
+            if result == QDialog.Accepted or newly_created_client["client_id"]:
+                # Refresh client dropdown
+                self.update_client_combo()
+
+                # Select newly created client if any
+                if newly_created_client["client_id"]:
+                    index = self.profile_combo.findData(newly_created_client["client_id"])
+                    if index >= 0:
+                        self.profile_combo.setCurrentIndex(index)
 
         except Exception as e:
             logging.error(f"Error opening client manager: {e}", exc_info=True)
             QMessageBox.critical(self, "Error", f"Failed to open client manager:\n\n{e}")
 
-    def _create_new_client_dialog(self, parent_dialog, client_list):
+    def _create_new_client_dialog(self, parent_dialog, client_list, newly_created_client):
         """Create new client dialog."""
         name, ok = QInputDialog.getText(
             parent_dialog,
@@ -472,6 +552,9 @@ class MainWindow(QMainWindow):
 
             if success:
                 QMessageBox.information(parent_dialog, "Success", f"Client '{name}' created successfully")
+
+                # Store newly created client ID
+                newly_created_client["client_id"] = client_id
 
                 # Refresh list
                 from PySide6.QtWidgets import QListWidgetItem
