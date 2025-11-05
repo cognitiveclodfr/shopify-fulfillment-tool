@@ -86,11 +86,11 @@ class TestSessionCreation:
         # Format: YYYY-MM-DD_N
         parts = session_name.split('_')
 
-        assert len(parts) == 4  # YYYY, MM, DD, N
-        assert parts[3].isdigit()  # N is a number
+        assert len(parts) == 2  # date_number
+        assert parts[1].isdigit()  # N is a number
 
-        # Verify date format
-        date_part = f"{parts[0]}-{parts[1]}-{parts[2]}"
+        # Verify date format (YYYY-MM-DD)
+        date_part = parts[0]
         try:
             datetime.strptime(date_part, "%Y-%m-%d")
         except ValueError:
