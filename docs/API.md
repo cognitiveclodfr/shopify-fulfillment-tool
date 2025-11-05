@@ -619,6 +619,515 @@ logger.info("Application started")
 
 ---
 
+## Module: profile_manager
+
+**Location**: `shopify_tool/profile_manager.py`
+
+**Purpose**: Manages client-specific configurations on centralized file server with caching, file locking, and automatic backups.
+
+### Classes
+
+#### `ProfileManager`
+
+Manages client profiles and centralized configuration on file server.
+
+##### Constructor
+
+```python
+def __init__(self, base_path: str)
+```
+
+**Parameters**:
+- `base_path` (str): Root path on file server (e.g., `\\\\192.168.88.101\\Z_GreenDelivery\\WAREHOUSE\\0UFulfilment`)
+
+**Raises**:
+- `NetworkError`: If file server is not accessible
+
+**Attributes**:
+- `base_path` (Path): Root path on file server
+- `clients_dir` (Path): Directory containing client profiles (`Clients/`)
+- `sessions_dir` (Path): Directory containing session data (`Sessions/`)
+- `stats_dir` (Path): Directory for statistics (`Stats/`)
+- `logs_dir` (Path): Directory for centralized logs (`Logs/shopify_tool/`)
+- `connection_timeout` (int): Timeout for network operations in seconds
+- `is_network_available` (bool): Whether file server is accessible
+
+##### Class Attributes
+
+```python
+_config_cache: Dict[str, Tuple[Dict, datetime]] = {}  # Shared cache
+CACHE_TIMEOUT_SECONDS = 60  # Cache valid for 1 minute
+```
+
+##### Methods
+
+###### `validate_client_id(client_id: str) -> Tuple[bool, str]` (Static)
+
+Validate client ID format.
+
+**Rules**:
+- Not empty
+- Max 20 characters
+- Only alphanumeric and underscore
+- No "CLIENT_" prefix (added automatically)
+- Not a Windows reserved name
+
+**Returns**: `Tuple[bool, str]`
+- `(True, "")` if valid
+- `(False, "error description")` if invalid
+
+**Example**:
+```python
+is_valid, error_msg = ProfileManager.validate_client_id("M")
+if not is_valid:
+    print(f"Invalid: {error_msg}")
+```
+
+###### `list_clients() -> List[str]`
+
+Get list of available client IDs.
+
+**Returns**: `List[str]` - List of client IDs without CLIENT_ prefix (e.g., `["M", "A", "B"]`)
+
+###### `create_client_profile(client_id: str, client_name: str) -> bool`
+
+Create a new client profile with default configuration.
+
+**Creates**:
+```
+Clients/CLIENT_{ID}/
+├── client_config.json      # General config
+├── shopify_config.json     # Shopify-specific config
+└── backups/                # Config backups
+```
+
+**Parameters**:
+- `client_id` (str): Client ID (e.g., "M")
+- `client_name` (str): Full client name (e.g., "M Cosmetics")
+
+**Returns**: `bool` - True if created, False if already exists
+
+**Raises**:
+- `ValidationError`: If client_id is invalid
+- `ProfileManagerError`: If creation fails
+
+###### `load_client_config(client_id: str) -> Optional[Dict]`
+
+Load general configuration for a client.
+
+**Returns**: `Optional[Dict]` - Configuration dictionary or None if not found
+
+###### `load_shopify_config(client_id: str) -> Optional[Dict]`
+
+Load Shopify configuration for a client with caching.
+
+Uses time-based caching (60 seconds) to reduce network round-trips.
+
+**Returns**: `Optional[Dict]` - Shopify configuration or None if not found
+
+###### `save_shopify_config(client_id: str, config: Dict) -> bool`
+
+Save Shopify configuration with file locking and backup.
+
+Uses platform-specific file locking to prevent concurrent write conflicts.
+Creates automatic backup before saving.
+
+**Parameters**:
+- `client_id` (str): Client ID
+- `config` (Dict): Configuration to save
+
+**Returns**: `bool` - True if saved successfully
+
+**Raises**:
+- `ProfileManagerError`: If save fails or file is locked
+
+**Example**:
+```python
+config = profile_mgr.load_shopify_config("M")
+config["settings"]["low_stock_threshold"] = 10
+profile_mgr.save_shopify_config("M", config)
+```
+
+###### `get_client_directory(client_id: str) -> Path`
+
+Get path to client's directory.
+
+**Returns**: `Path` - Path to client directory
+
+###### `client_exists(client_id: str) -> bool`
+
+Check if client profile exists.
+
+**Returns**: `bool` - True if client exists
+
+---
+
+## Module: session_manager
+
+**Location**: `shopify_tool/session_manager.py`
+
+**Purpose**: Manages the lifecycle of client-specific fulfillment sessions including creation, metadata management, and querying.
+
+### Classes
+
+#### `SessionManager`
+
+Manages client-specific fulfillment sessions.
+
+##### Constructor
+
+```python
+def __init__(self, profile_manager)
+```
+
+**Parameters**:
+- `profile_manager`: ProfileManager instance for accessing file server paths
+
+**Attributes**:
+- `profile_manager`: ProfileManager instance
+- `sessions_root` (Path): Root directory for all sessions
+
+##### Class Attributes
+
+```python
+SESSION_SUBDIRS = ["input", "analysis", "packing_lists", "stock_exports"]
+VALID_STATUSES = ["active", "completed", "abandoned"]
+```
+
+##### Methods
+
+###### `create_session(client_id: str) -> str`
+
+Create a new session for a client.
+
+Creates a timestamped directory with format `{YYYY-MM-DD_N}` where N is
+an incrementing number for multiple sessions on the same day.
+
+**Directory Structure**:
+```
+Sessions/CLIENT_{ID}/{YYYY-MM-DD_N}/
+├── session_info.json       # Session metadata
+├── input/                  # Source files
+├── analysis/               # Analysis results
+├── packing_lists/          # Generated packing lists
+└── stock_exports/          # Stock exports
+```
+
+**Parameters**:
+- `client_id` (str): Client ID (e.g., "M")
+
+**Returns**: `str` - Full path to created session directory
+
+**Raises**:
+- `SessionManagerError`: If session creation fails
+
+**Example**:
+```python
+session_mgr = SessionManager(profile_mgr)
+session_path = session_mgr.create_session("M")
+# Returns: "\\\\server\\...\\Sessions\\CLIENT_M\\2025-11-05_1"
+```
+
+###### `get_session_path(client_id: str, session_name: str) -> Path`
+
+Get full path to a session directory.
+
+**Parameters**:
+- `client_id` (str): Client ID
+- `session_name` (str): Session name (e.g., "2025-11-05_1")
+
+**Returns**: `Path` - Full path to session directory
+
+###### `list_client_sessions(client_id: str, status_filter: Optional[str] = None) -> List[Dict]`
+
+List all sessions for a client.
+
+**Parameters**:
+- `client_id` (str): Client ID
+- `status_filter` (str, optional): Filter by status ("active", "completed", "abandoned")
+
+**Returns**: `List[Dict]` - List of session info dictionaries, sorted by creation date (newest first)
+
+Each dict contains:
+- `session_name`: Session directory name
+- `status`: Session status
+- `created_at`: ISO timestamp
+- `client_id`: Client ID
+- `created_by_tool`: "shopify"
+- `pc_name`: Computer name
+- `session_path`: Full path
+
+**Example**:
+```python
+sessions = session_mgr.list_client_sessions("M", status_filter="active")
+for session in sessions:
+    print(f"{session['session_name']}: {session['status']}")
+```
+
+###### `get_session_info(session_path: str) -> Optional[Dict]`
+
+Load session metadata from session_info.json.
+
+**Parameters**:
+- `session_path` (str): Full path to session directory
+
+**Returns**: `Optional[Dict]` - Session info dictionary or None if not found
+
+###### `update_session_status(session_path: str, status: str) -> bool`
+
+Update session status in session_info.json.
+
+**Parameters**:
+- `session_path` (str): Full path to session directory
+- `status` (str): New status ("active", "completed", "abandoned")
+
+**Returns**: `bool` - True if updated successfully
+
+**Raises**:
+- `SessionManagerError`: If status is invalid or update fails
+
+###### `update_session_info(session_path: str, updates: Dict) -> bool`
+
+Update session metadata with arbitrary fields.
+
+**Parameters**:
+- `session_path` (str): Full path to session directory
+- `updates` (Dict): Dictionary of fields to update
+
+**Returns**: `bool` - True if updated successfully
+
+**Example**:
+```python
+session_mgr.update_session_info(
+    session_path,
+    {
+        "analysis_completed": True,
+        "packing_lists_generated": ["DHL", "DPD"]
+    }
+)
+```
+
+###### `get_session_subdirectory(session_path: str, subdir_name: str) -> Path`
+
+Get path to a session subdirectory.
+
+**Parameters**:
+- `session_path` (str): Full path to session directory
+- `subdir_name` (str): Subdirectory name ("input", "analysis", "packing_lists", "stock_exports")
+
+**Returns**: `Path` - Full path to subdirectory
+
+**Raises**:
+- `SessionManagerError`: If subdirectory doesn't exist or invalid name
+
+###### Helper Methods
+
+```python
+def get_input_dir(session_path: str) -> Path
+def get_analysis_dir(session_path: str) -> Path
+def get_packing_lists_dir(session_path: str) -> Path
+def get_stock_exports_dir(session_path: str) -> Path
+```
+
+Get paths to specific session subdirectories.
+
+###### `session_exists(client_id: str, session_name: str) -> bool`
+
+Check if a session exists.
+
+**Returns**: `bool` - True if session exists
+
+###### `delete_session(session_path: str) -> bool`
+
+Delete a session directory.
+
+**WARNING**: This permanently deletes all session data.
+
+**Returns**: `bool` - True if deleted successfully
+
+**Raises**:
+- `SessionManagerError`: If deletion fails
+
+---
+
+## Module: stats_manager (Unified)
+
+**Location**: `shared/stats_manager.py`
+
+**Purpose**: Unified statistics tracking for both Shopify Tool and Packing Tool with centralized storage and concurrent access support.
+
+### Classes
+
+#### `StatsManager`
+
+Manages centralized statistics stored in `Stats/global_stats.json` on file server.
+
+##### Constructor
+
+```python
+def __init__(
+    self,
+    base_path: str,
+    max_retries: int = 5,
+    retry_delay: float = 0.1
+)
+```
+
+**Parameters**:
+- `base_path` (str): Path to 0UFulfilment directory (e.g., `\\\\server\\...\\0UFulfilment`)
+- `max_retries` (int): Maximum retry attempts for locked files
+- `retry_delay` (float): Delay in seconds between retries
+
+**Attributes**:
+- `base_path` (Path): Base path to 0UFulfilment directory
+- `stats_file` (Path): Path to `Stats/global_stats.json`
+- `max_retries` (int): Maximum retry attempts
+- `retry_delay` (float): Delay between retries
+
+##### Methods
+
+###### `record_analysis(client_id: str, session_id: str, orders_count: int, metadata: Optional[Dict] = None) -> None`
+
+Record an analysis completion from Shopify Tool.
+
+**Parameters**:
+- `client_id` (str): Client identifier (e.g., "M", "A", "B")
+- `session_id` (str): Session identifier (e.g., "2025-11-05_1")
+- `orders_count` (int): Number of orders analyzed
+- `metadata` (Optional[Dict]): Additional metadata (e.g., fulfillable_orders, courier_breakdown)
+
+**Example**:
+```python
+stats_mgr.record_analysis(
+    client_id="M",
+    session_id="2025-11-05_1",
+    orders_count=150,
+    metadata={
+        "fulfillable_orders": 142,
+        "courier_breakdown": {"DHL": 80, "DPD": 62}
+    }
+)
+```
+
+###### `record_packing(client_id: str, session_id: str, worker_id: Optional[str], orders_count: int, items_count: int, metadata: Optional[Dict] = None) -> None`
+
+Record a packing session completion from Packing Tool.
+
+**Parameters**:
+- `client_id` (str): Client identifier
+- `session_id` (str): Session identifier
+- `worker_id` (Optional[str]): Worker identifier (e.g., "001", "002")
+- `orders_count` (int): Number of orders packed
+- `items_count` (int): Number of items packed
+- `metadata` (Optional[Dict]): Additional metadata (e.g., duration, timestamps)
+
+**Example**:
+```python
+stats_mgr.record_packing(
+    client_id="M",
+    session_id="2025-11-05_1",
+    worker_id="001",
+    orders_count=142,
+    items_count=450,
+    metadata={
+        "start_time": "2025-11-05T10:00:00",
+        "end_time": "2025-11-05T12:30:00",
+        "duration_seconds": 9000
+    }
+)
+```
+
+###### `get_global_stats() -> Dict[str, Any]`
+
+Get global statistics summary.
+
+**Returns**: `Dict[str, Any]` with keys:
+- `total_orders_analyzed` (int): Total orders analyzed by Shopify Tool
+- `total_orders_packed` (int): Total orders packed by Packing Tool
+- `total_sessions` (int): Total packing sessions
+- `last_updated` (str): Last update timestamp
+
+**Example**:
+```python
+stats = stats_mgr.get_global_stats()
+print(f"Total analyzed: {stats['total_orders_analyzed']}")
+print(f"Total packed: {stats['total_orders_packed']}")
+```
+
+###### `get_client_stats(client_id: str) -> Dict[str, Any]`
+
+Get statistics for a specific client.
+
+**Parameters**:
+- `client_id` (str): Client identifier
+
+**Returns**: `Dict[str, Any]` with keys:
+- `orders_analyzed` (int): Orders analyzed for this client
+- `orders_packed` (int): Orders packed for this client
+- `sessions` (int): Packing sessions for this client
+
+###### `get_all_clients_stats() -> Dict[str, Dict[str, Any]]`
+
+Get statistics for all clients.
+
+**Returns**: `Dict[str, Dict[str, Any]]` - Dictionary mapping client IDs to their statistics
+
+###### `get_analysis_history(client_id: Optional[str] = None, limit: Optional[int] = None) -> List[Dict[str, Any]]`
+
+Get analysis history with optional filtering.
+
+**Parameters**:
+- `client_id` (Optional[str]): Filter by client ID (None for all clients)
+- `limit` (Optional[int]): Maximum number of records to return (newest first)
+
+**Returns**: `List[Dict[str, Any]]` - List of analysis records
+
+Each record contains:
+- `timestamp`: ISO timestamp
+- `client_id`: Client ID
+- `session_id`: Session ID
+- `orders_count`: Number of orders
+- `metadata`: Optional additional data
+
+###### `get_packing_history(client_id: Optional[str] = None, worker_id: Optional[str] = None, limit: Optional[int] = None) -> List[Dict[str, Any]]`
+
+Get packing history with optional filtering.
+
+**Parameters**:
+- `client_id` (Optional[str]): Filter by client ID
+- `worker_id` (Optional[str]): Filter by worker ID
+- `limit` (Optional[int]): Maximum number of records
+
+**Returns**: `List[Dict[str, Any]]` - List of packing records
+
+###### `reset_stats() -> None`
+
+Reset all statistics to default values.
+
+**WARNING**: This will delete all historical data. Use with caution.
+
+### Exceptions
+
+#### `ProfileManagerError`
+Base exception for ProfileManager errors.
+
+#### `NetworkError(ProfileManagerError)`
+Raised when file server is not accessible.
+
+#### `ValidationError(ProfileManagerError)`
+Raised when validation fails.
+
+#### `SessionManagerError`
+Base exception for SessionManager errors.
+
+#### `StatsManagerError`
+Base exception for StatsManager errors.
+
+#### `FileLockError(StatsManagerError)`
+Raised when file locking fails.
+
+---
+
 # Frontend API (gui)
 
 ## Module: main_window_pyside
