@@ -61,7 +61,7 @@ class FileHandler:
     def validate_file(self, file_type):
         """Validates that a selected CSV file contains the required headers.
 
-        It reads the required column names from the application configuration
+        It reads the required column names from the client-specific configuration
         and uses `core.validate_csv_headers` to perform the check. The result
         is displayed to the user via a status label (✓ or ✗) with a tooltip
         providing details on failure.
@@ -70,16 +70,33 @@ class FileHandler:
             file_type (str): The type of file to validate, either "orders" or
                              "stock".
         """
+        # Get client_id from main window
+        client_id = self.mw.current_client_id
+        if not client_id:
+            self.log.warning(f"No client selected, skipping validation for '{file_type}'")
+            return
+
+        # Load client-specific config
+        try:
+            client_config = self.mw.profile_manager.load_shopify_config(client_id)
+            if not client_config:
+                self.log.error(f"Failed to load config for client {client_id}")
+                return
+        except Exception as e:
+            self.log.error(f"Error loading client config: {e}")
+            return
+
         if file_type == "orders":
             path = self.mw.orders_file_path
             label = self.mw.orders_file_status_label
-            required_cols = self.mw.config.get("column_mappings", {}).get("orders_required", [])
+            # Get from client-specific config
+            required_cols = client_config.get("column_mappings", {}).get("orders_required", [])
             delimiter = ","
         else:  # stock
             path = self.mw.stock_file_path
             label = self.mw.stock_file_status_label
-            required_cols = self.mw.config.get("column_mappings", {}).get("stock_required", [])
-            delimiter = self.mw.config.get("settings", {}).get("stock_csv_delimiter", ";")
+            required_cols = client_config.get("column_mappings", {}).get("stock_required", [])
+            delimiter = client_config.get("settings", {}).get("stock_csv_delimiter", ";")
 
         if not path:
             self.log.warning(f"Validation skipped for '{file_type}': path is missing.")
