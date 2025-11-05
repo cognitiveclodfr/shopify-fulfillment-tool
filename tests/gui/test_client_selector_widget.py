@@ -2,13 +2,18 @@
 
 import sys
 import os
-import pytest
-from unittest.mock import Mock, patch, MagicMock
-from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import Qt
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+
+import pytest
+from unittest.mock import Mock, patch, MagicMock
+
+# Set Qt platform to offscreen for CI/headless environments
+os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
 
 from gui.client_selector_widget import ClientSelectorWidget, ClientCreationDialog
 from shopify_tool.profile_manager import ProfileManager, ValidationError

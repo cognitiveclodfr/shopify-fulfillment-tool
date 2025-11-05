@@ -2,14 +2,19 @@
 
 import sys
 import os
-import pytest
-from unittest.mock import Mock, patch
-from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import Qt
-from datetime import datetime
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+
+import pytest
+from unittest.mock import Mock, patch
+from datetime import datetime
+
+# Set Qt platform to offscreen for CI/headless environments
+os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
 
 from gui.session_browser_widget import SessionBrowserWidget
 from shopify_tool.session_manager import SessionManager
