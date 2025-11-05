@@ -324,6 +324,19 @@ def run_full_analysis(
     final_df, summary_present_df, summary_missing_df, stats = analysis.run_analysis(stock_df, orders_df, history_df)
     logger.info("Analysis computation complete.")
 
+    # Debug logging: Verify DataFrame structure
+    logger.info(f"Analysis result DataFrame shape: {final_df.shape}")
+    logger.info(f"Analysis result columns: {list(final_df.columns)}")
+    if not final_df.empty:
+        logger.debug(f"Sample row from analysis: {final_df.iloc[0].to_dict()}")
+        if "Order_Fulfillment_Status" in final_df.columns:
+            status_counts = final_df["Order_Fulfillment_Status"].value_counts().to_dict()
+            logger.info(f"Order_Fulfillment_Status distribution: {status_counts}")
+        else:
+            logger.error("CRITICAL: 'Order_Fulfillment_Status' column is missing from analysis results!")
+    else:
+        logger.warning("Analysis result DataFrame is empty!")
+
     # 2.5. Add stock alerts based on config
     low_stock_threshold = config.get("settings", {}).get("low_stock_threshold")
     if low_stock_threshold is not None and "Final_Stock" in final_df.columns:
