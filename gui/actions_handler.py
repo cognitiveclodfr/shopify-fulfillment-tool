@@ -115,14 +115,15 @@ class ActionsHandler(QObject):
 
         worker = Worker(
             core.run_full_analysis,
+            self.mw.stock_file_path,
+            self.mw.orders_file_path,
+            None,  # output_dir_path (not used in session mode)
+            stock_delimiter,
+            self.mw.active_profile_config,
             client_id=self.mw.current_client_id,
             session_manager=self.mw.session_manager,
             profile_manager=self.mw.profile_manager,
-            orders_file_path=self.mw.orders_file_path,
-            stock_file_path=self.mw.stock_file_path,
             session_path=self.mw.session_path,
-            stock_delimiter=stock_delimiter,
-            config=self.mw.active_profile_config,
         )
         worker.signals.result.connect(self.on_analysis_complete)
         worker.signals.error.connect(self.on_task_error)

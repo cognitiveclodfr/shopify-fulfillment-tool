@@ -167,14 +167,15 @@ def validate_csv_headers(file_path, required_columns, delimiter=","):
 
 
 def run_full_analysis(
-    orders_file_path,
     stock_file_path,
-    session_path,
+    orders_file_path,
+    output_dir_path,
     stock_delimiter,
     config,
     client_id: Optional[str] = None,
     session_manager: Optional[Any] = None,
-    profile_manager: Optional[Any] = None
+    profile_manager: Optional[Any] = None,
+    session_path: Optional[str] = None
 ):
     """Orchestrates the entire fulfillment analysis process.
 
@@ -189,7 +190,7 @@ def run_full_analysis(
     7. Updates the fulfillment history with newly fulfilled orders.
 
     New Session-Based Workflow (when session_manager and client_id are provided):
-    1. Creates a new session directory for the client
+    1. Uses provided session_path (from actions_handler)
     2. Copies input files to session/input/
     3. Saves analysis results to session/analysis/
     4. Exports analysis_data.json for Packing Tool integration
@@ -200,8 +201,8 @@ def run_full_analysis(
             None for testing purposes if a DataFrame is provided in `config`.
         orders_file_path (str | None): Path to the Shopify orders export CSV
             file. Can be None for testing.
-        session_path (str): Path to the session directory where the output
-            will be saved. For legacy calls, can be a generic output directory.
+        output_dir_path (str): Path to the directory where the output report
+            will be saved (legacy mode). Ignored in session mode.
         stock_delimiter (str): The delimiter used in the stock CSV file.
         config (dict): The application configuration dictionary. It can also
             contain test DataFrames under 'test_stock_df' and
@@ -209,6 +210,7 @@ def run_full_analysis(
         client_id (str, optional): Client ID for session-based workflow.
         session_manager (SessionManager, optional): Session manager instance.
         profile_manager (ProfileManager, optional): Profile manager instance.
+        session_path (str, optional): Path to existing session directory (new workflow).
 
     Returns:
         tuple[bool, str | None, pd.DataFrame | None, dict | None]:
@@ -227,14 +229,17 @@ def run_full_analysis(
     # Determine if using session-based workflow
     use_session_mode = session_manager is not None and client_id is not None
 
+    # Use session_path if provided (new workflow), otherwise use output_dir_path (legacy)
+    working_path = session_path if session_path is not None else output_dir_path
+
     if use_session_mode:
         try:
             logger.info(f"Using session-based workflow for client: {client_id}")
-            logger.info(f"Session path: {session_path}")
+            logger.info(f"Session path: {working_path}")
 
             # Copy input files to session/input/
             if stock_file_path and orders_file_path:
-                input_dir = session_manager.get_input_dir(session_path)
+                input_dir = session_manager.get_input_dir(working_path)
 
                 # Copy with standardized names
                 orders_dest = Path(input_dir) / "orders_export.csv"
@@ -247,7 +252,7 @@ def run_full_analysis(
                 shutil.copy2(stock_file_path, stock_dest)
 
                 # Update session info with input file names
-                session_manager.update_session_info(session_path, {
+                session_manager.update_session_info(working_path, {
                     "orders_file": "orders_export.csv",
                     "stock_file": "inventory.csv"
                 })
@@ -322,14 +327,14 @@ def run_full_analysis(
         # Determine output directory based on mode
         if use_session_mode:
             # Session mode: save to session/analysis/
-            analysis_dir = session_manager.get_analysis_dir(session_path)
+            analysis_dir = session_manager.get_analysis_dir(working_path)
             output_file_path = str(Path(analysis_dir) / "analysis_report.xlsx")
             logger.info(f"Session mode: saving to {output_file_path}")
         else:
-            # Legacy mode: save to specified session_path (as output directory)
-            if not os.path.exists(session_path):
-                os.makedirs(session_path)
-            output_file_path = os.path.join(session_path, "fulfillment_analysis.xlsx")
+            # Legacy mode: save to specified output_dir_path
+            if not os.path.exists(output_dir_path):
+                os.makedirs(output_dir_path)
+            output_file_path = os.path.join(output_dir_path, "fulfillment_analysis.xlsx")
 
         with pd.ExcelWriter(output_file_path, engine="xlsxwriter") as writer:
             final_df.to_excel(writer, sheet_name="fulfillment_analysis", index=False)
@@ -367,13 +372,13 @@ def run_full_analysis(
                 logger.info(f"analysis_data.json saved to: {analysis_data_path}")
 
                 # Update session_info.json with analysis results
-                session_manager.update_session_info(session_path, {
+                session_manager.update_session_info(working_path, {
                     "analysis_completed": True,
                     "analysis_completed_at": datetime.now().isoformat(),
                     "total_orders": analysis_data["total_orders"],
                     "fulfillable_orders": analysis_data["fulfillable_orders"],
                     "not_fulfillable_orders": analysis_data["not_fulfillable_orders"],
-                    "analysis_report_path": "analysis/fulfillment_analysis.xlsx"
+                    "analysis_report_path": "analysis/analysis_report.xlsx"
                 })
 
                 logger.info("Session info updated with analysis results")
@@ -397,7 +402,7 @@ def run_full_analysis(
 
         # Return appropriate path based on mode
         if use_session_mode:
-            return True, session_path, final_df, stats
+            return True, working_path, final_df, stats
         else:
             return True, output_file_path, final_df, stats
     else:
