@@ -78,20 +78,23 @@ class SettingsWindow(QDialog):
     ]
     ACTION_TYPES = ["ADD_TAG", "SET_STATUS", "SET_PRIORITY", "EXCLUDE_FROM_REPORT", "EXCLUDE_SKU"]
 
-    def __init__(self, parent, config, analysis_df=None):
+    def __init__(self, client_id, client_config, profile_manager, analysis_df=None, parent=None):
         """Initializes the SettingsWindow.
 
         Args:
-            parent (QWidget): The parent widget.
-            config (dict): The application configuration dictionary. A deep
+            client_id (str): The client ID for which settings are being edited.
+            client_config (dict): The client's configuration dictionary. A deep
                 copy is made to avoid modifying the original until saved.
+            profile_manager: The ProfileManager instance for saving settings.
             analysis_df (pd.DataFrame, optional): The current analysis
                 DataFrame, used for populating filter value dropdowns.
                 Defaults to None.
+            parent (QWidget, optional): The parent widget. Defaults to None.
         """
         super().__init__(parent)
-        self.parent = parent
-        self.config_data = json.loads(json.dumps(config))
+        self.client_id = client_id
+        self.config_data = json.loads(json.dumps(client_config))
+        self.profile_manager = profile_manager
         self.analysis_df = analysis_df if analysis_df is not None else pd.DataFrame()
 
         # Ensure mappings sections exist with the correct structure
@@ -116,7 +119,7 @@ class SettingsWindow(QDialog):
         self.column_mapping_widgets = {}
         self.courier_mapping_widgets = []
 
-        self.setWindowTitle("Application Settings")
+        self.setWindowTitle(f"Settings - CLIENT_{self.client_id}")
         self.setMinimumSize(800, 700)
         self.setModal(True)
 
@@ -778,7 +781,26 @@ class SettingsWindow(QDialog):
                     new_courier_mappings[original] = standardized
             self.config_data["courier_mappings"] = new_courier_mappings
 
-            self.accept()
+            # Save to server via profile_manager
+            success = self.profile_manager.save_shopify_config(
+                self.client_id,
+                self.config_data
+            )
+
+            if success:
+                QMessageBox.information(
+                    self,
+                    "Success",
+                    f"Settings for CLIENT_{self.client_id} saved successfully!"
+                )
+                self.accept()
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Save Failed",
+                    "Failed to save settings to server. Please try again."
+                )
+
         except ValueError:
             QMessageBox.critical(self, "Validation Error", "Low Stock Threshold must be a valid number.")
         except Exception as e:
