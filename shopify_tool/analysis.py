@@ -232,7 +232,29 @@ def recalculate_statistics(df):
             - 'couriers_stats' (list[dict] | None): A list of dictionaries,
               each representing a courier's stats, or None if no orders
               were completed.
+
+    Raises:
+        ValueError: If DataFrame is empty or missing required columns.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    # Validate DataFrame is not empty
+    if df is None or df.empty:
+        logger.error("Cannot calculate statistics: DataFrame is empty or None")
+        raise ValueError("DataFrame is empty or None. Cannot calculate statistics.")
+
+    # Validate required columns exist
+    required_cols = ["Order_Fulfillment_Status", "Order_Number", "Quantity", "Shipping_Provider"]
+    missing = [col for col in required_cols if col not in df.columns]
+
+    if missing:
+        logger.error(f"Missing required columns in DataFrame: {missing}")
+        logger.error(f"Available columns: {list(df.columns)}")
+        raise ValueError(f"DataFrame missing required columns: {missing}")
+
+    logger.debug(f"DataFrame columns validated successfully: {list(df.columns)}")
+
     stats = {}
     completed_orders_df = df[df["Order_Fulfillment_Status"] == "Fulfillable"].copy()
     not_completed_orders_df = df[df["Order_Fulfillment_Status"] == "Not Fulfillable"]
