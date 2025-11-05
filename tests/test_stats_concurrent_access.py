@@ -322,26 +322,19 @@ class TestFileLocking:
 
     def test_file_lock_timeout_raises_error(self, temp_base_path):
         """Test that file lock timeout raises appropriate error."""
-        manager = StatsManager(base_path=temp_base_path, max_retries=1)
+        manager = StatsManager(base_path=temp_base_path, max_retries=2, retry_delay=0.01)
 
-        # Pre-create and lock the file
-        stats_file = Path(temp_base_path) / "Stats" / "global_stats.json"
-        stats_file.parent.mkdir(parents=True, exist_ok=True)
+        original_lock_file = manager._lock_file
 
-        # Try to write while we simulate a locked file by making it read-only temporarily
-        with open(stats_file, 'w') as f:
-            json.dump(manager._get_default_stats(), f)
+        def always_failing_lock(file_handle, timeout=5.0):
+            # Always raise FileLockError to simulate persistent lock
+            raise FileLockError("Simulated persistent lock")
 
-        # Make file read-only to simulate lock
-        os.chmod(stats_file, 0o444)
+        manager._lock_file = always_failing_lock
 
-        try:
-            # This should fail after retries
-            with pytest.raises(StatsManagerError):
-                manager.record_analysis("M", "s1", 10)
-        finally:
-            # Restore permissions
-            os.chmod(stats_file, 0o644)
+        # This should fail after all retries and raise StatsManagerError
+        with pytest.raises(StatsManagerError, match="Failed to update stats after .* attempts"):
+            manager.record_analysis("M", "s1", 10)
 
     def test_retry_mechanism_on_lock_failure(self, temp_base_path):
         """Test that retry mechanism works on temporary lock failures."""
@@ -349,15 +342,16 @@ class TestFileLocking:
 
         call_count = [0]
 
-        original_save = manager._save_stats
+        original_lock_file = manager._lock_file
 
-        def failing_save(stats):
+        def failing_lock_file(file_handle, timeout=5.0):
             call_count[0] += 1
-            if call_count[0] < 2:  # Fail first time
-                raise IOError("Simulated lock failure")
-            return original_save(stats)
+            if call_count[0] == 1:  # Fail first time
+                raise FileLockError("Simulated lock failure")
+            # Succeed on subsequent attempts
+            return original_lock_file(file_handle, timeout)
 
-        manager._save_stats = failing_save
+        manager._lock_file = failing_lock_file
 
         # Should succeed after retry
         manager.record_analysis("M", "s1", 10)
