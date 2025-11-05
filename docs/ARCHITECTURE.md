@@ -302,6 +302,157 @@ Generate Excel File → Session Folder
 - Results passed back via Qt signals
 - UI updates only in main thread
 
+## Server Architecture (Phase 1 - Unified Development)
+
+### Centralized File Server Structure
+
+The application uses a **centralized file server architecture** for multi-PC warehouse operations:
+
+```
+\\Server\Share\0UFulfilment\
+├── Clients/
+│   ├── CLIENT_M/
+│   │   ├── client_config.json      # General client settings
+│   │   ├── shopify_config.json     # Shopify-specific config
+│   │   └── backups/                # Automatic config backups
+│   └── CLIENT_{ID}/
+│       └── ...
+├── Sessions/
+│   ├── CLIENT_M/
+│   │   ├── 2025-11-05_1/
+│   │   │   ├── session_info.json   # Session metadata
+│   │   │   ├── input/              # Orders & stock CSV files
+│   │   │   ├── analysis/           # Analysis results
+│   │   │   ├── packing_lists/      # Generated packing lists
+│   │   │   └── stock_exports/      # Stock writeoff exports
+│   │   └── 2025-11-05_2/
+│   │       └── ...
+│   └── CLIENT_{ID}/
+│       └── ...
+├── Stats/
+│   └── global_stats.json           # Unified statistics
+└── Logs/
+    └── shopify_tool/                # Centralized logging
+```
+
+### Integration with Packing Tool
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                  File Server (0UFulfilment)              │
+├─────────────────────────────────────────────────────────┤
+│  Clients/  │  Sessions/  │  Stats/  │  Logs/            │
+└──────┬──────────────┬────────────┬──────────────────────┘
+       │              │            │
+       ▼              ▼            ▼
+┌──────────────┐  ┌──────────────┐
+│ Shopify Tool │  │ Packing Tool │
+├──────────────┤  ├──────────────┤
+│ 1. Analysis  │──►│ 1. Load      │
+│    - Orders  │  │    session    │
+│    - Stock   │  │              │
+│              │  │              │
+│ 2. Generate  │  │ 2. Worker    │
+│    - Packing │──►│    packing   │
+│      lists   │  │              │
+│    - Stock   │  │              │
+│      exports │  │ 3. Stats     │
+│              │  │    tracking  │
+│ 3. Session   │◄─┤              │
+│    info      │  │              │
+└──────────────┘  └──────────────┘
+       │                 │
+       └─────────┬───────┘
+                 ▼
+         ┌───────────────┐
+         │ StatsManager  │
+         │ (Unified)     │
+         └───────────────┘
+```
+
+### Profile Management System
+
+#### ProfileManager
+**Location**: `shopify_tool/profile_manager.py`
+
+Manages client-specific configurations on the file server with:
+- Client profile CRUD operations
+- Configuration caching (60-second TTL)
+- File locking for concurrent access
+- Network connectivity testing
+- Automatic backups (keeps last 10)
+- Validation of client IDs
+
+**Key Features**:
+```python
+# Create new client profile
+profile_mgr.create_client_profile(
+    client_id="M",
+    client_name="M Cosmetics"
+)
+
+# Load configuration with caching
+config = profile_mgr.load_shopify_config("M")
+
+# Save with file locking and backup
+profile_mgr.save_shopify_config("M", updated_config)
+```
+
+#### SessionManager
+**Location**: `shopify_tool/session_manager.py`
+
+Manages session lifecycle for client work sessions:
+- Create timestamped sessions (`{YYYY-MM-DD_N}`)
+- Session directory structure setup
+- Metadata management (`session_info.json`)
+- Session listing and querying
+- Status updates (active/completed/abandoned)
+
+**Session Workflow**:
+```
+1. create_session("M")
+   └─> Creates: Sessions/CLIENT_M/2025-11-05_1/
+       - session_info.json
+       - input/
+       - analysis/
+       - packing_lists/
+       - stock_exports/
+
+2. Run analysis → Save to analysis/
+
+3. Generate reports → Save to packing_lists/, stock_exports/
+
+4. update_session_status("completed")
+```
+
+#### StatsManager (Unified)
+**Location**: `shared/stats_manager.py`
+
+Provides unified statistics tracking for both Shopify and Packing tools:
+- Centralized storage (`Stats/global_stats.json`)
+- File locking for concurrent multi-PC access
+- Separate tracking for analysis and packing
+- Per-client statistics breakdown
+- Thread-safe and process-safe operations
+
+**Statistics Structure**:
+```json
+{
+  "total_orders_analyzed": 5420,    // From Shopify Tool
+  "total_orders_packed": 4890,      // From Packing Tool
+  "total_sessions": 312,
+  "by_client": {
+    "M": {
+      "orders_analyzed": 2100,
+      "orders_packed": 1950,
+      "sessions": 145
+    }
+  },
+  "analysis_history": [...],
+  "packing_history": [...]
+}
+```
+
 ## Configuration Management
 
 ### Configuration Structure
@@ -323,13 +474,15 @@ Generate Excel File → Session Folder
 
 ### Profile System
 - **Purpose**: Support multiple configurations for different warehouses/workflows
-- **Location**: `%APPDATA%/ShopifyFulfillmentTool/config.json` (Windows)
-- **Migration**: Automatic upgrade from old format to profile-based format
+- **Location**: `%APPDATA%/ShopifyFulfillmentTool/config.json` (Windows) - **Deprecated**
+- **New Location**: File server `Clients/CLIENT_{ID}/shopify_config.json`
+- **Migration**: Automatic upgrade from old format to server-based profiles
 
 ### Persistent Data
-- **Config**: `config.json` in user data directory
-- **History**: `fulfillment_history.csv` in user data directory
-- **Session**: `session_data.pkl` for session restoration
+- **Client Config**: `Clients/CLIENT_{ID}/client_config.json` on file server
+- **Shopify Config**: `Clients/CLIENT_{ID}/shopify_config.json` on file server
+- **Session Info**: `Sessions/CLIENT_{ID}/{session}/session_info.json`
+- **Statistics**: `Stats/global_stats.json` (unified)
 
 ## Error Handling
 
