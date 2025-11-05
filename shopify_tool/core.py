@@ -167,9 +167,9 @@ def validate_csv_headers(file_path, required_columns, delimiter=","):
 
 
 def run_full_analysis(
-    stock_file_path,
     orders_file_path,
-    output_dir_path,
+    stock_file_path,
+    session_path,
     stock_delimiter,
     config,
     client_id: Optional[str] = None,
@@ -200,8 +200,8 @@ def run_full_analysis(
             None for testing purposes if a DataFrame is provided in `config`.
         orders_file_path (str | None): Path to the Shopify orders export CSV
             file. Can be None for testing.
-        output_dir_path (str): Path to the directory where the output report
-            will be saved. Ignored if session_manager is provided.
+        session_path (str): Path to the session directory where the output
+            will be saved. For legacy calls, can be a generic output directory.
         stock_delimiter (str): The delimiter used in the stock CSV file.
         config (dict): The application configuration dictionary. It can also
             contain test DataFrames under 'test_stock_df' and
@@ -224,16 +224,13 @@ def run_full_analysis(
     """
     logger.info("--- Starting Full Analysis Process ---")
 
-    # Session-based workflow: Create session and copy input files
-    session_path = None
+    # Determine if using session-based workflow
     use_session_mode = session_manager is not None and client_id is not None
 
     if use_session_mode:
         try:
-            logger.info(f"Creating new session for client: {client_id}")
-            # Create session directory structure
-            session_path = session_manager.create_session(client_id)
-            logger.info(f"Session created at: {session_path}")
+            logger.info(f"Using session-based workflow for client: {client_id}")
+            logger.info(f"Session path: {session_path}")
 
             # Copy input files to session/input/
             if stock_file_path and orders_file_path:
@@ -257,7 +254,7 @@ def run_full_analysis(
 
                 logger.info("Input files copied to session directory")
         except Exception as e:
-            error_msg = f"Failed to create session: {e}"
+            error_msg = f"Failed to setup session: {e}"
             logger.error(error_msg, exc_info=True)
             return False, error_msg, None, None
 
@@ -326,13 +323,13 @@ def run_full_analysis(
         if use_session_mode:
             # Session mode: save to session/analysis/
             analysis_dir = session_manager.get_analysis_dir(session_path)
-            output_file_path = str(Path(analysis_dir) / "fulfillment_analysis.xlsx")
+            output_file_path = str(Path(analysis_dir) / "analysis_report.xlsx")
             logger.info(f"Session mode: saving to {output_file_path}")
         else:
-            # Legacy mode: save to specified output_dir_path
-            if not os.path.exists(output_dir_path):
-                os.makedirs(output_dir_path)
-            output_file_path = os.path.join(output_dir_path, "fulfillment_analysis.xlsx")
+            # Legacy mode: save to specified session_path (as output directory)
+            if not os.path.exists(session_path):
+                os.makedirs(session_path)
+            output_file_path = os.path.join(session_path, "fulfillment_analysis.xlsx")
 
         with pd.ExcelWriter(output_file_path, engine="xlsxwriter") as writer:
             final_df.to_excel(writer, sheet_name="fulfillment_analysis", index=False)

@@ -45,7 +45,12 @@ class UIManager:
         self.mw.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
 
-        main_layout.addWidget(self._create_session_group())
+        # Add client selector (new architecture)
+        main_layout.addWidget(self._create_client_selector_group())
+
+        # Add session browser and session management
+        main_layout.addWidget(self._create_session_management_group())
+
         main_layout.addWidget(self._create_files_group())
         main_layout.addLayout(self._create_actions_layout())
 
@@ -54,19 +59,51 @@ class UIManager:
         main_layout.setStretchFactor(self.mw.tab_view, 1)
         self.log.info("UI widgets created successfully.")
 
-    def _create_session_group(self):
-        """Creates the 'Session' QGroupBox."""
-        group = QGroupBox("Session")
+    def _create_client_selector_group(self):
+        """Creates the 'Client Selection' QGroupBox with ClientSelectorWidget."""
+        from gui.client_selector_widget import ClientSelectorWidget
+
+        group = QGroupBox("Client Selection")
         layout = QHBoxLayout()
         group.setLayout(layout)
 
-        self.mw.new_session_btn = QPushButton("Create New Session")
-        self.mw.new_session_btn.setToolTip("Creates a new unique, dated folder for all generated reports.")
-        self.mw.session_path_label = QLabel("No session started.")
-
-        layout.addWidget(self.mw.new_session_btn)
-        layout.addWidget(self.mw.session_path_label)
+        # Add client selector widget
+        self.mw.client_selector = ClientSelectorWidget(
+            self.mw.profile_manager,
+            self.mw
+        )
+        layout.addWidget(self.mw.client_selector)
         layout.addStretch()
+
+        return group
+
+    def _create_session_management_group(self):
+        """Creates the 'Session Management' QGroupBox."""
+        from gui.session_browser_widget import SessionBrowserWidget
+
+        group = QGroupBox("Session Management")
+        layout = QVBoxLayout()
+        group.setLayout(layout)
+
+        # Create new session row
+        session_row = QHBoxLayout()
+        self.mw.new_session_btn = QPushButton("Create New Session")
+        self.mw.new_session_btn.setToolTip("Creates a new session for the current client.")
+        self.mw.new_session_btn.setEnabled(False)  # Enabled when client is selected
+        self.mw.session_path_label = QLabel("No client/session selected.")
+
+        session_row.addWidget(self.mw.new_session_btn)
+        session_row.addWidget(self.mw.session_path_label, 1)
+
+        layout.addLayout(session_row)
+
+        # Add session browser
+        self.mw.session_browser = SessionBrowserWidget(
+            self.mw.session_manager,
+            self.mw
+        )
+        layout.addWidget(self.mw.session_browser)
+
         return group
 
     def _create_files_group(self):
@@ -131,16 +168,6 @@ class UIManager:
         group = QGroupBox("Actions")
         main_layout = QVBoxLayout(group)
 
-        # Profile selection
-        profile_layout = QHBoxLayout()
-        profile_layout.addWidget(QLabel("Active Profile:"))
-        self.mw.profile_combo = QComboBox()
-        self.mw.profile_combo.setMinimumWidth(150)
-        self.mw.manage_profiles_btn = QPushButton("Manage...")
-        profile_layout.addWidget(self.mw.profile_combo, 1)
-        profile_layout.addWidget(self.mw.manage_profiles_btn)
-        main_layout.addLayout(profile_layout)
-
         # Main action buttons
         actions_layout = QHBoxLayout()
         self.mw.run_analysis_button = QPushButton("Run Analysis")
@@ -148,8 +175,9 @@ class UIManager:
         self.mw.run_analysis_button.setEnabled(False)
         self.mw.run_analysis_button.setToolTip("Start the fulfillment analysis based on the loaded files.")
 
-        self.mw.settings_button = QPushButton("Open Profile Settings")
-        self.mw.settings_button.setToolTip("Open the settings window for the active profile.")
+        self.mw.settings_button = QPushButton("Open Client Settings")
+        self.mw.settings_button.setToolTip("Open the settings window for the active client.")
+        self.mw.settings_button.setEnabled(False)  # Enabled when client is selected
 
         actions_layout.addWidget(self.mw.run_analysis_button, 1)
         actions_layout.addWidget(self.mw.settings_button)
