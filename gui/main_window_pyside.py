@@ -61,6 +61,7 @@ class MainWindow(QMainWindow):
         # Core application attributes
         self.session_path = None
         self.current_client_id = None
+        self.current_client_config = None
         self.active_profile_config = {}
 
         self.orders_file_path = None
@@ -268,11 +269,46 @@ class MainWindow(QMainWindow):
         """
         logging.info(f"Client changed to: {client_id}")
 
-        # Load configuration for this client
-        self.load_client_config(client_id)
+        # Store current client ID
+        self.current_client_id = client_id
 
-        # Update session browser to show this client's sessions
-        self.session_browser.set_client(client_id)
+        # Load configuration for this client
+        try:
+            self.current_client_config = self.profile_manager.load_shopify_config(client_id)
+            if not self.current_client_config:
+                QMessageBox.warning(
+                    self,
+                    "Configuration Error",
+                    f"Failed to load configuration for client {client_id}"
+                )
+                return
+
+            # Also load it via the existing method for backward compatibility
+            self.load_client_config(client_id)
+
+            # Clear currently loaded files (they're for different client)
+            self.orders_file_path = None
+            self.stock_file_path = None
+            self.orders_file_path_label.setText("No file loaded")
+            self.stock_file_path_label.setText("No file loaded")
+            self.orders_file_status_label.setText("")
+            self.stock_file_status_label.setText("")
+
+            # Disable Run Analysis button until files are loaded
+            self.run_analysis_button.setEnabled(False)
+
+            # Update session browser to show this client's sessions
+            self.session_browser.set_client(client_id)
+
+            logging.info(f"Client {client_id} loaded successfully")
+
+        except Exception as e:
+            logging.error(f"Error changing client: {e}", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to change client: {str(e)}"
+            )
 
     def on_session_selected(self, session_path: str):
         """Handle session selection from session browser.
