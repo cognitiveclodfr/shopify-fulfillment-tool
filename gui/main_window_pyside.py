@@ -15,10 +15,14 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from shopify_tool.utils import get_persistent_data_path, resource_path
 from shopify_tool.analysis import recalculate_statistics
+from shopify_tool.profile_manager import ProfileManager, NetworkError
+from shopify_tool.session_manager import SessionManager
 from gui.log_handler import QtLogHandler
 from gui.ui_manager import UIManager
 from gui.file_handler import FileHandler
 from gui.actions_handler import ActionsHandler
+from gui.client_selector_widget import ClientSelectorWidget
+from gui.session_browser_widget import SessionBrowserWidget
 from gui.profile_manager_dialog import ProfileManagerDialog
 
 
@@ -51,14 +55,12 @@ class MainWindow(QMainWindow):
     def __init__(self):
         """Initializes the MainWindow, sets up UI, and connects signals."""
         super().__init__()
-        self.setWindowTitle("Shopify Fulfillment Tool (PySide6 Refactored)")
-        self.setGeometry(100, 100, 950, 800)
+        self.setWindowTitle("Shopify Fulfillment Tool - New Architecture")
+        self.setGeometry(100, 100, 1100, 900)
 
         # Core application attributes
         self.session_path = None
-        self.config = {}
-        self.config_path = get_persistent_data_path("config.json")
-        self.active_profile_name = None
+        self.current_client_id = None
         self.active_profile_config = {}
 
         self.orders_file_path = None
@@ -77,12 +79,14 @@ class MainWindow(QMainWindow):
         self.proxy_model.setFilterCaseSensitivity(Qt.CaseInsensitive)
         self.proxy_model.setFilterKeyColumn(-1)  # Search across all columns
 
+        # Initialize new architecture managers
+        self._init_managers()
+
         # Initialize handlers
         self.ui_manager = UIManager(self)
         self.file_handler = FileHandler(self)
         self.actions_handler = ActionsHandler(self)
 
-        self._init_and_load_config()
         self.session_file = get_persistent_data_path("session_data.pkl")
 
         # Setup UI and connect signals
@@ -91,102 +95,108 @@ class MainWindow(QMainWindow):
         self.setup_logging()
 
         self.load_session()
-        self.update_profile_combo()
 
-    def _init_and_load_config(self):
-        """Initializes and loads the application configuration.
+    def _init_managers(self):
+        """Initialize ProfileManager and SessionManager for the new architecture."""
+        # Get file server base path from config or environment
+        # For now, use a default or read from a simple config file
+        config_path = get_persistent_data_path("server_config.json")
 
-        Ensures a 'config.json' exists, handles migration to the new profile-based
-        structure, and loads the active profile.
-        """
-        default_config_path = resource_path("config.json")
+        # Default file server path
+        default_base_path = r"\\192.168.88.101\Z_GreenDelivery\WAREHOUSE\0UFulfilment"
 
-        # 1. Ensure a config file exists
-        if not os.path.exists(self.config_path):
+        # Try to load from config
+        if os.path.exists(config_path):
             try:
-                # Create a default profile structure
-                with open(default_config_path, "r", encoding="utf-8") as f:
-                    default_config = json.load(f)
-
-                self.config = {
-                    "profiles": {"Default": default_config},
-                    "active_profile": "Default"
-                }
-                self._save_config()
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    server_config = json.load(f)
+                    base_path = server_config.get("file_server_base_path", default_base_path)
             except Exception as e:
-                QMessageBox.critical(self, "Fatal Error", f"Could not create user configuration file: {e}")
-                QApplication.quit()
-                return
+                logging.warning(f"Failed to load server config: {e}")
+                base_path = default_base_path
+        else:
+            base_path = default_base_path
+            # Save default config
+            try:
+                with open(config_path, 'w', encoding='utf-8') as f:
+                    json.dump({"file_server_base_path": base_path}, f, indent=2)
+            except Exception as e:
+                logging.warning(f"Failed to save server config: {e}")
 
-        # 2. Load the configuration
+        # Initialize ProfileManager
         try:
-            with open(self.config_path, "r", encoding="utf-8") as f:
-                self.config = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError) as e:
-            QMessageBox.critical(self, "Configuration Error", f"Failed to load config.json: {e}")
+            self.profile_manager = ProfileManager(base_path)
+            self.session_manager = SessionManager(self.profile_manager)
+            logging.info("ProfileManager and SessionManager initialized successfully")
+        except NetworkError as e:
+            QMessageBox.critical(
+                self,
+                "Network Error",
+                f"Cannot connect to file server:\n\n{str(e)}\n\n"
+                f"The application will use offline mode with limited functionality."
+            )
+            # For now, exit the application if we can't connect
+            # In the future, we could implement an offline mode
+            QApplication.quit()
+            return
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Initialization Error",
+                f"Failed to initialize profile managers:\n{str(e)}"
+            )
             QApplication.quit()
             return
 
-        # 3. Migrate from old format if necessary
-        if "profiles" not in self.config:
-            reply = QMessageBox.question(
-                self,
-                "Migrate Configuration",
-                "Your configuration file is outdated. To support settings profiles, it needs to be updated. "
-                "A backup of your current config will be created.\n\nDo you want to proceed?",
-                QMessageBox.Yes | QMessageBox.No
-            )
-            if reply == QMessageBox.Yes:
-                try:
-                    backup_path = self.config_path + ".bak"
-                    shutil.copy(self.config_path, backup_path)
+    def load_client_config(self, client_id: str):
+        """Load configuration for the selected client.
 
-                    old_config = self.config.copy()
-                    self.config = {
-                        "profiles": {"Default": old_config},
-                        "active_profile": "Default"
-                    }
-                    self._save_config()
-                    QMessageBox.information(
-                        self,
-                        "Migration Complete",
-                        f"Your configuration was migrated. A backup is available at:\n{backup_path}"
-                    )
-                except Exception as e:
-                    QMessageBox.critical(self, "Migration Error", f"Could not migrate config.json: {e}")
-                    QApplication.quit()
-                    return
-            else:
-                QMessageBox.critical(
-                    self, "Configuration Error", "Configuration update is required to run the application."
-                )
-                QApplication.quit()
-                return
+        Args:
+            client_id: Client ID to load configuration for
+        """
+        if not client_id:
+            return
 
-        # 4. Load the active profile
-        self.active_profile_name = self.config.get("active_profile", "Default")
-        if self.active_profile_name not in self.config.get("profiles", {}):
-            # Fallback to the first available profile if active one is invalid
-            available_profiles = list(self.config.get("profiles", {}).keys())
-            if not available_profiles:
-                 QMessageBox.critical(self, "Configuration Error", "No profiles found in config.json.")
-                 QApplication.quit()
-                 return
-            self.active_profile_name = available_profiles[0]
-            self.config["active_profile"] = self.active_profile_name
-
-        self.active_profile_config = self.config["profiles"][self.active_profile_name]
-        logging.info(f"Loaded profile: {self.active_profile_name}")
-
-    def _save_config(self):
-        """Saves the entire configuration object to config.json."""
         try:
-            with open(self.config_path, "w", encoding="utf-8") as f:
-                json.dump(self.config, f, indent=2, ensure_ascii=False)
-            logging.info("Configuration saved successfully.")
+            # Load shopify config for this client
+            config = self.profile_manager.load_shopify_config(client_id)
+
+            if config:
+                self.active_profile_config = config
+                self.current_client_id = client_id
+                logging.info(f"Loaded configuration for CLIENT_{client_id}")
+
+                # Update UI to reflect new client
+                self.session_path_label.setText(f"Client: CLIENT_{client_id} - No session started")
+
+                # Enable client-specific buttons
+                self.new_session_btn.setEnabled(True)
+                self.settings_button.setEnabled(True)
+
+                # Reset analysis data when switching clients
+                self.analysis_results_df = pd.DataFrame()
+                self.analysis_stats = None
+                self.session_path = None
+                self._update_all_views()
+
+                # Disable file loading buttons until a session is created/selected
+                self.load_orders_btn.setEnabled(False)
+                self.load_stock_btn.setEnabled(False)
+
+                self.log_activity("Client", f"Switched to CLIENT_{client_id}")
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Configuration Error",
+                    f"Could not load configuration for CLIENT_{client_id}"
+                )
         except Exception as e:
-            logging.error(f"Failed to save settings: {e}", exc_info=True)
-            QMessageBox.critical(self, "Error", f"Failed to write settings to file: {e}")
+            logging.error(f"Failed to load client config: {e}", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to load client configuration:\n{str(e)}"
+            )
 
     def setup_logging(self):
         """Sets up the Qt-based logging handler.
@@ -208,9 +218,11 @@ class MainWindow(QMainWindow):
         window, including button clicks, text changes, and custom signals
         from handler classes. This makes the UI event flow easier to trace.
         """
-        # Profile management
-        self.profile_combo.currentTextChanged.connect(self.set_active_profile)
-        self.manage_profiles_btn.clicked.connect(self.open_profile_manager)
+        # Client selection (new architecture)
+        self.client_selector.client_changed.connect(self.on_client_changed)
+
+        # Session browser (new architecture)
+        self.session_browser.session_selected.connect(self.on_session_selected)
 
         # Session and file loading
         self.new_session_btn.clicked.connect(self.actions_handler.create_new_session)
@@ -247,95 +259,94 @@ class MainWindow(QMainWindow):
         """Clears the filter input text box."""
         self.filter_input.clear()
 
-    # --- Profile Management ---
-    def update_profile_combo(self):
-        """Updates the profile dropdown with the current list of profiles."""
-        self.profile_combo.blockSignals(True)
-        self.profile_combo.clear()
-        profiles = sorted(self.config.get("profiles", {}).keys())
-        self.profile_combo.addItems(profiles)
-        self.profile_combo.setCurrentText(self.active_profile_name)
-        self.profile_combo.blockSignals(False)
+    # --- Client and Session Management (New Architecture) ---
+    def on_client_changed(self, client_id: str):
+        """Handle client selection change.
 
-    def set_active_profile(self, profile_name):
-        """Switches the application to a different settings profile."""
-        if not profile_name or profile_name == self.active_profile_name:
-            return
+        Args:
+            client_id: Newly selected client ID
+        """
+        logging.info(f"Client changed to: {client_id}")
 
-        if profile_name in self.config["profiles"]:
-            self.active_profile_name = profile_name
-            self.active_profile_config = self.config["profiles"][profile_name]
-            self.config["active_profile"] = profile_name
-            self._save_config()
+        # Load configuration for this client
+        self.load_client_config(client_id)
 
-            self.log_activity("Profiles", f"Switched to profile: {profile_name}")
-            logging.info(f"Switched to profile: {profile_name}")
+        # Update session browser to show this client's sessions
+        self.session_browser.set_client(client_id)
 
-            # Reset relevant parts of the UI/data
-            self.analysis_results_df = pd.DataFrame()
-            self.analysis_stats = None
-            self._update_all_views()
-            self.update_profile_combo()
-        else:
-            QMessageBox.warning(self, "Profile Not Found", f"The profile '{profile_name}' could not be found.")
-            # Revert combo box to the actual active profile
-            self.profile_combo.setCurrentText(self.active_profile_name)
+    def on_session_selected(self, session_path: str):
+        """Handle session selection from session browser.
 
-    def open_profile_manager(self):
-        """Opens the profile management dialog."""
-        dialog = ProfileManagerDialog(self)
-        dialog.exec()
-        self.update_profile_combo() # Refresh combo box in case of changes
+        Args:
+            session_path: Path to the selected session
+        """
+        logging.info(f"Session selected: {session_path}")
 
-    def create_profile(self, name, base_profile_name="Default"):
-        """Creates a new profile by copying an existing one."""
-        if name in self.config["profiles"]:
-            QMessageBox.warning(self, "Profile Exists", f"A profile named '{name}' already exists.")
-            return False
+        reply = QMessageBox.question(
+            self,
+            "Open Session",
+            f"Do you want to open this session?\n\n{session_path}\n\n"
+            f"This will load any existing analysis data from the session.",
+            QMessageBox.Yes | QMessageBox.No
+        )
 
-        # Use the base profile's settings, or default to an empty config
-        default_profile_structure = {"rules": [], "packing_lists": [], "stock_exports": []}
-        base_config = self.config["profiles"].get(base_profile_name, default_profile_structure)
-        self.config["profiles"][name] = json.loads(json.dumps(base_config)) # Deep copy
-        self._save_config()
-        self.log_activity("Profiles", f"Created new profile: {name}")
-        return True
+        if reply == QMessageBox.Yes:
+            self.load_existing_session(session_path)
 
-    def rename_profile(self, old_name, new_name):
-        """Renames an existing profile."""
-        if old_name == new_name:
-            return True
-        if new_name in self.config["profiles"]:
-            QMessageBox.warning(self, "Profile Exists", f"A profile named '{new_name}' already exists.")
-            return False
+    def load_existing_session(self, session_path: str):
+        """Load data from an existing session.
 
-        self.config["profiles"][new_name] = self.config["profiles"].pop(old_name)
-        if self.active_profile_name == old_name:
-            self.active_profile_name = new_name
-            self.config["active_profile"] = new_name
+        Args:
+            session_path: Path to the session directory
+        """
+        try:
+            # Set as current session
+            self.session_path = session_path
+            session_name = os.path.basename(session_path)
+            self.session_path_label.setText(f"Session: {session_name}")
 
-        self._save_config()
-        self.log_activity("Profiles", f"Renamed profile '{old_name}' to '{new_name}'")
-        return True
+            # Load session info
+            session_info = self.session_manager.get_session_info(session_path)
 
-    def delete_profile(self, name):
-        """Deletes a settings profile."""
-        if len(self.config["profiles"]) <= 1:
-            QMessageBox.warning(self, "Cannot Delete", "You cannot delete the last profile.")
-            return False
+            if session_info:
+                # Try to load analysis data if it exists
+                analysis_dir = self.session_manager.get_analysis_dir(session_path)
+                analysis_report = analysis_dir / "analysis_report.xlsx"
 
-        if name not in self.config["profiles"]:
-            return False # Should not happen
+                if analysis_report.exists():
+                    # Load the analysis DataFrame
+                    df = pd.read_excel(analysis_report)
+                    self.analysis_results_df = df
+                    self._update_all_views()
 
-        del self.config["profiles"][name]
+                    self.log_activity("Session", f"Loaded session: {session_name}")
+                    QMessageBox.information(
+                        self,
+                        "Session Loaded",
+                        f"Session loaded successfully:\n{session_name}\n\n"
+                        f"Analysis data: {len(df)} rows"
+                    )
+                else:
+                    # Session exists but no analysis yet
+                    self.log_activity("Session", f"Opened session (no analysis): {session_name}")
+                    QMessageBox.information(
+                        self,
+                        "Session Opened",
+                        f"Session opened:\n{session_name}\n\n"
+                        f"No analysis data found. You can run a new analysis."
+                    )
 
-        # If the active profile was deleted, switch to another one
-        if self.active_profile_name == name:
-            self.set_active_profile(list(self.config["profiles"].keys())[0])
+                # Enable file loading buttons
+                self.load_orders_btn.setEnabled(True)
+                self.load_stock_btn.setEnabled(True)
 
-        self._save_config()
-        self.log_activity("Profiles", f"Deleted profile: {name}")
-        return True
+        except Exception as e:
+            logging.error(f"Failed to load session: {e}", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to load session:\n{str(e)}"
+            )
 
     def filter_table(self):
         """Applies the current filter settings to the results table view.
