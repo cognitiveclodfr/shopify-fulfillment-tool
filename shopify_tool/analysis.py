@@ -233,6 +233,17 @@ def recalculate_statistics(df):
               each representing a courier's stats, or None if no orders
               were completed.
     """
+    # Validate DataFrame has required columns
+    required_cols = ["Order_Fulfillment_Status", "Order_Number", "Quantity", "Shipping_Provider", "System_note"]
+    missing = [col for col in required_cols if col not in df.columns]
+
+    if missing:
+        import logging
+        logger = logging.getLogger("ShopifyToolLogger")
+        logger.error(f"Missing required columns in DataFrame: {missing}")
+        logger.error(f"Available columns: {list(df.columns)}")
+        raise ValueError(f"DataFrame missing required columns: {missing}")
+
     stats = {}
     completed_orders_df = df[df["Order_Fulfillment_Status"] == "Fulfillable"].copy()
     not_completed_orders_df = df[df["Order_Fulfillment_Status"] == "Not Fulfillable"]
