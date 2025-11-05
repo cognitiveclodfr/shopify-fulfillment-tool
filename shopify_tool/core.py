@@ -461,6 +461,12 @@ def create_packing_list_report(
             exclude_skus=report_config.get("exclude_skus"),  # Pass the new parameter
         )
 
+        # Verify file was actually created before updating session info
+        if not os.path.exists(output_file):
+            error_message = f"Packing list file was not created: {output_file}"
+            logger.error(error_message)
+            return False, error_message
+
         # Update session info if in session mode
         if session_manager and session_path:
             try:
@@ -560,6 +566,12 @@ def create_stock_export_report(
             report_name=report_name,
             filters=filters,
         )
+
+        # Verify file was actually created before updating session info
+        if not os.path.exists(output_filename):
+            error_message = f"Stock export file was not created: {output_filename}"
+            logger.error(error_message)
+            return False, error_message
 
         # Update session info if in session mode
         if session_manager and session_path:
