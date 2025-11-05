@@ -9,6 +9,7 @@ from typing import Optional, Tuple, Dict, Any
 from . import analysis, packing_lists, stock_export
 from .rules import RuleEngine
 from .utils import get_persistent_data_path
+from ..shared.stats_manager import StatsManager, StatsManagerError
 import numpy as np
 
 SYSTEM_TAGS = ["Repeat", "Priority", "Error"]
@@ -417,6 +418,46 @@ def run_full_analysis(
             )
             updated_history.to_csv(history_path, index=False)
             logger.info(f"Updated fulfillment history with {len(newly_fulfilled)} new records.")
+
+        # 5. Record statistics (session mode only)
+        if use_session_mode and profile_manager:
+            try:
+                logger.info("Recording analysis statistics...")
+                stats_manager = StatsManager(profile_manager.get_stats_path())
+
+                # Extract session_id from session_path (e.g., "2025-11-04_1")
+                session_id = Path(working_path).name
+
+                # Get order counts from analysis_data
+                total_orders = len(final_df["Order_Number"].unique())
+                fulfillable_count = len(final_df[final_df["Order_Fulfillment_Status"] == "Fulfillable"]["Order_Number"].unique())
+
+                # Record analysis with metadata
+                metadata = {
+                    "session_path": str(working_path),
+                    "total_items": len(final_df),
+                    "computer": os.environ.get('COMPUTERNAME', 'Unknown')
+                }
+
+                success = stats_manager.record_analysis(
+                    client_id=client_id,
+                    session_id=session_id,
+                    orders_count=total_orders,
+                    fulfillable_count=fulfillable_count,
+                    metadata=metadata
+                )
+
+                if success:
+                    logger.info(f"Statistics recorded: {total_orders} orders ({fulfillable_count} fulfillable)")
+                else:
+                    logger.warning("Failed to record statistics")
+
+            except StatsManagerError as e:
+                logger.error(f"Stats manager error: {e}")
+                # Continue with workflow even if stats recording fails
+            except Exception as e:
+                logger.error(f"Unexpected error recording statistics: {e}", exc_info=True)
+                # Continue with workflow even if stats recording fails
 
         # Return appropriate path based on mode
         if use_session_mode:
