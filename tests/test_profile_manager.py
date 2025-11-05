@@ -1,0 +1,498 @@
+"""Unit tests for ProfileManager.
+
+Tests cover:
+- Client ID validation
+- Client profile creation
+- Configuration loading and saving
+- Caching mechanism
+- File locking
+- Network error handling
+- Backup creation
+"""
+
+import json
+import os
+import shutil
+import tempfile
+import time
+from datetime import datetime
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from shopify_tool.profile_manager import (
+    NetworkError,
+    ProfileManager,
+    ProfileManagerError,
+    ValidationError,
+)
+
+
+@pytest.fixture
+def temp_base_path():
+    """Create temporary directory for testing."""
+    temp_dir = tempfile.mkdtemp()
+    yield Path(temp_dir)
+    # Cleanup
+    shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@pytest.fixture
+def profile_manager(temp_base_path):
+    """Create ProfileManager instance for testing."""
+    return ProfileManager(str(temp_base_path))
+
+
+class TestClientIDValidation:
+    """Test client ID validation."""
+
+    def test_valid_client_id(self):
+        """Test validation of valid client IDs."""
+        valid_ids = ["M", "A", "ABC", "TEST_123", "CLIENT123"]
+
+        for client_id in valid_ids:
+            is_valid, error = ProfileManager.validate_client_id(client_id)
+            assert is_valid, f"{client_id} should be valid, got error: {error}"
+            assert error == ""
+
+    def test_empty_client_id(self):
+        """Test validation of empty client ID."""
+        is_valid, error = ProfileManager.validate_client_id("")
+        assert not is_valid
+        assert "cannot be empty" in error
+
+    def test_too_long_client_id(self):
+        """Test validation of too long client ID."""
+        long_id = "A" * 21
+        is_valid, error = ProfileManager.validate_client_id(long_id)
+        assert not is_valid
+        assert "too long" in error
+
+    def test_invalid_characters(self):
+        """Test validation of client IDs with invalid characters."""
+        invalid_ids = ["test-client", "test.client", "test client", "тест"]
+
+        for client_id in invalid_ids:
+            is_valid, error = ProfileManager.validate_client_id(client_id)
+            assert not is_valid, f"{client_id} should be invalid"
+            assert "only contain" in error
+
+    def test_client_prefix_included(self):
+        """Test validation when CLIENT_ prefix is included."""
+        is_valid, error = ProfileManager.validate_client_id("CLIENT_M")
+        assert not is_valid
+        assert "prefix" in error
+
+    def test_reserved_names(self):
+        """Test validation of Windows reserved names."""
+        reserved = ["CON", "PRN", "AUX", "NUL", "COM1", "LPT1"]
+
+        for name in reserved:
+            is_valid, error = ProfileManager.validate_client_id(name)
+            assert not is_valid
+            assert "reserved" in error
+
+
+class TestNetworkConnection:
+    """Test network connectivity testing."""
+
+    def test_connection_success(self, temp_base_path):
+        """Test successful connection."""
+        manager = ProfileManager(str(temp_base_path))
+        assert manager.is_network_available
+
+    def test_connection_failure(self):
+        """Test connection failure with invalid path."""
+        # Mock Path.mkdir to raise PermissionError
+        with patch('pathlib.Path.mkdir', side_effect=PermissionError("Access denied")):
+            with pytest.raises(NetworkError) as exc_info:
+                ProfileManager("/invalid/path")
+
+            assert "Cannot connect" in str(exc_info.value)
+
+    def test_base_path_created(self, temp_base_path):
+        """Test that base directories are created."""
+        # Remove existing dirs to test creation
+        if temp_base_path.exists():
+            shutil.rmtree(temp_base_path)
+
+        manager = ProfileManager(str(temp_base_path))
+
+        assert manager.clients_dir.exists()
+        assert manager.sessions_dir.exists()
+        assert manager.stats_dir.exists()
+        assert manager.logs_dir.exists()
+
+
+class TestClientManagement:
+    """Test client profile management."""
+
+    def test_list_clients_empty(self, profile_manager):
+        """Test listing clients when none exist."""
+        clients = profile_manager.list_clients()
+        assert clients == []
+
+    def test_create_client_profile(self, profile_manager):
+        """Test creating a new client profile."""
+        result = profile_manager.create_client_profile("M", "M Cosmetics")
+
+        assert result is True
+        assert profile_manager.client_exists("M")
+
+        # Check directory structure
+        client_dir = profile_manager.get_client_directory("M")
+        assert (client_dir / "client_config.json").exists()
+        assert (client_dir / "shopify_config.json").exists()
+        assert (client_dir / "backups").exists()
+
+    def test_create_duplicate_client(self, profile_manager):
+        """Test creating duplicate client returns False."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+        result = profile_manager.create_client_profile("M", "M Cosmetics Again")
+
+        assert result is False
+
+    def test_create_client_invalid_id(self, profile_manager):
+        """Test creating client with invalid ID raises ValidationError."""
+        with pytest.raises(ValidationError):
+            profile_manager.create_client_profile("invalid-id", "Test Client")
+
+    def test_list_clients_after_creation(self, profile_manager):
+        """Test listing clients after creating some."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+        profile_manager.create_client_profile("A", "A Company")
+        profile_manager.create_client_profile("B", "B Store")
+
+        clients = profile_manager.list_clients()
+        assert sorted(clients) == ["A", "B", "M"]
+
+    def test_client_exists(self, profile_manager):
+        """Test checking if client exists."""
+        assert not profile_manager.client_exists("M")
+
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        assert profile_manager.client_exists("M")
+        assert profile_manager.client_exists("m")  # Case insensitive
+
+
+class TestConfigurationManagement:
+    """Test configuration loading and saving."""
+
+    def test_load_client_config(self, profile_manager):
+        """Test loading general client config."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        config = profile_manager.load_client_config("M")
+
+        assert config is not None
+        assert config["client_id"] == "M"
+        assert config["client_name"] == "M Cosmetics"
+        assert "created_at" in config
+
+    def test_load_shopify_config(self, profile_manager):
+        """Test loading Shopify config."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        config = profile_manager.load_shopify_config("M")
+
+        assert config is not None
+        assert config["client_id"] == "M"
+        assert "column_mappings" in config
+        assert "courier_mappings" in config
+        assert "settings" in config
+
+    def test_load_nonexistent_config(self, profile_manager):
+        """Test loading config for nonexistent client."""
+        config = profile_manager.load_shopify_config("NONEXISTENT")
+        assert config is None
+
+    def test_save_shopify_config(self, profile_manager):
+        """Test saving Shopify config."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        # Load and modify
+        config = profile_manager.load_shopify_config("M")
+        config["settings"]["low_stock_threshold"] = 10
+
+        # Save
+        result = profile_manager.save_shopify_config("M", config)
+        assert result is True
+
+        # Verify changes
+        reloaded = profile_manager.load_shopify_config("M")
+        assert reloaded["settings"]["low_stock_threshold"] == 10
+        assert "last_updated" in reloaded
+
+    def test_save_config_nonexistent_client(self, profile_manager):
+        """Test saving config for nonexistent client raises error."""
+        config = {"test": "data"}
+
+        with pytest.raises(ProfileManagerError):
+            profile_manager.save_shopify_config("NONEXISTENT", config)
+
+
+class TestCaching:
+    """Test configuration caching mechanism."""
+
+    def test_config_cached(self, profile_manager):
+        """Test that config is cached after first load."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        # First load
+        config1 = profile_manager.load_shopify_config("M")
+
+        # Second load (should be from cache)
+        config2 = profile_manager.load_shopify_config("M")
+
+        assert config1 is config2  # Same object reference
+
+    def test_cache_invalidation_after_save(self, profile_manager):
+        """Test that cache is invalidated after save."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        # Load to cache
+        config1 = profile_manager.load_shopify_config("M")
+
+        # Modify and save
+        config1["settings"]["low_stock_threshold"] = 10
+        profile_manager.save_shopify_config("M", config1)
+
+        # Load again (should be fresh from disk)
+        config2 = profile_manager.load_shopify_config("M")
+
+        assert config1 is not config2  # Different object reference
+        assert config2["settings"]["low_stock_threshold"] == 10
+
+    def test_cache_expiration(self, profile_manager):
+        """Test that cache expires after timeout."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        # First load
+        config1 = profile_manager.load_shopify_config("M")
+
+        # Manually expire cache by modifying timeout
+        old_timeout = ProfileManager.CACHE_TIMEOUT_SECONDS
+        ProfileManager.CACHE_TIMEOUT_SECONDS = 0.1
+
+        # Wait for expiration
+        time.sleep(0.2)
+
+        # Second load (should be fresh from disk)
+        config2 = profile_manager.load_shopify_config("M")
+
+        # Restore timeout
+        ProfileManager.CACHE_TIMEOUT_SECONDS = old_timeout
+
+        # Should be different objects (cache expired)
+        assert config1 is not config2
+
+
+class TestBackups:
+    """Test backup creation."""
+
+    def test_backup_created_on_save(self, profile_manager):
+        """Test that backup is created when saving config."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        # Load and modify
+        config = profile_manager.load_shopify_config("M")
+        config["settings"]["low_stock_threshold"] = 10
+
+        # Save (should create backup)
+        profile_manager.save_shopify_config("M", config)
+
+        # Check backup exists
+        backup_dir = profile_manager.get_client_directory("M") / "backups"
+        backups = list(backup_dir.glob("shopify_config_*.json"))
+
+        assert len(backups) == 1
+
+    def test_backup_limit(self, profile_manager):
+        """Test that only last 10 backups are kept."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        # Create 15 backups by saving multiple times
+        for i in range(15):
+            config = profile_manager.load_shopify_config("M")
+            config["test_value"] = i
+            profile_manager.save_shopify_config("M", config)
+            time.sleep(0.1)  # Ensure different timestamps
+
+        # Check that at most 10 backups remain (first save creates backup)
+        backup_dir = profile_manager.get_client_directory("M") / "backups"
+        backups = list(backup_dir.glob("shopify_config_*.json"))
+
+        # Should be 10 or less (first save doesn't create backup)
+        assert len(backups) <= 10
+
+
+class TestDefaultConfiguration:
+    """Test default configuration structure."""
+
+    def test_default_shopify_config_structure(self, profile_manager):
+        """Test that default config has required structure."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        config = profile_manager.load_shopify_config("M")
+
+        # Check required sections
+        required_sections = [
+            "client_id",
+            "client_name",
+            "created_at",
+            "column_mappings",
+            "courier_mappings",
+            "settings",
+            "rules",
+            "order_rules",
+            "packing_list_configs",
+            "stock_export_configs",
+            "set_decoders",
+            "packaging_rules"
+        ]
+
+        for section in required_sections:
+            assert section in config, f"Missing section: {section}"
+
+    def test_default_column_mappings(self, profile_manager):
+        """Test default column mappings."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        config = profile_manager.load_shopify_config("M")
+        mappings = config["column_mappings"]
+
+        assert "orders_required" in mappings
+        assert "stock_required" in mappings
+
+        # Check required columns are present
+        assert "Order_Number" in mappings["orders_required"]
+        assert "SKU" in mappings["stock_required"]
+
+    def test_default_courier_mappings(self, profile_manager):
+        """Test default courier mappings."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        config = profile_manager.load_shopify_config("M")
+        couriers = config["courier_mappings"]
+
+        # Check default couriers
+        assert "DHL" in couriers
+        assert "DPD" in couriers
+        assert "Speedy" in couriers
+
+        # Check structure
+        assert "patterns" in couriers["DHL"]
+        assert "case_sensitive" in couriers["DHL"]
+
+
+class TestPathGetters:
+    """Test path getter methods."""
+
+    def test_get_clients_root(self, profile_manager, temp_base_path):
+        """Test getting clients root path."""
+        path = profile_manager.get_clients_root()
+        assert path == temp_base_path / "Clients"
+
+    def test_get_sessions_root(self, profile_manager, temp_base_path):
+        """Test getting sessions root path."""
+        path = profile_manager.get_sessions_root()
+        assert path == temp_base_path / "Sessions"
+
+    def test_get_stats_path(self, profile_manager, temp_base_path):
+        """Test getting stats path."""
+        path = profile_manager.get_stats_path()
+        assert path == temp_base_path / "Stats"
+
+    def test_get_logs_path(self, profile_manager, temp_base_path):
+        """Test getting logs path."""
+        path = profile_manager.get_logs_path()
+        assert path == temp_base_path / "Logs" / "shopify_tool"
+
+    def test_get_client_directory(self, profile_manager):
+        """Test getting client directory."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        client_dir = profile_manager.get_client_directory("M")
+        assert client_dir.name == "CLIENT_M"
+        assert client_dir.exists()
+
+
+class TestCaseInsensitivity:
+    """Test that client IDs are case-insensitive."""
+
+    def test_create_and_load_mixed_case(self, profile_manager):
+        """Test creating with lowercase and loading with uppercase."""
+        # Create with lowercase
+        profile_manager.create_client_profile("m", "M Cosmetics")
+
+        # Load with uppercase
+        config = profile_manager.load_shopify_config("M")
+        assert config is not None
+        assert config["client_id"] == "M"
+
+    def test_save_mixed_case(self, profile_manager):
+        """Test saving with different case."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        # Load with lowercase
+        config = profile_manager.load_shopify_config("m")
+        config["settings"]["low_stock_threshold"] = 10
+
+        # Save with lowercase
+        result = profile_manager.save_shopify_config("m", config)
+        assert result is True
+
+        # Verify with uppercase
+        reloaded = profile_manager.load_shopify_config("M")
+        assert reloaded["settings"]["low_stock_threshold"] == 10
+
+
+class TestErrorHandling:
+    """Test error handling."""
+
+    def test_invalid_json_in_config(self, profile_manager):
+        """Test handling of corrupted JSON config."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        # Clear cache to force reload
+        profile_manager._config_cache.clear()
+
+        # Corrupt the config file
+        config_path = (
+            profile_manager.get_client_directory("M") / "shopify_config.json"
+        )
+        with open(config_path, 'w') as f:
+            f.write("invalid json {{{")
+
+        # Should return None and log error
+        config = profile_manager.load_shopify_config("M")
+        assert config is None
+
+    def test_permission_error_handling(self, profile_manager):
+        """Test handling of permission errors."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        # Clear cache to force reload
+        profile_manager._config_cache.clear()
+
+        config_path = (
+            profile_manager.get_client_directory("M") / "shopify_config.json"
+        )
+
+        # Mock permission error on file open
+        original_open = open
+        def selective_open(*args, **kwargs):
+            # Only raise error for our specific config file
+            if len(args) > 0 and "shopify_config.json" in str(args[0]):
+                raise PermissionError("Access denied")
+            return original_open(*args, **kwargs)
+
+        with patch('builtins.open', side_effect=selective_open):
+            config = profile_manager.load_shopify_config("M")
+            assert config is None
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

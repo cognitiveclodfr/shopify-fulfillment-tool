@@ -1,0 +1,609 @@
+"""Profile Manager for Shopify Fulfillment Tool.
+
+This module provides centralized management of client profiles on a network file server.
+Based on the architecture from Packing Tool with adaptations for Shopify-specific needs.
+
+Key Features:
+    - Client profile management (CRUD operations)
+    - Configuration caching with TTL (60 seconds)
+    - File locking for safe concurrent access
+    - Network connectivity testing
+    - Automatic backups of configurations
+    - Validation of client IDs and configurations
+"""
+
+import json
+import logging
+import os
+import re
+import shutil
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+logger = logging.getLogger("ShopifyToolLogger")
+
+
+# Custom Exceptions
+class ProfileManagerError(Exception):
+    """Base exception for ProfileManager errors."""
+    pass
+
+
+class NetworkError(ProfileManagerError):
+    """Raised when file server is not accessible."""
+    pass
+
+
+class ValidationError(ProfileManagerError):
+    """Raised when validation fails."""
+    pass
+
+
+class ProfileManager:
+    """Manages client profiles and centralized configuration on file server.
+
+    This class handles:
+    - Loading and saving client configurations
+    - Caching configs with time-based invalidation
+    - File locking for concurrent write protection
+    - Network connectivity testing
+    - Automatic backup creation
+
+    Attributes:
+        base_path (Path): Root path on file server (e.g., \\\\server\\share\\0UFulfilment)
+        clients_dir (Path): Directory containing client profiles
+        sessions_dir (Path): Directory containing session data
+        stats_dir (Path): Directory for statistics
+        logs_dir (Path): Directory for centralized logs
+        connection_timeout (int): Timeout for network operations in seconds
+        is_network_available (bool): Whether file server is accessible
+    """
+
+    # Class-level caches (shared across instances)
+    _config_cache: Dict[str, Tuple[Dict, datetime]] = {}
+    CACHE_TIMEOUT_SECONDS = 60  # Cache valid for 1 minute
+
+    def __init__(self, base_path: str):
+        """Initialize ProfileManager with file server path.
+
+        Args:
+            base_path (str): Root path on file server, e.g.:
+                \\\\192.168.88.101\\Z_GreenDelivery\\WAREHOUSE\\0UFulfilment
+
+        Raises:
+            NetworkError: If file server is not accessible
+        """
+        self.base_path = Path(base_path)
+        self.clients_dir = self.base_path / "Clients"
+        self.sessions_dir = self.base_path / "Sessions"
+        self.stats_dir = self.base_path / "Stats"
+        self.logs_dir = self.base_path / "Logs" / "shopify_tool"
+
+        self.connection_timeout = 5
+        self.is_network_available = self._test_connection()
+
+        if not self.is_network_available:
+            raise NetworkError(
+                f"Cannot connect to file server at {self.base_path}\n\n"
+                f"Please check:\n"
+                f"1. Network connection\n"
+                f"2. File server is online\n"
+                f"3. Path is correct and accessible"
+            )
+
+        logger.info(f"ProfileManager initialized with base path: {self.base_path}")
+
+    def _test_connection(self) -> bool:
+        """Test if file server is accessible.
+
+        Creates a test file to verify write access.
+
+        Returns:
+            bool: True if server is accessible, False otherwise
+        """
+        try:
+            # Create base directories if they don't exist
+            self.base_path.mkdir(parents=True, exist_ok=True)
+            self.clients_dir.mkdir(parents=True, exist_ok=True)
+            self.sessions_dir.mkdir(parents=True, exist_ok=True)
+            self.stats_dir.mkdir(parents=True, exist_ok=True)
+            self.logs_dir.mkdir(parents=True, exist_ok=True)
+
+            # Test write access
+            test_file = self.base_path / ".connection_test"
+            test_file.touch(exist_ok=True)
+
+            # Verify read access
+            _ = test_file.exists()
+
+            logger.info(f"Network connection OK: {self.base_path}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Network connection FAILED: {e}")
+            return False
+
+    @staticmethod
+    def validate_client_id(client_id: str) -> Tuple[bool, str]:
+        """Validate client ID format.
+
+        Rules:
+            - Not empty
+            - Max 20 characters
+            - Only alphanumeric and underscore
+            - No "CLIENT_" prefix (will be added automatically)
+            - Not a Windows reserved name
+
+        Args:
+            client_id (str): Client ID to validate
+
+        Returns:
+            Tuple[bool, str]: (is_valid, error_message)
+                If valid: (True, "")
+                If invalid: (False, "error description")
+        """
+        if not client_id:
+            return False, "Client ID cannot be empty"
+
+        if len(client_id) > 20:
+            return False, "Client ID too long (max 20 characters)"
+
+        if not re.match(r'^[A-Z0-9_]+$', client_id.upper()):
+            return False, "Client ID can only contain letters, numbers, and underscore"
+
+        if client_id.upper().startswith("CLIENT_"):
+            return False, "Don't include 'CLIENT_' prefix, it will be added automatically"
+
+        # Windows reserved names
+        reserved = ['CON', 'PRN', 'AUX', 'NUL', 'COM1', 'COM2', 'COM3', 'COM4',
+                    'LPT1', 'LPT2', 'LPT3', 'LPT4']
+        if client_id.upper() in reserved:
+            return False, f"'{client_id}' is a reserved system name"
+
+        return True, ""
+
+    def list_clients(self) -> List[str]:
+        """Get list of available client IDs.
+
+        Returns:
+            List[str]: List of client IDs (without CLIENT_ prefix)
+                Example: ["M", "A", "B"]
+        """
+        try:
+            if not self.clients_dir.exists():
+                self.clients_dir.mkdir(parents=True, exist_ok=True)
+                return []
+
+            clients = []
+            for item in self.clients_dir.iterdir():
+                if item.is_dir() and item.name.startswith("CLIENT_"):
+                    client_id = item.name.replace("CLIENT_", "")
+                    clients.append(client_id)
+
+            return sorted(clients)
+
+        except Exception as e:
+            logger.error(f"Failed to list clients: {e}")
+            return []
+
+    def create_client_profile(self, client_id: str, client_name: str) -> bool:
+        """Create a new client profile with default configuration.
+
+        Creates directory structure:
+            Clients/CLIENT_{ID}/
+                ├── client_config.json      # General config
+                ├── shopify_config.json     # Shopify-specific config
+                └── backups/                # Config backups
+
+        Args:
+            client_id (str): Client ID (e.g., "M")
+            client_name (str): Full client name (e.g., "M Cosmetics")
+
+        Returns:
+            bool: True if created successfully, False if already exists
+
+        Raises:
+            ValidationError: If client_id is invalid
+            ProfileManagerError: If creation fails
+        """
+        # Validate client ID
+        is_valid, error_msg = self.validate_client_id(client_id)
+        if not is_valid:
+            raise ValidationError(error_msg)
+
+        client_id = client_id.upper()
+        client_dir = self.clients_dir / f"CLIENT_{client_id}"
+
+        # Check if already exists
+        if client_dir.exists():
+            logger.warning(f"Client profile already exists: CLIENT_{client_id}")
+            return False
+
+        try:
+            # Create directory structure
+            client_dir.mkdir(parents=True)
+            (client_dir / "backups").mkdir()
+
+            # Create general client config
+            client_config = {
+                "client_id": client_id,
+                "client_name": client_name,
+                "created_at": datetime.now().isoformat(),
+                "created_by": os.environ.get('COMPUTERNAME', 'Unknown'),
+            }
+
+            config_path = client_dir / "client_config.json"
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(client_config, f, indent=2)
+
+            # Create default shopify config
+            shopify_config = self._create_default_shopify_config(client_id, client_name)
+
+            shopify_config_path = client_dir / "shopify_config.json"
+            with open(shopify_config_path, 'w', encoding='utf-8') as f:
+                json.dump(shopify_config, f, indent=2)
+
+            # Create session directory
+            session_client_dir = self.sessions_dir / f"CLIENT_{client_id}"
+            session_client_dir.mkdir(parents=True, exist_ok=True)
+
+            logger.info(f"Client profile created: CLIENT_{client_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to create client profile: {e}")
+            # Cleanup on failure
+            if client_dir.exists():
+                shutil.rmtree(client_dir, ignore_errors=True)
+            raise ProfileManagerError(f"Failed to create client profile: {e}")
+
+    def _create_default_shopify_config(self, client_id: str, client_name: str) -> Dict:
+        """Create default Shopify configuration.
+
+        Args:
+            client_id (str): Client ID
+            client_name (str): Client name
+
+        Returns:
+            Dict: Default configuration structure
+        """
+        return {
+            "client_id": client_id,
+            "client_name": client_name,
+            "created_at": datetime.now().isoformat(),
+
+            "column_mappings": {
+                "orders_required": [
+                    "Order_Number",
+                    "SKU",
+                    "Product_Name",
+                    "Quantity",
+                    "Shipping_Method"
+                ],
+                "stock_required": [
+                    "SKU",
+                    "Product_Name",
+                    "Available_Stock"
+                ]
+            },
+
+            "courier_mappings": {
+                "DHL": {
+                    "patterns": ["dhl", "dhl express", "dhl_express"],
+                    "case_sensitive": False
+                },
+                "DPD": {
+                    "patterns": ["dpd", "dpd bulgaria"],
+                    "case_sensitive": False
+                },
+                "Speedy": {
+                    "patterns": ["speedy"],
+                    "case_sensitive": False
+                }
+            },
+
+            "settings": {
+                "low_stock_threshold": 5,
+                "stock_delimiter": ";"
+            },
+
+            "rules": [],
+            "order_rules": [],
+            "packing_list_configs": [],
+            "stock_export_configs": [],
+            "set_decoders": {},
+            "packaging_rules": []
+        }
+
+    def load_client_config(self, client_id: str) -> Optional[Dict]:
+        """Load general configuration for a client.
+
+        Args:
+            client_id (str): Client ID
+
+        Returns:
+            Optional[Dict]: Configuration dictionary or None if not found
+        """
+        client_id = client_id.upper()
+        config_path = self.clients_dir / f"CLIENT_{client_id}" / "client_config.json"
+
+        if not config_path.exists():
+            logger.warning(f"Client config not found: CLIENT_{client_id}")
+            return None
+
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            return config
+
+        except Exception as e:
+            logger.error(f"Failed to load client config: {e}")
+            return None
+
+    def load_shopify_config(self, client_id: str) -> Optional[Dict]:
+        """Load Shopify configuration for a client with caching.
+
+        Uses time-based caching (60 seconds) to reduce network round-trips.
+
+        Args:
+            client_id (str): Client ID
+
+        Returns:
+            Optional[Dict]: Shopify configuration or None if not found
+        """
+        client_id = client_id.upper()
+        cache_key = f"shopify_{client_id}"
+
+        # Check cache first
+        if cache_key in self._config_cache:
+            cached_data, cached_time = self._config_cache[cache_key]
+            age_seconds = (datetime.now() - cached_time).total_seconds()
+
+            if age_seconds < self.CACHE_TIMEOUT_SECONDS:
+                logger.debug(f"Using cached shopify config for {client_id}")
+                return cached_data
+
+        # Load from disk
+        config_path = self.clients_dir / f"CLIENT_{client_id}" / "shopify_config.json"
+
+        if not config_path.exists():
+            logger.warning(f"Shopify config not found: CLIENT_{client_id}")
+            return None
+
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+
+            # Update cache
+            self._config_cache[cache_key] = (config, datetime.now())
+
+            return config
+
+        except Exception as e:
+            logger.error(f"Failed to load shopify config: {e}")
+            return None
+
+    def save_shopify_config(self, client_id: str, config: Dict) -> bool:
+        """Save Shopify configuration with file locking and backup.
+
+        Uses file locking to prevent concurrent write conflicts.
+        Creates automatic backup before saving.
+
+        Args:
+            client_id (str): Client ID
+            config (Dict): Configuration to save
+
+        Returns:
+            bool: True if saved successfully
+
+        Raises:
+            ProfileManagerError: If save fails
+        """
+        client_id = client_id.upper()
+        client_dir = self.clients_dir / f"CLIENT_{client_id}"
+        config_path = client_dir / "shopify_config.json"
+
+        if not client_dir.exists():
+            raise ProfileManagerError(f"Client profile does not exist: CLIENT_{client_id}")
+
+        # Create backup before saving
+        if config_path.exists():
+            self._create_backup(client_id, config_path, "shopify_config")
+
+        # Update timestamp
+        config["last_updated"] = datetime.now().isoformat()
+        config["updated_by"] = os.environ.get('COMPUTERNAME', 'Unknown')
+
+        max_retries = 5
+        retry_delay = 0.5
+
+        for attempt in range(max_retries):
+            try:
+                # Use platform-specific file locking
+                if os.name == 'nt':  # Windows
+                    success = self._save_with_windows_lock(config_path, config)
+                else:  # Unix-like
+                    success = self._save_with_unix_lock(config_path, config)
+
+                if success:
+                    # Invalidate cache
+                    cache_key = f"shopify_{client_id}"
+                    self._config_cache.pop(cache_key, None)
+
+                    logger.info(f"Shopify config saved for CLIENT_{client_id}")
+                    return True
+
+            except (IOError, OSError) as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"File locked, retry {attempt + 1}/{max_retries}")
+                    time.sleep(retry_delay)
+                else:
+                    raise ProfileManagerError(
+                        f"Configuration is locked by another user. Please try again."
+                    )
+
+        return False
+
+    def _save_with_windows_lock(self, file_path: Path, data: Dict) -> bool:
+        """Save file with Windows file locking.
+
+        Args:
+            file_path (Path): Path to file
+            data (Dict): Data to save
+
+        Returns:
+            bool: True if saved successfully
+        """
+        import msvcrt
+
+        # Write to temp file first
+        temp_path = file_path.with_suffix('.tmp')
+
+        try:
+            with open(temp_path, 'w', encoding='utf-8') as f:
+                # Try to acquire exclusive lock
+                try:
+                    msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+                except IOError:
+                    return False
+
+                try:
+                    json.dump(data, f, indent=2)
+                finally:
+                    msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+
+            # Atomic move
+            shutil.move(str(temp_path), str(file_path))
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to save with Windows lock: {e}")
+            if temp_path.exists():
+                temp_path.unlink()
+            return False
+
+    def _save_with_unix_lock(self, file_path: Path, data: Dict) -> bool:
+        """Save file with Unix file locking.
+
+        Args:
+            file_path (Path): Path to file
+            data (Dict): Data to save
+
+        Returns:
+            bool: True if saved successfully
+        """
+        import fcntl
+
+        # Write to temp file first
+        temp_path = file_path.with_suffix('.tmp')
+
+        try:
+            with open(temp_path, 'w', encoding='utf-8') as f:
+                # Try to acquire exclusive lock
+                try:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except IOError:
+                    return False
+
+                try:
+                    json.dump(data, f, indent=2)
+                finally:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+            # Atomic move
+            shutil.move(str(temp_path), str(file_path))
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to save with Unix lock: {e}")
+            if temp_path.exists():
+                temp_path.unlink()
+            return False
+
+    def _create_backup(self, client_id: str, file_path: Path, file_type: str):
+        """Create timestamped backup of a configuration file.
+
+        Keeps only last 10 backups to prevent unbounded growth.
+
+        Args:
+            client_id (str): Client ID
+            file_path (Path): Path to file to backup
+            file_type (str): Type of file (e.g., "shopify_config")
+        """
+        try:
+            backup_dir = self.clients_dir / f"CLIENT_{client_id}" / "backups"
+            backup_dir.mkdir(exist_ok=True)
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = backup_dir / f"{file_type}_{timestamp}.json"
+
+            shutil.copy2(file_path, backup_path)
+
+            # Keep only last 10 backups
+            backups = sorted(backup_dir.glob(f"{file_type}_*.json"))
+            for old_backup in backups[:-10]:
+                old_backup.unlink()
+
+            logger.debug(f"Backup created: {backup_path.name}")
+
+        except Exception as e:
+            logger.warning(f"Failed to create backup: {e}")
+
+    def get_clients_root(self) -> Path:
+        """Get path to clients root directory.
+
+        Returns:
+            Path: Path to Clients/ directory
+        """
+        return self.clients_dir
+
+    def get_sessions_root(self) -> Path:
+        """Get path to sessions root directory.
+
+        Returns:
+            Path: Path to Sessions/ directory
+        """
+        return self.sessions_dir
+
+    def get_stats_path(self) -> Path:
+        """Get path to statistics directory.
+
+        Returns:
+            Path: Path to Stats/ directory
+        """
+        return self.stats_dir
+
+    def get_logs_path(self) -> Path:
+        """Get path to logs directory.
+
+        Returns:
+            Path: Path to Logs/shopify_tool/ directory
+        """
+        return self.logs_dir
+
+    def get_client_directory(self, client_id: str) -> Path:
+        """Get path to client's directory.
+
+        Args:
+            client_id (str): Client ID
+
+        Returns:
+            Path: Path to client directory
+        """
+        client_id = client_id.upper()
+        return self.clients_dir / f"CLIENT_{client_id}"
+
+    def client_exists(self, client_id: str) -> bool:
+        """Check if client profile exists.
+
+        Args:
+            client_id (str): Client ID
+
+        Returns:
+            bool: True if client exists
+        """
+        client_id = client_id.upper()
+        client_dir = self.clients_dir / f"CLIENT_{client_id}"
+        return client_dir.exists()
