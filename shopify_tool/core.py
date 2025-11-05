@@ -1,7 +1,11 @@
 import os
 import logging
 import pandas as pd
+import json
+import shutil
 from datetime import datetime
+from pathlib import Path
+from typing import Optional, Tuple, Dict, Any
 from . import analysis, packing_lists, stock_export
 from .rules import RuleEngine
 from .utils import get_persistent_data_path
@@ -18,6 +22,74 @@ def _normalize_unc_path(path):
         return path
     # os.path.normpath will convert / to \ on Windows and handle other inconsistencies
     return os.path.normpath(path)
+
+
+def _create_analysis_data_for_packing(final_df: pd.DataFrame) -> Dict[str, Any]:
+    """Create analysis_data.json structure for Packing Tool integration.
+
+    This function extracts relevant data from the analysis DataFrame and
+    formats it in a structure that the Packing Tool can consume.
+
+    Args:
+        final_df (pd.DataFrame): The final analysis DataFrame
+
+    Returns:
+        Dict[str, Any]: Dictionary containing analysis data in Packing Tool format
+    """
+    try:
+        # Group by Order_Number to get order-level data
+        orders_data = []
+        grouped = final_df.groupby("Order_Number")
+
+        for order_number, group in grouped:
+            # Get first row for order-level fields (they should be same for all items in order)
+            first_row = group.iloc[0]
+
+            order_data = {
+                "order_number": str(order_number),
+                "courier": first_row.get("Courier", ""),
+                "status": first_row.get("Order_Fulfillment_Status", "Unknown"),
+                "shipping_country": first_row.get("Shipping_Country", ""),
+                "tags": first_row.get("Tags", ""),
+                "items": []
+            }
+
+            # Add all items in the order
+            for _, row in group.iterrows():
+                item_data = {
+                    "sku": str(row.get("SKU", "")),
+                    "product_name": str(row.get("Product_Name", "")),
+                    "quantity": int(row.get("Quantity", 0))
+                }
+                order_data["items"].append(item_data)
+
+            orders_data.append(order_data)
+
+        # Calculate statistics
+        total_orders = len(orders_data)
+        fulfillable_orders = len([o for o in orders_data if o["status"] == "Fulfillable"])
+        not_fulfillable_orders = total_orders - fulfillable_orders
+
+        analysis_data = {
+            "analyzed_at": datetime.now().isoformat(),
+            "total_orders": total_orders,
+            "fulfillable_orders": fulfillable_orders,
+            "not_fulfillable_orders": not_fulfillable_orders,
+            "orders": orders_data
+        }
+
+        return analysis_data
+
+    except Exception as e:
+        logger.error(f"Failed to create analysis data for packing: {e}", exc_info=True)
+        return {
+            "analyzed_at": datetime.now().isoformat(),
+            "total_orders": 0,
+            "fulfillable_orders": 0,
+            "not_fulfillable_orders": 0,
+            "orders": [],
+            "error": str(e)
+        }
 
 
 def _validate_dataframes(orders_df, stock_df, config):
@@ -94,7 +166,16 @@ def validate_csv_headers(file_path, required_columns, delimiter=","):
         return False, [f"An unexpected error occurred: {e}"]
 
 
-def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_delimiter, config):
+def run_full_analysis(
+    stock_file_path,
+    orders_file_path,
+    output_dir_path,
+    stock_delimiter,
+    config,
+    client_id: Optional[str] = None,
+    session_manager: Optional[Any] = None,
+    profile_manager: Optional[Any] = None
+):
     """Orchestrates the entire fulfillment analysis process.
 
     This function serves as the main entry point for the core analysis logic.
@@ -107,31 +188,79 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
     6. Saves a detailed analysis report to an Excel file, including summaries.
     7. Updates the fulfillment history with newly fulfilled orders.
 
+    New Session-Based Workflow (when session_manager and client_id are provided):
+    1. Creates a new session directory for the client
+    2. Copies input files to session/input/
+    3. Saves analysis results to session/analysis/
+    4. Exports analysis_data.json for Packing Tool integration
+    5. Updates session_info.json with results
+
     Args:
         stock_file_path (str | None): Path to the stock data CSV file. Can be
             None for testing purposes if a DataFrame is provided in `config`.
         orders_file_path (str | None): Path to the Shopify orders export CSV
             file. Can be None for testing.
         output_dir_path (str): Path to the directory where the output report
-            will be saved.
+            will be saved. Ignored if session_manager is provided.
         stock_delimiter (str): The delimiter used in the stock CSV file.
         config (dict): The application configuration dictionary. It can also
             contain test DataFrames under 'test_stock_df' and
             'test_orders_df' keys.
+        client_id (str, optional): Client ID for session-based workflow.
+        session_manager (SessionManager, optional): Session manager instance.
+        profile_manager (ProfileManager, optional): Profile manager instance.
 
     Returns:
         tuple[bool, str | None, pd.DataFrame | None, dict | None]:
             A tuple containing:
             - bool: True for success, False for failure.
             - str | None: A message indicating the result. On success, this
-              is the path to the output file. On failure, it's an error
-              message.
+              is the path to the output file (or session path). On failure,
+              it's an error message.
             - pd.DataFrame | None: The final analysis DataFrame if successful,
               otherwise None.
             - dict | None: A dictionary of calculated statistics if
               successful, otherwise None.
     """
     logger.info("--- Starting Full Analysis Process ---")
+
+    # Session-based workflow: Create session and copy input files
+    session_path = None
+    use_session_mode = session_manager is not None and client_id is not None
+
+    if use_session_mode:
+        try:
+            logger.info(f"Creating new session for client: {client_id}")
+            # Create session directory structure
+            session_path = session_manager.create_session(client_id)
+            logger.info(f"Session created at: {session_path}")
+
+            # Copy input files to session/input/
+            if stock_file_path and orders_file_path:
+                input_dir = session_manager.get_input_dir(session_path)
+
+                # Copy with standardized names
+                orders_dest = Path(input_dir) / "orders_export.csv"
+                stock_dest = Path(input_dir) / "inventory.csv"
+
+                logger.info(f"Copying orders file to: {orders_dest}")
+                shutil.copy2(orders_file_path, orders_dest)
+
+                logger.info(f"Copying stock file to: {stock_dest}")
+                shutil.copy2(stock_file_path, stock_dest)
+
+                # Update session info with input file names
+                session_manager.update_session_info(session_path, {
+                    "orders_file": "orders_export.csv",
+                    "stock_file": "inventory.csv"
+                })
+
+                logger.info("Input files copied to session directory")
+        except Exception as e:
+            error_msg = f"Failed to create session: {e}"
+            logger.error(error_msg, exc_info=True)
+            return False, error_msg, None, None
+
     # 1. Load data
     logger.info("Step 1: Loading data files...")
     if stock_file_path is not None and orders_file_path is not None:
@@ -192,9 +321,18 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
     # 3. Save Excel report (skip in test mode)
     if stock_file_path is not None and orders_file_path is not None:
         logger.info("Step 3: Saving analysis report to Excel...")
-        if not os.path.exists(output_dir_path):
-            os.makedirs(output_dir_path)
-        output_file_path = os.path.join(output_dir_path, "fulfillment_analysis.xlsx")
+
+        # Determine output directory based on mode
+        if use_session_mode:
+            # Session mode: save to session/analysis/
+            analysis_dir = session_manager.get_analysis_dir(session_path)
+            output_file_path = str(Path(analysis_dir) / "fulfillment_analysis.xlsx")
+            logger.info(f"Session mode: saving to {output_file_path}")
+        else:
+            # Legacy mode: save to specified output_dir_path
+            if not os.path.exists(output_dir_path):
+                os.makedirs(output_dir_path)
+            output_file_path = os.path.join(output_dir_path, "fulfillment_analysis.xlsx")
 
         with pd.ExcelWriter(output_file_path, engine="xlsxwriter") as writer:
             final_df.to_excel(writer, sheet_name="fulfillment_analysis", index=False)
@@ -218,6 +356,35 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
                     worksheet.set_row(row_num + 1, None, highlight_format)
         logger.info(f"Excel report saved to '{output_file_path}'")
 
+        # 3.5. Session mode: Export analysis_data.json and update session_info
+        if use_session_mode:
+            try:
+                logger.info("Exporting analysis_data.json for Packing Tool integration...")
+                analysis_data = _create_analysis_data_for_packing(final_df)
+
+                # Save analysis_data.json
+                analysis_data_path = Path(analysis_dir) / "analysis_data.json"
+                with open(analysis_data_path, 'w', encoding='utf-8') as f:
+                    json.dump(analysis_data, f, indent=2, ensure_ascii=False)
+
+                logger.info(f"analysis_data.json saved to: {analysis_data_path}")
+
+                # Update session_info.json with analysis results
+                session_manager.update_session_info(session_path, {
+                    "analysis_completed": True,
+                    "analysis_completed_at": datetime.now().isoformat(),
+                    "total_orders": analysis_data["total_orders"],
+                    "fulfillable_orders": analysis_data["fulfillable_orders"],
+                    "not_fulfillable_orders": analysis_data["not_fulfillable_orders"],
+                    "analysis_report_path": "analysis/fulfillment_analysis.xlsx"
+                })
+
+                logger.info("Session info updated with analysis results")
+
+            except Exception as e:
+                logger.error(f"Failed to export analysis data: {e}", exc_info=True)
+                # Continue with the workflow even if export fails
+
         # 4. Update history
         logger.info("Step 4: Updating fulfillment history...")
         newly_fulfilled = final_df[final_df["Order_Fulfillment_Status"] == "Fulfillable"][
@@ -230,18 +397,31 @@ def run_full_analysis(stock_file_path, orders_file_path, output_dir_path, stock_
             )
             updated_history.to_csv(history_path, index=False)
             logger.info(f"Updated fulfillment history with {len(newly_fulfilled)} new records.")
-        return True, output_file_path, final_df, stats
+
+        # Return appropriate path based on mode
+        if use_session_mode:
+            return True, session_path, final_df, stats
+        else:
+            return True, output_file_path, final_df, stats
     else:
         # For tests, just return the DataFrames
         return True, None, final_df, stats
 
 
-def create_packing_list_report(analysis_df, report_config):
+def create_packing_list_report(
+    analysis_df,
+    report_config,
+    session_manager: Optional[Any] = None,
+    session_path: Optional[str] = None
+):
     """Generates a single packing list report based on a report configuration.
 
     Uses the provided analysis DataFrame and a specific report configuration
     to filter and format a packing list. The resulting report is saved to the
     location specified in the configuration.
+
+    Session Mode: When session_manager and session_path are provided, the report
+    is saved to the session's packing_lists/ directory and session_info is updated.
 
     Args:
         analysis_df (pd.DataFrame): The main analysis DataFrame containing
@@ -249,6 +429,8 @@ def create_packing_list_report(analysis_df, report_config):
         report_config (dict): A dictionary from the main config file that
             defines the filters, output filename, excluded SKUs, and other
             settings for this specific report.
+        session_manager (SessionManager, optional): Session manager for session-based workflow.
+        session_path (str, optional): Path to current session directory.
 
     Returns:
         tuple[bool, str]: A tuple containing:
@@ -258,8 +440,18 @@ def create_packing_list_report(analysis_df, report_config):
     """
     report_name = report_config.get("name", "Unknown Report")
     try:
-        output_file = report_config["output_filename"]
-        os.makedirs(os.path.dirname(output_file), exist_ok=True)
+        # Determine output path based on mode
+        if session_manager and session_path:
+            # Session mode: save to session/packing_lists/
+            packing_lists_dir = session_manager.get_packing_lists_dir(session_path)
+            # Extract just the filename from the configured path
+            original_filename = os.path.basename(report_config["output_filename"])
+            output_file = str(Path(packing_lists_dir) / original_filename)
+            logger.info(f"Session mode: saving packing list to {output_file}")
+        else:
+            # Legacy mode: use configured path
+            output_file = report_config["output_filename"]
+            os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
         packing_lists.create_packing_list(
             analysis_df=analysis_df,
@@ -268,6 +460,27 @@ def create_packing_list_report(analysis_df, report_config):
             filters=report_config.get("filters"),
             exclude_skus=report_config.get("exclude_skus"),  # Pass the new parameter
         )
+
+        # Verify file was actually created before updating session info
+        if not os.path.exists(output_file):
+            error_message = f"Packing list file was not created: {output_file}"
+            logger.error(error_message)
+            return False, error_message
+
+        # Update session info if in session mode
+        if session_manager and session_path:
+            try:
+                session_info = session_manager.get_session_info(session_path)
+                generated_lists = session_info.get("packing_lists_generated", [])
+                if original_filename not in generated_lists:
+                    generated_lists.append(original_filename)
+                    session_manager.update_session_info(session_path, {
+                        "packing_lists_generated": generated_lists
+                    })
+                    logger.info(f"Session info updated: added packing list {original_filename}")
+            except Exception as e:
+                logger.warning(f"Failed to update session info: {e}")
+
         success_message = f"Report '{report_name}' created successfully at '{output_file}'."
         return True, success_message
     except KeyError as e:
@@ -307,25 +520,45 @@ def get_unique_column_values(df, column_name):
         return []
 
 
-def create_stock_export_report(analysis_df, report_config):
+def create_stock_export_report(
+    analysis_df,
+    report_config,
+    session_manager: Optional[Any] = None,
+    session_path: Optional[str] = None
+):
     """Generates a single stock export report based on a configuration.
+
+    Session Mode: When session_manager and session_path are provided, the report
+    is saved to the session's stock_exports/ directory and session_info is updated.
 
     Args:
         analysis_df (pd.DataFrame): The main analysis DataFrame.
         report_config (dict): The configuration for the specific stock export.
+        session_manager (SessionManager, optional): Session manager for session-based workflow.
+        session_path (str, optional): Path to current session directory.
 
     Returns:
         tuple[bool, str]: A tuple containing a success flag and a status message.
     """
     report_name = report_config.get("name", "Untitled Stock Export")
     try:
-        output_filename = report_config["output_filename"]
-        filters = report_config.get("filters")
+        # Determine output path based on mode
+        if session_manager and session_path:
+            # Session mode: save to session/stock_exports/
+            stock_exports_dir = session_manager.get_stock_exports_dir(session_path)
+            # Extract just the filename from the configured path
+            original_filename = os.path.basename(report_config["output_filename"])
+            output_filename = str(Path(stock_exports_dir) / original_filename)
+            logger.info(f"Session mode: saving stock export to {output_filename}")
+        else:
+            # Legacy mode: use configured path
+            output_filename = report_config["output_filename"]
+            # Ensure the output directory exists
+            output_dir = os.path.dirname(output_filename)
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
 
-        # Ensure the output directory exists
-        output_dir = os.path.dirname(output_filename)
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+        filters = report_config.get("filters")
 
         stock_export.create_stock_export(
             analysis_df,
@@ -333,6 +566,27 @@ def create_stock_export_report(analysis_df, report_config):
             report_name=report_name,
             filters=filters,
         )
+
+        # Verify file was actually created before updating session info
+        if not os.path.exists(output_filename):
+            error_message = f"Stock export file was not created: {output_filename}"
+            logger.error(error_message)
+            return False, error_message
+
+        # Update session info if in session mode
+        if session_manager and session_path:
+            try:
+                session_info = session_manager.get_session_info(session_path)
+                generated_exports = session_info.get("stock_exports_generated", [])
+                if original_filename not in generated_exports:
+                    generated_exports.append(original_filename)
+                    session_manager.update_session_info(session_path, {
+                        "stock_exports_generated": generated_exports
+                    })
+                    logger.info(f"Session info updated: added stock export {original_filename}")
+            except Exception as e:
+                logger.warning(f"Failed to update session info: {e}")
+
         success_message = f"Stock export '{report_name}' created successfully at '{output_filename}'."
         return True, success_message
     except KeyError as e:
