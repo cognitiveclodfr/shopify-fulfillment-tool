@@ -346,7 +346,7 @@ def run_full_analysis(
         if use_session_mode:
             # Session mode: save to session/analysis/
             analysis_dir = session_manager.get_analysis_dir(working_path)
-            output_file_path = str(Path(analysis_dir) / "analysis_report.xlsx")
+            output_file_path = str(Path(analysis_dir) / "fulfillment_analysis.xlsx")
             logger.info(f"Session mode: saving to {output_file_path}")
         else:
             # Legacy mode: save to specified output_dir_path
