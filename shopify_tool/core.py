@@ -190,7 +190,9 @@ def run_full_analysis(
     7. Updates the fulfillment history with newly fulfilled orders.
 
     New Session-Based Workflow (when session_manager and client_id are provided):
-    1. Uses provided session_path (from actions_handler)
+    1. Creates new session OR uses provided session_path
+       - If session_path is None: automatically creates new session
+       - If session_path provided: uses existing session (GUI workflow)
     2. Copies input files to session/input/
     3. Saves analysis results to session/analysis/
     4. Exports analysis_data.json for Packing Tool integration
@@ -211,6 +213,7 @@ def run_full_analysis(
         session_manager (SessionManager, optional): Session manager instance.
         profile_manager (ProfileManager, optional): Profile manager instance.
         session_path (str, optional): Path to existing session directory (new workflow).
+            If not provided in session mode, a new session will be created automatically.
 
     Returns:
         tuple[bool, str | None, pd.DataFrame | None, dict | None]:
@@ -229,13 +232,28 @@ def run_full_analysis(
     # Determine if using session-based workflow
     use_session_mode = session_manager is not None and client_id is not None
 
-    # Use session_path if provided (new workflow), otherwise use output_dir_path (legacy)
-    working_path = session_path if session_path is not None else output_dir_path
+    # Handle session path based on workflow mode
+    if use_session_mode:
+        # If session_path not provided, create a new session
+        if session_path is None:
+            try:
+                logger.info(f"Creating new session for client: {client_id}")
+                session_path = session_manager.create_session(client_id)
+                logger.info(f"Session created at: {session_path}")
+            except Exception as e:
+                error_msg = f"Failed to create session: {e}"
+                logger.error(error_msg, exc_info=True)
+                return False, error_msg, None, None
+
+        working_path = session_path
+        logger.info(f"Using session-based workflow for client: {client_id}")
+        logger.info(f"Session path: {working_path}")
+    else:
+        # Legacy mode: use output_dir_path
+        working_path = output_dir_path
 
     if use_session_mode:
         try:
-            logger.info(f"Using session-based workflow for client: {client_id}")
-            logger.info(f"Session path: {working_path}")
 
             # Copy input files to session/input/
             if stock_file_path and orders_file_path:
