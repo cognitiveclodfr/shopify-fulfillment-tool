@@ -66,7 +66,7 @@ class MainWindow(QMainWindow):
 
         self.orders_file_path = None
         self.stock_file_path = None
-        self.analysis_results_df = pd.DataFrame()
+        self.analysis_results_df = None
         self.analysis_stats = None
         self.threadpool = QThreadPool()
 
@@ -175,7 +175,7 @@ class MainWindow(QMainWindow):
                 self.settings_button.setEnabled(True)
 
                 # Reset analysis data when switching clients
-                self.analysis_results_df = pd.DataFrame()
+                self.analysis_results_df = None
                 self.analysis_stats = None
                 self.session_path = None
                 self._update_all_views()
@@ -183,6 +183,15 @@ class MainWindow(QMainWindow):
                 # Disable file loading buttons until a session is created/selected
                 self.load_orders_btn.setEnabled(False)
                 self.load_stock_btn.setEnabled(False)
+
+                # Disable report buttons until new analysis
+                self.run_analysis_button.setEnabled(False)
+                if hasattr(self, 'packing_list_button'):
+                    self.packing_list_button.setEnabled(False)
+                if hasattr(self, 'stock_export_button'):
+                    self.stock_export_button.setEnabled(False)
+                if hasattr(self, 'report_builder_button'):
+                    self.report_builder_button.setEnabled(False)
 
                 self.log_activity("Client", f"Switched to CLIENT_{client_id}")
             else:
@@ -329,12 +338,63 @@ class MainWindow(QMainWindow):
         if reply == QMessageBox.Yes:
             self.load_existing_session(session_path)
 
+    def _load_session_analysis(self, session_path):
+        """Load analysis data from session directory.
+
+        Args:
+            session_path: Path to session directory (can be str or Path)
+
+        Returns:
+            True if loaded successfully, False otherwise
+        """
+        from pathlib import Path
+
+        try:
+            session_path = Path(session_path)
+
+            # Check for analysis_data.json first
+            analysis_data_file = session_path / "analysis" / "analysis_data.json"
+
+            if not analysis_data_file.exists():
+                logging.warning(f"Analysis data not found: {analysis_data_file}")
+                return False
+
+            logging.info(f"Found analysis data: {analysis_data_file}")
+
+            # Load the actual Excel report to get DataFrame
+            report_file = session_path / "analysis" / "fulfillment_analysis.xlsx"
+
+            if not report_file.exists():
+                # Try alternative name
+                report_file = session_path / "analysis" / "analysis_report.xlsx"
+
+            if not report_file.exists():
+                logging.warning(f"Analysis report not found: {report_file}")
+                return False
+
+            logging.info(f"Loading analysis from: {report_file}")
+
+            # Load DataFrame from Excel
+            self.analysis_results_df = pd.read_excel(report_file)
+
+            # Recalculate statistics
+            self.analysis_stats = recalculate_statistics(self.analysis_results_df)
+
+            logging.info(f"Loaded {len(self.analysis_results_df)} rows from session")
+            return True
+
+        except Exception as e:
+            logging.error(f"Failed to load session analysis: {e}", exc_info=True)
+            return False
+
     def load_existing_session(self, session_path: str):
         """Load data from an existing session.
 
         Args:
             session_path: Path to the session directory
         """
+        from pathlib import Path
+
         try:
             # Set as current session
             self.session_path = session_path
@@ -346,21 +406,24 @@ class MainWindow(QMainWindow):
 
             if session_info:
                 # Try to load analysis data if it exists
-                analysis_dir = self.session_manager.get_analysis_dir(session_path)
-                analysis_report = analysis_dir / "analysis_report.xlsx"
-
-                if analysis_report.exists():
-                    # Load the analysis DataFrame
-                    df = pd.read_excel(analysis_report)
-                    self.analysis_results_df = df
+                if self._load_session_analysis(session_path):
+                    # Analysis loaded successfully
                     self._update_all_views()
+
+                    # Enable report buttons
+                    if hasattr(self, 'packing_list_button'):
+                        self.packing_list_button.setEnabled(True)
+                    if hasattr(self, 'stock_export_button'):
+                        self.stock_export_button.setEnabled(True)
+                    if hasattr(self, 'report_builder_button'):
+                        self.report_builder_button.setEnabled(True)
 
                     self.log_activity("Session", f"Loaded session: {session_name}")
                     QMessageBox.information(
                         self,
                         "Session Loaded",
                         f"Session loaded successfully:\n{session_name}\n\n"
-                        f"Analysis data: {len(df)} rows"
+                        f"Analysis data: {len(self.analysis_results_df)} rows"
                     )
                 else:
                     # Session exists but no analysis yet
@@ -411,14 +474,26 @@ class MainWindow(QMainWindow):
         refreshes the statistics tab, and repopulates the column filter
         dropdown. It acts as a single point of refresh for the UI.
         """
-        self.analysis_stats = recalculate_statistics(self.analysis_results_df)
-        self.ui_manager.update_results_table(self.analysis_results_df)
-        self.update_statistics_tab()
+        # Update statistics ONLY if analysis results exist
+        if self.analysis_results_df is not None and not self.analysis_results_df.empty:
+            try:
+                self.analysis_stats = recalculate_statistics(self.analysis_results_df)
+                self.ui_manager.update_results_table(self.analysis_results_df)
+                self.update_statistics_tab()
+            except Exception as e:
+                logging.error(f"Failed to recalculate statistics: {e}", exc_info=True)
+                self.analysis_stats = None
+                self._clear_statistics_view()
+        else:
+            # No analysis results - clear statistics
+            self.analysis_stats = None
+            self._clear_statistics_view()
+            self.ui_manager.update_results_table(pd.DataFrame())
 
         # Populate filter dropdown
         self.filter_column_selector.clear()
         self.filter_column_selector.addItem("All Columns")
-        if not self.analysis_results_df.empty:
+        if self.analysis_results_df is not None and not self.analysis_results_df.empty:
             self.filter_column_selector.addItems(self.all_columns)
         self.ui_manager.set_ui_busy(False)
         # The column manager button is enabled within update_results_table
@@ -455,6 +530,24 @@ class MainWindow(QMainWindow):
                 self.courier_stats_layout.addWidget(QLabel(str(stats.get("repeated_orders_found", "N/A"))), i, 2)
         else:
             self.courier_stats_layout.addWidget(QLabel("No courier stats available."), 0, 0)
+
+    def _clear_statistics_view(self):
+        """Clear statistics display when no analysis results."""
+        # Clear main stats labels
+        if hasattr(self, 'stats_labels'):
+            for label in self.stats_labels.values():
+                label.setText("N/A")
+
+        # Clear courier stats layout
+        if hasattr(self, 'courier_stats_layout'):
+            while self.courier_stats_layout.count():
+                child = self.courier_stats_layout.takeAt(0)
+                if child.widget():
+                    child.widget().deleteLater()
+            # Add placeholder text
+            placeholder = QLabel("No analysis data available.")
+            placeholder.setStyleSheet("color: gray; font-style: italic;")
+            self.courier_stats_layout.addWidget(placeholder, 0, 0)
 
     def log_activity(self, op_type, desc):
         """Adds a new entry to the 'Activity Log' table in the UI.
@@ -502,7 +595,7 @@ class MainWindow(QMainWindow):
             pos (QPoint): The position where the right-click occurred, in the
                 table's viewport coordinates.
         """
-        if self.analysis_results_df.empty:
+        if self.analysis_results_df is None or self.analysis_results_df.empty:
             return
         table = self.sender()
         index = table.indexAt(pos)
@@ -552,7 +645,7 @@ class MainWindow(QMainWindow):
         Args:
             event: The close event.
         """
-        if not self.analysis_results_df.empty:
+        if self.analysis_results_df is not None and not self.analysis_results_df.empty:
             try:
                 session_data = {"dataframe": self.analysis_results_df, "visible_columns": self.visible_columns}
                 with open(self.session_file, "wb") as f:
@@ -577,12 +670,15 @@ class MainWindow(QMainWindow):
                 try:
                     with open(self.session_file, "rb") as f:
                         session_data = pickle.load(f)
-                    self.analysis_results_df = session_data.get("dataframe", pd.DataFrame())
-                    all_df_cols = [c for c in self.analysis_results_df.columns if c != "Order_Number"]
-                    self.visible_columns = session_data.get("visible_columns", all_df_cols)
-                    self.all_columns = all_df_cols
-                    self._update_all_views()
-                    self.log_activity("Session", "Restored previous session.")
+                    self.analysis_results_df = session_data.get("dataframe", None)
+                    if self.analysis_results_df is not None and not self.analysis_results_df.empty:
+                        all_df_cols = [c for c in self.analysis_results_df.columns if c != "Order_Number"]
+                        self.visible_columns = session_data.get("visible_columns", all_df_cols)
+                        self.all_columns = all_df_cols
+                        self._update_all_views()
+                        self.log_activity("Session", "Restored previous session.")
+                    else:
+                        logging.info("No valid session data to restore")
                 except Exception as e:
                     QMessageBox.critical(self, "Load Error", f"Failed to load session file: {e}")
             try:
