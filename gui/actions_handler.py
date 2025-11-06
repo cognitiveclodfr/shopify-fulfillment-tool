@@ -166,95 +166,61 @@ class ActionsHandler(QObject):
         QMessageBox.critical(self.mw, "Task Exception", msg)
 
     def open_settings_window(self):
-        """Opens the settings window for the active client.
-
-        Allows editing client-specific configuration like:
-        - Column mappings
-        - Filters for packing lists and stock exports
-        - Courier mappings
-        - Rules and tags
-        """
-        self.log.info("Opening client settings...")
-
-        # Check if client is selected
+        """Opens the settings window for the active client."""
         if not self.mw.current_client_id:
             QMessageBox.warning(
                 self.mw,
                 "No Client Selected",
-                "Please select a client before opening settings."
+                "Please select a client first."
             )
             return
 
-        # Load current client config
+        # Reload fresh config
         try:
-            client_config = self.mw.profile_manager.load_shopify_config(
+            fresh_config = self.mw.profile_manager.load_shopify_config(
                 self.mw.current_client_id
             )
 
-            if not client_config:
-                raise Exception("Failed to load client configuration")
-
-            self.log.info(f"Loaded config for CLIENT_{self.mw.current_client_id}")
+            if not fresh_config:
+                raise Exception("Failed to load configuration")
 
         except Exception as e:
-            self.log.error(f"Failed to load client config: {e}", exc_info=True)
             QMessageBox.critical(
                 self.mw,
                 "Error",
-                f"Failed to load client configuration:\n\n{str(e)}"
+                f"Failed to load settings:\n{str(e)}"
             )
             return
 
-        # Open settings dialog
-        try:
-            settings_win = SettingsWindow(
-                client_id=self.mw.current_client_id,
-                client_config=client_config,
-                profile_manager=self.mw.profile_manager,
-                analysis_df=self.mw.analysis_results_df,
-                parent=self.mw
-            )
+        # Open settings with fresh data
+        from gui.settings_window_pyside import SettingsWindow
 
-            # Show dialog and wait for result
-            if settings_win.exec():
-                # Settings were saved, reload config
-                self.log.info("Settings dialog accepted, reloading config...")
+        settings_win = SettingsWindow(
+            client_id=self.mw.current_client_id,
+            client_config=fresh_config,  # Fresh data
+            profile_manager=self.mw.profile_manager,
+            analysis_df=self.mw.analysis_results_df,
+            parent=self.mw
+        )
 
-                try:
-                    self.mw.active_profile_config = self.mw.profile_manager.load_shopify_config(
-                        self.mw.current_client_id
-                    )
+        if settings_win.exec():
+            # Update MainWindow config after save
+            try:
+                self.mw.active_profile_config = self.mw.profile_manager.load_shopify_config(
+                    self.mw.current_client_id
+                )
 
-                    self.log.info(f"Config reloaded for CLIENT_{self.mw.current_client_id}")
+                # Re-validate files
+                if self.mw.orders_file_path:
+                    self.mw.file_handler.validate_file("orders")
 
-                    self.mw.log_activity(
-                        "Settings",
-                        f"Settings for CLIENT_{self.mw.current_client_id} updated successfully."
-                    )
+                if self.mw.stock_file_path:
+                    self.mw.file_handler.validate_file("stock")
 
-                    QMessageBox.information(
-                        self.mw,
-                        "Settings Saved",
-                        "Client settings have been saved successfully."
-                    )
+                self.log.info("Settings updated and files re-validated")
 
-                except Exception as e:
-                    self.log.error(f"Failed to reload config: {e}", exc_info=True)
-                    QMessageBox.warning(
-                        self.mw,
-                        "Warning",
-                        f"Settings were saved but failed to reload:\n\n{str(e)}"
-                    )
-            else:
-                self.log.info("Settings dialog cancelled")
-
-        except Exception as e:
-            self.log.error(f"Error opening settings window: {e}", exc_info=True)
-            QMessageBox.critical(
-                self.mw,
-                "Error",
-                f"Failed to open settings window:\n\n{str(e)}"
-            )
+            except Exception as e:
+                self.log.error(f"Error updating config after save: {e}")
 
     def open_report_selection_dialog(self, report_type):
         """Opens a dialog to select and generate a pre-configured report.
@@ -322,6 +288,88 @@ class ActionsHandler(QObject):
         dialog.reportSelected.connect(lambda rc: self._generate_single_report(report_type, rc, session_path))
         dialog.exec()
 
+    def _apply_filters(self, df, filters):
+        """Apply filters from report config to DataFrame.
+
+        Args:
+            df: DataFrame to filter
+            filters: List of filter dicts with 'field', 'operator', 'value'
+
+        Returns:
+            Filtered DataFrame
+        """
+        filtered_df = df.copy()
+
+        for filt in filters:
+            field = filt.get("field")
+            operator = filt.get("operator")
+            value = filt.get("value")
+
+            if not field or field not in filtered_df.columns:
+                continue
+
+            try:
+                if operator == "==":
+                    filtered_df = filtered_df[filtered_df[field] == value]
+                elif operator == "!=":
+                    filtered_df = filtered_df[filtered_df[field] != value]
+                elif operator == "in":
+                    values = [v.strip() for v in value.split(',')]
+                    filtered_df = filtered_df[filtered_df[field].isin(values)]
+                elif operator == "not in":
+                    values = [v.strip() for v in value.split(',')]
+                    filtered_df = filtered_df[~filtered_df[field].isin(values)]
+                elif operator == "contains":
+                    filtered_df = filtered_df[filtered_df[field].astype(str).str.contains(value, na=False)]
+            except Exception as e:
+                self.log.warning(f"Failed to apply filter {field} {operator} {value}: {e}")
+
+        return filtered_df
+
+    def _create_analysis_json(self, df):
+        """Convert DataFrame to analysis_data.json format for Packing Tool.
+
+        Args:
+            df: Filtered DataFrame with orders data
+
+        Returns:
+            dict: JSON structure for Packing Tool
+        """
+        from datetime import datetime
+
+        orders_data = []
+
+        # Group by Order_Number
+        for order_num, group in df.groupby('Order_Number'):
+            items = []
+            for _, row in group.iterrows():
+                items.append({
+                    "sku": str(row.get('SKU', '')),
+                    "product_name": str(row.get('Product_Name', '')),
+                    "quantity": int(row.get('Quantity', 1)),
+                    "stock_status": str(row.get('Order_Fulfillment_Status', ''))
+                })
+
+            # Get order-level info from first row
+            first_row = group.iloc[0]
+
+            orders_data.append({
+                "order_number": str(order_num),
+                "order_type": str(first_row.get('Order_Type', '')),
+                "items": items,
+                "courier": str(first_row.get('Shipping_Provider', '')),
+                "destination": str(first_row.get('Destination_Country', '')),
+                "tags": first_row.get('Tags', '').split(',') if first_row.get('Tags') else []
+            })
+
+        return {
+            "session_id": self.mw.session_path.name if self.mw.session_path else "unknown",
+            "created_at": datetime.now().isoformat(),
+            "total_orders": len(orders_data),
+            "total_items": int(df['Quantity'].sum()) if 'Quantity' in df.columns else len(df),
+            "orders": orders_data
+        }
+
     def _generate_single_report(self, report_type, report_config, session_path):
         """Generates a single report synchronously.
 
@@ -373,6 +421,28 @@ class ActionsHandler(QObject):
             if success:
                 self.log.info(f"Generated {report_name}: {output_file}")
                 self.mw.log_activity("Report", f"Report generated: {output_file}")
+
+                # Generate JSON for Packing Tool (packing lists only)
+                if report_type == "packing_lists":
+                    json_path = os.path.join(output_dir, "analysis_data.json")
+
+                    try:
+                        # Apply same filters to get filtered DataFrame
+                        filters = report_config.get("filters", [])
+                        filtered_df = self._apply_filters(self.mw.analysis_results_df, filters)
+
+                        # Generate JSON
+                        analysis_json = self._create_analysis_json(filtered_df)
+
+                        import json
+                        with open(json_path, 'w', encoding='utf-8') as f:
+                            json.dump(analysis_json, f, indent=2, ensure_ascii=False)
+
+                        self.log.info(f"Generated JSON for Packing Tool: {json_path}")
+
+                    except Exception as e:
+                        self.log.error(f"Failed to generate JSON: {e}")
+
                 QMessageBox.information(
                     self.mw,
                     "Report Generated",
