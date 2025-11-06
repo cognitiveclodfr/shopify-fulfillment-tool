@@ -166,11 +166,16 @@ class ActionsHandler(QObject):
         QMessageBox.critical(self.mw, "Task Exception", msg)
 
     def open_settings_window(self):
-        """Opens the settings dialog window for the active client.
+        """Opens the settings window for the active client.
 
-        If the settings are saved in the dialog, it updates the client's
-        configuration on the file server.
+        Allows editing client-specific configuration like:
+        - Column mappings
+        - Filters for packing lists and stock exports
+        - Courier mappings
+        - Rules and tags
         """
+        self.log.info("Opening client settings...")
+
         # Check if client is selected
         if not self.mw.current_client_id:
             QMessageBox.warning(
@@ -180,43 +185,76 @@ class ActionsHandler(QObject):
             )
             return
 
-        # Get current client config
-        client_config = self.mw.active_profile_config
-        if not client_config:
-            QMessageBox.warning(
+        # Load current client config
+        try:
+            client_config = self.mw.profile_manager.load_shopify_config(
+                self.mw.current_client_id
+            )
+
+            if not client_config:
+                raise Exception("Failed to load client configuration")
+
+            self.log.info(f"Loaded config for CLIENT_{self.mw.current_client_id}")
+
+        except Exception as e:
+            self.log.error(f"Failed to load client config: {e}", exc_info=True)
+            QMessageBox.critical(
                 self.mw,
-                "Configuration Error",
-                "No configuration loaded for the selected client."
+                "Error",
+                f"Failed to load client configuration:\n\n{str(e)}"
             )
             return
 
-        # Open settings dialog with client-specific data
-        dialog = SettingsWindow(
-            client_id=self.mw.current_client_id,
-            client_config=client_config,
-            profile_manager=self.mw.profile_manager,
-            analysis_df=self.mw.analysis_results_df,
-            parent=self.mw
-        )
+        # Open settings dialog
+        try:
+            settings_win = SettingsWindow(
+                client_id=self.mw.current_client_id,
+                client_config=client_config,
+                profile_manager=self.mw.profile_manager,
+                analysis_df=self.mw.analysis_results_df,
+                parent=self.mw
+            )
 
-        if dialog.exec():
-            # Settings were saved, reload config
-            try:
-                self.mw.active_profile_config = self.mw.profile_manager.load_shopify_config(
-                    self.mw.current_client_id
-                )
-                self.mw.log_activity(
-                    "Settings",
-                    f"Settings for CLIENT_{self.mw.current_client_id} updated successfully."
-                )
-                self.log.info(f"Settings for CLIENT_{self.mw.current_client_id} updated successfully.")
-            except Exception as e:
-                self.log.error(f"Failed to reload config after settings save: {e}", exc_info=True)
-                QMessageBox.warning(
-                    self.mw,
-                    "Warning",
-                    f"Settings were saved but failed to reload configuration:\n{str(e)}"
-                )
+            # Show dialog and wait for result
+            if settings_win.exec():
+                # Settings were saved, reload config
+                self.log.info("Settings dialog accepted, reloading config...")
+
+                try:
+                    self.mw.active_profile_config = self.mw.profile_manager.load_shopify_config(
+                        self.mw.current_client_id
+                    )
+
+                    self.log.info(f"Config reloaded for CLIENT_{self.mw.current_client_id}")
+
+                    self.mw.log_activity(
+                        "Settings",
+                        f"Settings for CLIENT_{self.mw.current_client_id} updated successfully."
+                    )
+
+                    QMessageBox.information(
+                        self.mw,
+                        "Settings Saved",
+                        "Client settings have been saved successfully."
+                    )
+
+                except Exception as e:
+                    self.log.error(f"Failed to reload config: {e}", exc_info=True)
+                    QMessageBox.warning(
+                        self.mw,
+                        "Warning",
+                        f"Settings were saved but failed to reload:\n\n{str(e)}"
+                    )
+            else:
+                self.log.info("Settings dialog cancelled")
+
+        except Exception as e:
+            self.log.error(f"Error opening settings window: {e}", exc_info=True)
+            QMessageBox.critical(
+                self.mw,
+                "Error",
+                f"Failed to open settings window:\n\n{str(e)}"
+            )
 
     def open_report_selection_dialog(self, report_type):
         """Opens a dialog to select and generate a pre-configured report.
