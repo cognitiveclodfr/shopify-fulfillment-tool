@@ -110,6 +110,29 @@ class SettingsWindow(QDialog):
                 },
                 "stock": {"sku": "Артикул", "stock": "Наличност"},
             }
+
+        # Ensure orders and stock are dicts with string values (not nested dicts)
+        if not isinstance(self.config_data["column_mappings"].get("orders"), dict):
+            self.config_data["column_mappings"]["orders"] = {
+                "name": "Name",
+                "sku": "Lineitem sku",
+                "quantity": "Lineitem quantity",
+                "shipping_provider": "Shipping Provider",
+            }
+        else:
+            # Convert any non-string values to strings
+            for key, value in list(self.config_data["column_mappings"]["orders"].items()):
+                if not isinstance(value, str):
+                    self.config_data["column_mappings"]["orders"][key] = str(value) if value is not None else ""
+
+        if not isinstance(self.config_data["column_mappings"].get("stock"), dict):
+            self.config_data["column_mappings"]["stock"] = {"sku": "Артикул", "stock": "Наличност"}
+        else:
+            # Convert any non-string values to strings
+            for key, value in list(self.config_data["column_mappings"]["stock"].items()):
+                if not isinstance(value, str):
+                    self.config_data["column_mappings"]["stock"][key] = str(value) if value is not None else ""
+
         if "courier_mappings" not in self.config_data:
             self.config_data["courier_mappings"] = {}
 
@@ -621,7 +644,9 @@ class SettingsWindow(QDialog):
         self.column_mapping_widgets["orders"] = {}
         for key, value in self.config_data["column_mappings"]["orders"].items():
             label = QLabel(f"{key.replace('_', ' ').title()}:")
-            line_edit = QLineEdit(value)
+            # Convert value to string to handle any non-string types
+            value_str = str(value) if value is not None else ""
+            line_edit = QLineEdit(value_str)
             orders_layout.addRow(label, line_edit)
             self.column_mapping_widgets["orders"][key] = line_edit
         column_mappings_layout.addWidget(orders_box)
@@ -632,7 +657,9 @@ class SettingsWindow(QDialog):
         self.column_mapping_widgets["stock"] = {}
         for key, value in self.config_data["column_mappings"]["stock"].items():
             label = QLabel(f"{key.replace('_', ' ').title()}:")
-            line_edit = QLineEdit(value)
+            # Convert value to string to handle any non-string types
+            value_str = str(value) if value is not None else ""
+            line_edit = QLineEdit(value_str)
             stock_layout.addRow(label, line_edit)
             self.column_mapping_widgets["stock"][key] = line_edit
         column_mappings_layout.addWidget(stock_box)
