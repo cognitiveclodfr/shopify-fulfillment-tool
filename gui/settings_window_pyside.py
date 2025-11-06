@@ -168,24 +168,49 @@ class SettingsWindow(QDialog):
         ref_list.remove(ref_dict)
 
     def create_general_tab(self):
-        """Creates and populates the 'General & Paths' settings tab."""
+        """Creates the 'General Settings' tab."""
         tab = QWidget()
-        layout = QFormLayout(tab)
-        self.stock_delimiter_edit = QLineEdit()
-        self.low_stock_edit = QLineEdit()
-        self.templates_path_edit = QLineEdit()
-        self.stock_output_path_edit = QLineEdit()
-        layout.addRow(QLabel("Stock CSV Delimiter:"), self.stock_delimiter_edit)
-        layout.addRow(QLabel("Low Stock Threshold:"), self.low_stock_edit)
-        layout.addRow(QLabel("Templates Directory:"), self.templates_path_edit)
-        layout.addRow(QLabel("Stock Export Output Directory:"), self.stock_output_path_edit)
-        settings = self.config_data.get("settings", {})
-        paths = self.config_data.get("paths", {})
-        self.stock_delimiter_edit.setText(settings.get("stock_csv_delimiter", ";"))
-        self.low_stock_edit.setText(str(settings.get("low_stock_threshold", 10)))
-        self.templates_path_edit.setText(paths.get("templates", ""))
-        self.stock_output_path_edit.setText(paths.get("output_dir_stock", ""))
-        self.tab_widget.addTab(tab, "General & Paths")
+        main_layout = QVBoxLayout(tab)
+
+        # Settings GroupBox
+        settings_box = QGroupBox("General Settings")
+        settings_layout = QFormLayout(settings_box)
+
+        # Stock CSV delimiter
+        delimiter_label = QLabel("Stock CSV Delimiter:")
+        delimiter_label.setToolTip("Character used to separate columns in stock CSV (usually ';' or ',')")
+        self.stock_delimiter_edit = QLineEdit(
+            self.config_data.get("settings", {}).get("stock_csv_delimiter", ";")
+        )
+        self.stock_delimiter_edit.setMaximumWidth(100)
+        settings_layout.addRow(delimiter_label, self.stock_delimiter_edit)
+
+        # Low stock threshold
+        threshold_label = QLabel("Low Stock Threshold:")
+        threshold_label.setToolTip("Trigger stock alerts when quantity falls below this number")
+        self.low_stock_edit = QLineEdit(
+            str(self.config_data.get("settings", {}).get("low_stock_threshold", 5))
+        )
+        self.low_stock_edit.setMaximumWidth(100)
+        settings_layout.addRow(threshold_label, self.low_stock_edit)
+
+        main_layout.addWidget(settings_box)
+
+        # Info about removed fields
+        info_box = QGroupBox("Note")
+        info_layout = QVBoxLayout(info_box)
+        info_label = QLabel(
+            "Templates and custom output directories are no longer used.\n"
+            "All reports are now generated in session-specific folders automatically."
+        )
+        info_label.setWordWrap(True)
+        info_label.setStyleSheet("color: gray; font-style: italic;")
+        info_layout.addWidget(info_label)
+        main_layout.addWidget(info_box)
+
+        main_layout.addStretch()
+
+        self.tab_widget.addTab(tab, "General")
 
     def create_rules_tab(self):
         """Creates the 'Rules' tab for dynamically managing automation rules."""
@@ -927,21 +952,10 @@ class SettingsWindow(QDialog):
         """Saves all settings from the UI back into the config dictionary."""
         try:
             # ========================================
-            # General Tab - Settings
+            # General Tab - Settings ONLY
             # ========================================
             self.config_data["settings"]["stock_csv_delimiter"] = self.stock_delimiter_edit.text()
             self.config_data["settings"]["low_stock_threshold"] = int(self.low_stock_edit.text())
-
-            # Paths (if they exist in UI)
-            if hasattr(self, 'templates_path_edit'):
-                if "paths" not in self.config_data:
-                    self.config_data["paths"] = {}
-                self.config_data["paths"]["templates"] = self.templates_path_edit.text()
-
-            if hasattr(self, 'stock_output_path_edit'):
-                if "paths" not in self.config_data:
-                    self.config_data["paths"] = {}
-                self.config_data["paths"]["output_dir_stock"] = self.stock_output_path_edit.text()
 
             # ========================================
             # Rules Tab - Line Item Rules

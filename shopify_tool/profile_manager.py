@@ -470,7 +470,7 @@ class ProfileManager:
                     return False
 
                 try:
-                    json.dump(data, f, indent=2)
+                    json.dump(data, f, indent=2, ensure_ascii=False)
                 finally:
                     msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
 
@@ -508,7 +508,7 @@ class ProfileManager:
                     return False
 
                 try:
-                    json.dump(data, f, indent=2)
+                    json.dump(data, f, indent=2, ensure_ascii=False)
                 finally:
                     fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
