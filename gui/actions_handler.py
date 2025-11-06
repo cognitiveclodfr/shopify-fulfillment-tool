@@ -225,77 +225,137 @@ class ActionsHandler(QObject):
             report_type (str): The key for the report configuration list in
                 the main config (e.g., "packing_lists", "stock_exports").
         """
-        reports_config = self.mw.active_profile_config.get(report_type, [])
-        if not reports_config:
-            msg = (f"No {report_type.replace('_', ' ')} configured in the active "
-                   f"profile ('{self.mw.active_profile_name}').")
-            QMessageBox.information(self.mw, "No Reports", msg)
+        self.log.info(f"Opening report selection dialog: {report_type}")
+
+        # Validate that analysis has been run
+        if self.mw.analysis_results_df is None or self.mw.analysis_results_df.empty:
+            QMessageBox.warning(
+                self.mw,
+                "No Analysis Data",
+                "Please run analysis first before generating reports."
+            )
             return
-        dialog = ReportSelectionDialog(report_type, reports_config, self.mw)
-        dialog.reportSelected.connect(lambda rc: self.run_report_logic(report_type, rc))
+
+        # Validate client and session
+        if not self.mw.current_client_id:
+            QMessageBox.warning(
+                self.mw,
+                "No Client Selected",
+                "Please select a client."
+            )
+            return
+
+        # Get current session path (use session_path as current_session_path)
+        session_path = self.mw.session_path
+
+        if not session_path:
+            QMessageBox.warning(
+                self.mw,
+                "No Active Session",
+                "No active session. Please create a new session or open an existing one."
+            )
+            return
+
+        # Get client config
+        client_config = self.mw.active_profile_config
+
+        if not client_config:
+            QMessageBox.warning(
+                self.mw,
+                "Configuration Error",
+                "Client configuration not loaded."
+            )
+            return
+
+        # Get report configs from client config
+        report_configs = client_config.get(report_type, [])
+
+        if not report_configs:
+            QMessageBox.information(
+                self.mw,
+                "No Reports Configured",
+                f"No {report_type.replace('_', ' ')} are configured for this client.\n"
+                f"Please configure them in Client Settings."
+            )
+            return
+
+        # Open selection dialog
+        dialog = ReportSelectionDialog(report_type, report_configs, self.mw)
+        dialog.reportSelected.connect(lambda rc: self._generate_single_report(report_type, rc, session_path))
         dialog.exec()
 
-    def run_report_logic(self, report_type, report_config):
-        """Triggers the report generation in a background thread.
-
-        Based on the `report_type`, it creates a `Worker` to run the
-        appropriate report generation function from the `core` module.
+    def _generate_single_report(self, report_type, report_config, session_path):
+        """Generates a single report synchronously.
 
         Args:
-            report_type (str): The type of report to generate.
-            report_config (dict): The specific configuration for the selected
-                report.
+            report_type (str): The type of report to generate ("packing_lists" or "stock_exports").
+            report_config (dict): The specific configuration for the selected report.
+            session_path (str): The path to the current session directory.
         """
-        if not self.mw.session_path:
-            QMessageBox.critical(self.mw, "Session Error", "Please create a new session before generating reports.")
-            return
-        self.mw.log_activity("Report", f"Generating report: {report_config.get('name')}")
-        self.log.info(f"Starting report generation for '{report_config.get('name')}'")
-        if report_type == "packing_lists":
-            relative_path = report_config.get("output_filename", "default_packing_list.xlsx")
-            output_file = os.path.join(self.mw.session_path, os.path.basename(relative_path))
+        report_name = report_config.get("name", "Unknown")
+        self.log.info(f"Generating {report_type}: {report_name}")
+        self.mw.log_activity("Report", f"Generating report: {report_name}")
+
+        try:
+            # Create output directory based on report type
+            if report_type == "packing_lists":
+                output_dir = os.path.join(session_path, "packing_lists")
+            else:  # stock_exports
+                output_dir = os.path.join(session_path, "stock_exports")
+
+            os.makedirs(output_dir, exist_ok=True)
+
+            # Build output filename
+            if report_type == "packing_lists":
+                base_filename = report_config.get("output_filename", f"{report_name}.xlsx")
+                output_file = os.path.join(output_dir, os.path.basename(base_filename))
+            else:  # stock_exports
+                base_filename = report_config.get("output_filename", f"{report_name}.xls")
+                datestamp = datetime.now().strftime("%Y-%m-%d")
+                name, ext = os.path.splitext(os.path.basename(base_filename))
+                timestamped_filename = f"{name}_{datestamp}{ext}"
+                output_file = os.path.join(output_dir, timestamped_filename)
+
+            # Create a copy of config with updated output path
             report_config_copy = report_config.copy()
             report_config_copy["output_filename"] = output_file
-            worker = Worker(
-                core.create_packing_list_report,
-                analysis_df=self.mw.analysis_results_df,
-                report_config=report_config_copy,
+
+            # Generate report
+            if report_type == "packing_lists":
+                success, message = core.create_packing_list_report(
+                    self.mw.analysis_results_df,
+                    report_config_copy
+                )
+            else:  # stock_exports
+                success, message = core.create_stock_export_report(
+                    self.mw.analysis_results_df,
+                    report_config_copy
+                )
+
+            if success:
+                self.log.info(f"Generated {report_name}: {output_file}")
+                self.mw.log_activity("Report", f"Report generated: {output_file}")
+                QMessageBox.information(
+                    self.mw,
+                    "Report Generated",
+                    f"Report generated successfully:\n\n{os.path.basename(output_file)}\n\nLocation: {output_dir}"
+                )
+            else:
+                self.log.error(f"Failed to generate {report_name}: {message}")
+                QMessageBox.critical(
+                    self.mw,
+                    "Generation Failed",
+                    f"Failed to generate report:\n\n{message}"
+                )
+
+        except Exception as e:
+            self.log.error(f"Exception generating {report_name}: {e}", exc_info=True)
+            QMessageBox.critical(
+                self.mw,
+                "Error",
+                f"An error occurred while generating the report:\n\n{str(e)}"
             )
-        elif report_type == "stock_exports":
-            base_filename = report_config.get("output_filename", "default_stock_export.xls")
-            datestamp = datetime.now().strftime("%Y-%m-%d")
-            name, ext = os.path.splitext(base_filename)
-            timestamped_filename = f"{name}_{datestamp}{ext}"
-            output_file = os.path.join(self.mw.session_path, os.path.basename(timestamped_filename))
-            report_config_copy = report_config.copy()
-            report_config_copy["output_filename"] = output_file
-            worker = Worker(
-                core.create_stock_export_report,
-                analysis_df=self.mw.analysis_results_df,
-                report_config=report_config_copy,
-            )
-        else:
-            QMessageBox.critical(self.mw, "Error", "Unknown report type.")
-            return
-        worker.signals.result.connect(self.on_report_generation_complete)
-        worker.signals.error.connect(self.on_task_error)
-        self.mw.threadpool.start(worker)
 
-    def on_report_generation_complete(self, result):
-        """Handles the 'result' signal from a report generation worker.
-
-        Logs the outcome and shows a message to the user on success or failure.
-
-        Args:
-            result (tuple): The tuple returned by the report generation function.
-        """
-        success, message = result
-        if success:
-            self.mw.log_activity("Report Generation", message)
-            self.log.info(f"Report generated successfully: {message}")
-        else:
-            self.log.error(f"Report generation failed: {message}")
-            QMessageBox.critical(self.mw, "Error", message)
 
     def toggle_fulfillment_status_for_order(self, order_number):
         """Toggles the fulfillment status of all items in a given order.
