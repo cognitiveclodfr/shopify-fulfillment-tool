@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QPushButton,
     QComboBox,
+    QTextEdit,
 )
 from PySide6.QtCore import Qt
 
@@ -97,61 +98,54 @@ class SettingsWindow(QDialog):
         self.profile_manager = profile_manager
         self.analysis_df = analysis_df if analysis_df is not None else pd.DataFrame()
 
-        # Ensure mappings sections exist with the correct structure
-        if not isinstance(self.config_data.get("column_mappings"), dict) or not all(
-            k in self.config_data["column_mappings"] for k in ["orders", "stock"]
-        ):
+        # Ensure config structure exists
+        if not isinstance(self.config_data.get("column_mappings"), dict):
             self.config_data["column_mappings"] = {
-                "orders": {
-                    "name": "Name",
-                    "sku": "Lineitem sku",
-                    "quantity": "Lineitem quantity",
-                    "shipping_provider": "Shipping Provider",
-                },
-                "stock": {"sku": "Артикул", "stock": "Наличност"},
+                "orders_required": [],
+                "stock_required": []
             }
-
-        # Ensure orders and stock are dicts with string values (not nested dicts)
-        if not isinstance(self.config_data["column_mappings"].get("orders"), dict):
-            self.config_data["column_mappings"]["orders"] = {
-                "name": "Name",
-                "sku": "Lineitem sku",
-                "quantity": "Lineitem quantity",
-                "shipping_provider": "Shipping Provider",
-            }
-        else:
-            # Convert any non-string values to strings
-            for key, value in list(self.config_data["column_mappings"]["orders"].items()):
-                if not isinstance(value, str):
-                    self.config_data["column_mappings"]["orders"][key] = str(value) if value is not None else ""
-
-        if not isinstance(self.config_data["column_mappings"].get("stock"), dict):
-            self.config_data["column_mappings"]["stock"] = {"sku": "Артикул", "stock": "Наличност"}
-        else:
-            # Convert any non-string values to strings
-            for key, value in list(self.config_data["column_mappings"]["stock"].items()):
-                if not isinstance(value, str):
-                    self.config_data["column_mappings"]["stock"][key] = str(value) if value is not None else ""
 
         if "courier_mappings" not in self.config_data:
             self.config_data["courier_mappings"] = {}
 
+        if "settings" not in self.config_data:
+            self.config_data["settings"] = {
+                "low_stock_threshold": 5,
+                "stock_csv_delimiter": ";"
+            }
+
+        if "rules" not in self.config_data:
+            self.config_data["rules"] = []
+
+        # Ensure order_rules exists
+        if "order_rules" not in self.config_data:
+            self.config_data["order_rules"] = []
+
+        if "packing_list_configs" not in self.config_data:
+            self.config_data["packing_list_configs"] = []
+
+        if "stock_export_configs" not in self.config_data:
+            self.config_data["stock_export_configs"] = []
+
+        # Widget lists (existing + NEW)
         self.rule_widgets = []
+        self.order_rule_widgets = []  # NEW
         self.packing_list_widgets = []
         self.stock_export_widgets = []
-        self.column_mapping_widgets = {}
         self.courier_mapping_widgets = []
 
         self.setWindowTitle(f"Settings - CLIENT_{self.client_id}")
-        self.setMinimumSize(800, 700)
+        self.setMinimumSize(900, 750)  # Slightly larger for new tabs
         self.setModal(True)
 
         main_layout = QVBoxLayout(self)
         self.tab_widget = QTabWidget()
         main_layout.addWidget(self.tab_widget)
 
+        # Create all tabs
         self.create_general_tab()
         self.create_rules_tab()
+        self.create_order_rules_tab()  # NEW TAB
         self.create_packing_lists_tab()
         self.create_stock_exports_tab()
         self.create_mappings_tab()
@@ -409,6 +403,143 @@ class SettingsWindow(QDialog):
             lambda: self._delete_row_from_list(row_widget, rule_widget_refs["actions"], action_refs)
         )
 
+    def create_order_rules_tab(self):
+        """Creates the 'Order Rules' tab for order-level automation rules.
+
+        Order rules work on entire orders (not line items).
+        Useful for tagging, prioritizing, or filtering orders based on order-level criteria.
+        """
+        tab = QWidget()
+        main_layout = QVBoxLayout(tab)
+
+        # Instructions
+        instructions = QLabel(
+            "Order Rules apply to entire orders (not individual line items).\n"
+            "Use these for order-level decisions like tagging, prioritizing, or excluding orders."
+        )
+        instructions.setWordWrap(True)
+        instructions.setStyleSheet("color: gray; font-style: italic; font-size: 10pt;")
+        main_layout.addWidget(instructions)
+
+        # Scroll area for rules
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+
+        scroll_widget = QWidget()
+        self.order_rules_layout = QVBoxLayout(scroll_widget)
+        scroll.setWidget(scroll_widget)
+
+        main_layout.addWidget(scroll)
+
+        # Add Rule button
+        add_rule_btn = QPushButton("+ Add Order Rule")
+        add_rule_btn.clicked.connect(lambda: self.add_order_rule_widget())
+        main_layout.addWidget(add_rule_btn, 0, Qt.AlignLeft)
+
+        self.tab_widget.addTab(tab, "Order Rules")
+
+        # Populate existing order rules
+        for rule_config in self.config_data.get("order_rules", []):
+            self.add_order_rule_widget(rule_config)
+
+    def add_order_rule_widget(self, config=None):
+        """Adds a new order rule widget.
+
+        Order rules have the same structure as regular rules but work on order level.
+
+        Args:
+            config (dict, optional): Existing rule configuration to load
+        """
+        if not isinstance(config, dict):
+            config = {
+                "name": "New Order Rule",
+                "match": "ALL",
+                "conditions": [],
+                "actions": []
+            }
+
+        # Create rule box
+        rule_box = QGroupBox()
+        rule_layout = QVBoxLayout(rule_box)
+
+        # Header with name and delete button
+        header_layout = QHBoxLayout()
+        header_layout.addWidget(QLabel("Rule Name:"))
+
+        name_edit = QLineEdit(config.get("name", ""))
+        name_edit.setPlaceholderText("E.g., 'High Value Orders', 'Express Shipping'")
+        header_layout.addWidget(name_edit, 1)
+
+        delete_rule_btn = QPushButton("Delete Rule")
+        delete_rule_btn.setStyleSheet("color: red;")
+        header_layout.addWidget(delete_rule_btn)
+
+        rule_layout.addLayout(header_layout)
+
+        # Conditions section
+        conditions_box = QGroupBox("IF")
+        conditions_layout = QVBoxLayout(conditions_box)
+
+        match_layout = QHBoxLayout()
+        match_layout.addWidget(QLabel("Execute actions if"))
+
+        match_combo = QComboBox()
+        match_combo.addItems(["ALL", "ANY"])
+        match_combo.setCurrentText(config.get("match", "ALL"))
+        match_layout.addWidget(match_combo)
+
+        match_layout.addWidget(QLabel("of the following conditions are met:"))
+        match_layout.addStretch()
+        conditions_layout.addLayout(match_layout)
+
+        conditions_rows_layout = QVBoxLayout()
+        conditions_layout.addLayout(conditions_rows_layout)
+
+        add_condition_btn = QPushButton("Add Condition")
+        conditions_layout.addWidget(add_condition_btn, 0, Qt.AlignLeft)
+
+        rule_layout.addWidget(conditions_box)
+
+        # Actions section
+        actions_box = QGroupBox("THEN perform these actions:")
+        actions_layout = QVBoxLayout(actions_box)
+
+        actions_rows_layout = QVBoxLayout()
+        actions_layout.addLayout(actions_rows_layout)
+
+        add_action_btn = QPushButton("Add Action")
+        actions_layout.addWidget(add_action_btn, 0, Qt.AlignLeft)
+
+        rule_layout.addWidget(actions_box)
+
+        # Add to layout
+        self.order_rules_layout.addWidget(rule_box)
+
+        # Store widget references
+        widget_refs = {
+            "group_box": rule_box,
+            "name_edit": name_edit,
+            "match_combo": match_combo,
+            "conditions_layout": conditions_rows_layout,
+            "actions_layout": actions_rows_layout,
+            "conditions": [],
+            "actions": [],
+        }
+        self.order_rule_widgets.append(widget_refs)
+
+        # Connect buttons
+        add_condition_btn.clicked.connect(lambda: self.add_condition_row(widget_refs))
+        add_action_btn.clicked.connect(lambda: self.add_action_row(widget_refs))
+        delete_rule_btn.clicked.connect(
+            lambda: self._delete_widget_from_list(widget_refs, self.order_rule_widgets)
+        )
+
+        # Populate existing conditions and actions
+        for cond_config in config.get("conditions", []):
+            self.add_condition_row(widget_refs, cond_config)
+        for act_config in config.get("actions", []):
+            self.add_action_row(widget_refs, act_config)
+
     def create_packing_lists_tab(self):
         """Creates the 'Packing Lists' tab for managing report configurations."""
         tab = QWidget()
@@ -630,84 +761,161 @@ class SettingsWindow(QDialog):
             self.add_filter_row(widget_refs, self.FILTERABLE_COLUMNS, self.FILTER_OPERATORS, f_config)
 
     def create_mappings_tab(self):
-        """Creates the 'Mappings' tab for column and courier name mappings."""
+        """Creates the 'Mappings' tab for required columns and courier mappings."""
         tab = QWidget()
         main_layout = QVBoxLayout(tab)
 
-        # Column Mappings GroupBox
-        column_mappings_box = QGroupBox("Column Mappings")
+        # Add scroll area for the entire tab
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+
+        # ========================================
+        # COLUMN MAPPINGS - Required Columns
+        # ========================================
+        column_mappings_box = QGroupBox("Required Columns")
         column_mappings_layout = QVBoxLayout(column_mappings_box)
 
-        # Orders Column Mappings
-        orders_box = QGroupBox("Orders CSV")
-        orders_layout = QFormLayout(orders_box)
-        self.column_mapping_widgets["orders"] = {}
-        for key, value in self.config_data["column_mappings"]["orders"].items():
-            label = QLabel(f"{key.replace('_', ' ').title()}:")
-            # Convert value to string to handle any non-string types
-            value_str = str(value) if value is not None else ""
-            line_edit = QLineEdit(value_str)
-            orders_layout.addRow(label, line_edit)
-            self.column_mapping_widgets["orders"][key] = line_edit
+        instructions = QLabel(
+            "Specify which columns are required in the CSV files.\n"
+            "These columns will be validated when loading files."
+        )
+        instructions.setWordWrap(True)
+        instructions.setStyleSheet("color: gray; font-style: italic; font-size: 10pt;")
+        column_mappings_layout.addWidget(instructions)
+
+        # Orders Required Columns
+        orders_box = QGroupBox("Orders CSV - Required Columns")
+        orders_layout = QVBoxLayout(orders_box)
+
+        orders_label = QLabel("Enter column names (one per line):")
+        orders_layout.addWidget(orders_label)
+
+        self.orders_required_text = QTextEdit()
+        self.orders_required_text.setPlaceholderText("Name\nLineitem sku\nLineitem quantity\nShipping Method")
+        self.orders_required_text.setMaximumHeight(120)
+
+        # Load existing values
+        orders_required = self.config_data.get("column_mappings", {}).get("orders_required", [])
+        if orders_required:
+            self.orders_required_text.setPlainText("\n".join(orders_required))
+
+        orders_layout.addWidget(self.orders_required_text)
         column_mappings_layout.addWidget(orders_box)
 
-        # Stock Column Mappings
-        stock_box = QGroupBox("Stock CSV")
-        stock_layout = QFormLayout(stock_box)
-        self.column_mapping_widgets["stock"] = {}
-        for key, value in self.config_data["column_mappings"]["stock"].items():
-            label = QLabel(f"{key.replace('_', ' ').title()}:")
-            # Convert value to string to handle any non-string types
-            value_str = str(value) if value is not None else ""
-            line_edit = QLineEdit(value_str)
-            stock_layout.addRow(label, line_edit)
-            self.column_mapping_widgets["stock"][key] = line_edit
+        # Stock Required Columns
+        stock_box = QGroupBox("Stock CSV - Required Columns")
+        stock_layout = QVBoxLayout(stock_box)
+
+        stock_label = QLabel("Enter column names (one per line):")
+        stock_layout.addWidget(stock_label)
+
+        self.stock_required_text = QTextEdit()
+        self.stock_required_text.setPlaceholderText("Артикул\nНаличност")
+        self.stock_required_text.setMaximumHeight(120)
+
+        # Load existing values
+        stock_required = self.config_data.get("column_mappings", {}).get("stock_required", [])
+        if stock_required:
+            self.stock_required_text.setPlainText("\n".join(stock_required))
+
+        stock_layout.addWidget(self.stock_required_text)
         column_mappings_layout.addWidget(stock_box)
 
-        main_layout.addWidget(column_mappings_box)
+        scroll_layout.addWidget(column_mappings_box)
 
-        # Courier Mappings GroupBox
+        # ========================================
+        # COURIER MAPPINGS
+        # ========================================
         courier_mappings_box = QGroupBox("Courier Mappings")
         courier_main_layout = QVBoxLayout(courier_mappings_box)
 
-        # Layout for the dynamic rows
-        self.courier_mappings_layout = QVBoxLayout()
-        courier_main_layout.addLayout(self.courier_mappings_layout)
+        instructions2 = QLabel(
+            "Map different shipping provider names to standardized courier codes.\n"
+            "You can specify multiple patterns (comma-separated) for each courier."
+        )
+        instructions2.setWordWrap(True)
+        instructions2.setStyleSheet("color: gray; font-style: italic; font-size: 10pt;")
+        courier_main_layout.addWidget(instructions2)
 
-        add_courier_btn = QPushButton("Add Mapping")
+        # Container for courier mapping rows
+        self.courier_mappings_container = QWidget()
+        self.courier_mappings_layout = QVBoxLayout(self.courier_mappings_container)
+        self.courier_mappings_layout.setContentsMargins(0, 0, 0, 0)
+
+        courier_main_layout.addWidget(self.courier_mappings_container)
+
+        add_courier_btn = QPushButton("+ Add Courier Mapping")
         add_courier_btn.clicked.connect(lambda: self.add_courier_mapping_row())
         courier_main_layout.addWidget(add_courier_btn, 0, Qt.AlignLeft)
 
-        main_layout.addWidget(courier_mappings_box)
-        main_layout.addStretch()
+        scroll_layout.addWidget(courier_mappings_box)
+        scroll_layout.addStretch()
+
+        scroll.setWidget(scroll_widget)
+        main_layout.addWidget(scroll)
 
         self.tab_widget.addTab(tab, "Mappings")
 
-        # Populate initial courier mappings
-        for original, standardized in self.config_data.get("courier_mappings", {}).items():
-            self.add_courier_mapping_row(original, standardized)
+        # Populate existing courier mappings
+        courier_mappings = self.config_data.get("courier_mappings", {})
+        if isinstance(courier_mappings, dict):
+            for courier_code, mapping_data in courier_mappings.items():
+                if isinstance(mapping_data, dict):
+                    patterns = mapping_data.get("patterns", [])
+                    patterns_str = ", ".join(patterns) if patterns else ""
+                    self.add_courier_mapping_row(courier_code, patterns_str)
 
-    def add_courier_mapping_row(self, original_name="", standardized_name=""):
-        """Adds a new row for a single courier mapping."""
+        # Add at least one empty row if no mappings exist
+        if not courier_mappings:
+            self.add_courier_mapping_row()
+
+    def add_courier_mapping_row(self, courier_code="", patterns_str=""):
+        """Adds a new row for a single courier mapping.
+
+        Args:
+            courier_code: Standardized courier code (e.g., "DHL", "DPD", "Speedy")
+            patterns_str: Comma-separated patterns (e.g., "dhl, dhl express, dhl_express")
+        """
         row_widget = QWidget()
         row_layout = QHBoxLayout(row_widget)
+        row_layout.setContentsMargins(0, 5, 0, 5)
 
-        original_edit = QLineEdit(original_name)
-        original_edit.setPlaceholderText("Original Name")
-        standardized_edit = QLineEdit(standardized_name)
-        standardized_edit.setPlaceholderText("Standardized Name")
-        delete_btn = QPushButton("X")
+        # Courier Code
+        code_label = QLabel("Code:")
+        code_label.setFixedWidth(50)
+        courier_edit = QLineEdit(courier_code)
+        courier_edit.setPlaceholderText("DHL, DPD, Speedy...")
+        courier_edit.setMinimumWidth(100)
+        courier_edit.setMaximumWidth(150)
 
-        row_layout.addWidget(original_edit, 1)
-        row_layout.addWidget(standardized_edit, 1)
+        # Patterns
+        patterns_label = QLabel("Patterns:")
+        patterns_label.setFixedWidth(70)
+        patterns_edit = QLineEdit(patterns_str)
+        patterns_edit.setPlaceholderText("dhl, dhl express, dhl_express")
+        patterns_edit.setMinimumWidth(300)
+
+        # Delete button
+        delete_btn = QPushButton("✕")
+        delete_btn.setFixedWidth(30)
+        delete_btn.setStyleSheet("color: red; font-weight: bold;")
+        delete_btn.setToolTip("Remove this courier mapping")
+
+        row_layout.addWidget(code_label)
+        row_layout.addWidget(courier_edit, 1)
+        row_layout.addWidget(patterns_label)
+        row_layout.addWidget(patterns_edit, 3)
         row_layout.addWidget(delete_btn)
+        row_layout.addStretch()
 
         self.courier_mappings_layout.addWidget(row_widget)
 
         row_refs = {
             "widget": row_widget,
-            "original": original_edit,
-            "standardized": standardized_edit,
+            "courier_code": courier_edit,
+            "patterns": patterns_edit,
         }
         self.courier_mapping_widgets.append(row_refs)
 
@@ -716,21 +924,28 @@ class SettingsWindow(QDialog):
         )
 
     def save_settings(self):
-        """Saves all settings from the UI back into the config dictionary.
-
-        This method iterates through all the dynamically created widgets on all
-        tabs, reads their current values, and reconstructs the `self.config_data`
-        dictionary. If successful, it accepts the dialog, allowing the main
-        window to retrieve the updated configuration.
-        """
+        """Saves all settings from the UI back into the config dictionary."""
         try:
-            # General Tab
+            # ========================================
+            # General Tab - Settings
+            # ========================================
             self.config_data["settings"]["stock_csv_delimiter"] = self.stock_delimiter_edit.text()
             self.config_data["settings"]["low_stock_threshold"] = int(self.low_stock_edit.text())
-            self.config_data["paths"]["templates"] = self.templates_path_edit.text()
-            self.config_data["paths"]["output_dir_stock"] = self.stock_output_path_edit.text()
 
-            # Rules Tab
+            # Paths (if they exist in UI)
+            if hasattr(self, 'templates_path_edit'):
+                if "paths" not in self.config_data:
+                    self.config_data["paths"] = {}
+                self.config_data["paths"]["templates"] = self.templates_path_edit.text()
+
+            if hasattr(self, 'stock_output_path_edit'):
+                if "paths" not in self.config_data:
+                    self.config_data["paths"] = {}
+                self.config_data["paths"]["output_dir_stock"] = self.stock_output_path_edit.text()
+
+            # ========================================
+            # Rules Tab - Line Item Rules
+            # ========================================
             new_rules = []
             for rule_w in self.rule_widgets:
                 conditions = []
@@ -743,72 +958,178 @@ class SettingsWindow(QDialog):
                         else:
                             val = value_widget.text()
 
-                    conditions.append(
-                        {
-                            "field": c["field"].currentText(),
-                            "operator": c["op"].currentText(),
-                            "value": val,
-                        }
-                    )
+                    conditions.append({
+                        "field": c["field"].currentText(),
+                        "operator": c["op"].currentText(),
+                        "value": val,
+                    })
 
-                actions = [{"type": a["type"].currentText(), "value": a["value"].text()} for a in rule_w["actions"]]
-                new_rules.append(
+                actions = [
                     {
-                        "name": rule_w["name_edit"].text(),
-                        "match": rule_w["match_combo"].currentText(),
-                        "conditions": conditions,
-                        "actions": actions,
+                        "type": a["type"].currentText(),
+                        "value": a["value"].text()
                     }
-                )
+                    for a in rule_w["actions"]
+                ]
+
+                new_rules.append({
+                    "name": rule_w["name_edit"].text(),
+                    "match": rule_w["match_combo"].currentText(),
+                    "conditions": conditions,
+                    "actions": actions,
+                })
+
             self.config_data["rules"] = new_rules
 
-            # Packing Lists & Stock Exports Tabs
-            for widget_list, key in [
-                (self.packing_list_widgets, "packing_lists"),
-                (self.stock_export_widgets, "stock_exports"),
-            ]:
-                new_items = []
-                for item_w in widget_list:
-                    filters = []
-                    for f in item_w["filters"]:
-                        op = f["op"].currentText()
-                        value_widget = f["value_widget"]
-                        val = value_widget.currentText() if isinstance(value_widget, QComboBox) else value_widget.text()
-                        filters.append(
-                            {
-                                "field": f["field"].currentText(),
-                                "operator": op,
-                                "value": [v.strip() for v in val.split(",")] if op in ["in", "not in"] else val,
-                            }
-                        )
+            # ========================================
+            # Order Rules Tab - Order-Level Rules
+            # ========================================
+            new_order_rules = []
+            for rule_w in self.order_rule_widgets:
+                conditions = []
+                for c in rule_w["conditions"]:
+                    value_widget = c.get("value_widget")
+                    val = ""
+                    if value_widget:
+                        if isinstance(value_widget, QComboBox):
+                            val = value_widget.currentText()
+                        else:
+                            val = value_widget.text()
 
-                    item_data = {"name": item_w["name"].text(), "filters": filters}
-                    if "filename" in item_w:
-                        item_data["output_filename"] = item_w["filename"].text()
-                    if "exclude_skus" in item_w:
-                        item_data["exclude_skus"] = [
-                            sku.strip() for sku in item_w["exclude_skus"].text().split(",") if sku.strip()
-                        ]
-                    if "template" in item_w:
-                        item_data["template"] = item_w["template"].text()
-                    new_items.append(item_data)
-                self.config_data[key] = new_items
+                    conditions.append({
+                        "field": c["field"].currentText(),
+                        "operator": c["op"].currentText(),
+                        "value": val,
+                    })
 
-            # Mappings Tab
-            for key, widget in self.column_mapping_widgets["orders"].items():
-                self.config_data["column_mappings"]["orders"][key] = widget.text()
-            for key, widget in self.column_mapping_widgets["stock"].items():
-                self.config_data["column_mappings"]["stock"][key] = widget.text()
+                actions = [
+                    {
+                        "type": a["type"].currentText(),
+                        "value": a["value"].text()
+                    }
+                    for a in rule_w["actions"]
+                ]
 
-            new_courier_mappings = {}
-            for row_ref in self.courier_mapping_widgets:
-                original = row_ref["original"].text().strip()
-                standardized = row_ref["standardized"].text().strip()
-                if original and standardized:
-                    new_courier_mappings[original] = standardized
-            self.config_data["courier_mappings"] = new_courier_mappings
+                new_order_rules.append({
+                    "name": rule_w["name_edit"].text(),
+                    "match": rule_w["match_combo"].currentText(),
+                    "conditions": conditions,
+                    "actions": actions,
+                })
 
-            # Save to server via profile_manager
+            self.config_data["order_rules"] = new_order_rules
+
+            # ========================================
+            # Packing Lists Tab
+            # ========================================
+            new_packing_lists = []
+            for pl_w in self.packing_list_widgets:
+                filters = []
+                for f in pl_w["filters"]:
+                    value_widget = f.get("value_widget")
+                    val = ""
+                    if value_widget:
+                        if isinstance(value_widget, QComboBox):
+                            val = value_widget.currentText()
+                        else:
+                            val = value_widget.text()
+
+                    filters.append({
+                        "field": f["field"].currentText(),
+                        "operator": f["op"].currentText(),
+                        "value": val,
+                    })
+
+                new_packing_lists.append({
+                    "name": pl_w["name"].text(),
+                    "output_filename": pl_w["filename"].text(),
+                    "filters": filters,
+                })
+
+            self.config_data["packing_list_configs"] = new_packing_lists
+
+            # ========================================
+            # Stock Exports Tab
+            # ========================================
+            new_stock_exports = []
+            for se_w in self.stock_export_widgets:
+                filters = []
+                for f in se_w["filters"]:
+                    value_widget = f.get("value_widget")
+                    val = ""
+                    if value_widget:
+                        if isinstance(value_widget, QComboBox):
+                            val = value_widget.currentText()
+                        else:
+                            val = value_widget.text()
+
+                    filters.append({
+                        "field": f["field"].currentText(),
+                        "operator": f["op"].currentText(),
+                        "value": val,
+                    })
+
+                new_stock_exports.append({
+                    "name": se_w["name"].text(),
+                    "output_filename": se_w["filename"].text(),
+                    "filters": filters,
+                })
+
+            self.config_data["stock_export_configs"] = new_stock_exports
+
+            # ========================================
+            # Mappings Tab - Column Mappings
+            # ========================================
+            self.config_data["column_mappings"] = {
+                "orders_required": [],
+                "stock_required": []
+            }
+
+            # Parse orders required columns
+            orders_text = self.orders_required_text.toPlainText().strip()
+            if orders_text:
+                orders_columns = [
+                    line.strip()
+                    for line in orders_text.split('\n')
+                    if line.strip()
+                ]
+                self.config_data["column_mappings"]["orders_required"] = orders_columns
+
+            # Parse stock required columns
+            stock_text = self.stock_required_text.toPlainText().strip()
+            if stock_text:
+                stock_columns = [
+                    line.strip()
+                    for line in stock_text.split('\n')
+                    if line.strip()
+                ]
+                self.config_data["column_mappings"]["stock_required"] = stock_columns
+
+            # ========================================
+            # Mappings Tab - Courier Mappings
+            # ========================================
+            self.config_data["courier_mappings"] = {}
+
+            for row_refs in self.courier_mapping_widgets:
+                courier_code = row_refs["courier_code"].text().strip()
+                patterns_str = row_refs["patterns"].text().strip()
+
+                if courier_code and patterns_str:
+                    # Parse comma-separated patterns
+                    patterns = [
+                        p.strip()
+                        for p in patterns_str.split(',')
+                        if p.strip()
+                    ]
+
+                    self.config_data["courier_mappings"][courier_code] = {
+                        "patterns": patterns,
+                        "case_sensitive": False
+                    }
+
+            # ========================================
+            # Save to server via ProfileManager
+            # ========================================
             success = self.profile_manager.save_shopify_config(
                 self.client_id,
                 self.config_data
@@ -818,20 +1139,29 @@ class SettingsWindow(QDialog):
                 QMessageBox.information(
                     self,
                     "Success",
-                    f"Settings for CLIENT_{self.client_id} saved successfully!"
+                    "Settings saved successfully!"
                 )
-                self.accept()
+                self.accept()  # Close dialog
             else:
-                QMessageBox.warning(
+                QMessageBox.critical(
                     self,
-                    "Save Failed",
-                    "Failed to save settings to server. Please try again."
+                    "Save Error",
+                    "Failed to save settings to server.\nPlease check server connection."
                 )
 
-        except ValueError:
-            QMessageBox.critical(self, "Validation Error", "Low Stock Threshold must be a valid number.")
+        except ValueError as e:
+            QMessageBox.critical(
+                self,
+                "Validation Error",
+                f"Invalid value entered:\n\n{str(e)}\n\nPlease check your inputs."
+            )
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to save settings: {e}")
+            import traceback
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to save settings:\n\n{str(e)}\n\n{traceback.format_exc()}"
+            )
 
 
 if __name__ == "__main__":
