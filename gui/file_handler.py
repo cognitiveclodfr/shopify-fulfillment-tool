@@ -70,21 +70,12 @@ class FileHandler:
             file_type (str): The type of file to validate, either "orders" or
                              "stock".
         """
-        # Get client_id from main window
-        client_id = self.mw.current_client_id
-        if not client_id:
-            self.log.warning(f"No client selected, skipping validation for '{file_type}'")
+        # Get client config from main window
+        if not self.mw.current_client_id or not self.mw.current_client_config:
+            self.log.warning("No client selected or config not loaded")
             return
 
-        # Load client-specific config
-        try:
-            client_config = self.mw.profile_manager.load_shopify_config(client_id)
-            if not client_config:
-                self.log.error(f"Failed to load config for client {client_id}")
-                return
-        except Exception as e:
-            self.log.error(f"Error loading client config: {e}")
-            return
+        client_config = self.mw.current_client_config
 
         if file_type == "orders":
             path = self.mw.orders_file_path
