@@ -287,11 +287,18 @@ class UIManager:
                 enables them based on the current application state.
         """
         self.mw.run_analysis_button.setEnabled(not is_busy)
-        is_data_loaded = not self.mw.analysis_results_df.empty
+
+        # FIX: Check that DataFrame is not None before calling .empty
+        is_data_loaded = (
+            self.mw.analysis_results_df is not None
+            and not self.mw.analysis_results_df.empty
+        )
+
         self.mw.packing_list_button.setEnabled(not is_busy and is_data_loaded)
         self.mw.stock_export_button.setEnabled(not is_busy and is_data_loaded)
         self.mw.report_builder_button.setEnabled(not is_busy and is_data_loaded)
-        self.log.debug(f"UI busy state set to: {is_busy}")
+
+        self.log.debug(f"UI busy state set to: {is_busy}, data_loaded: {is_data_loaded}")
 
     def update_results_table(self, data_df):
         """Populates the main results table with new data from a DataFrame.
