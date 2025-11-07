@@ -404,8 +404,14 @@ class ActionsHandler(QObject):
                 "tags": tags_list
             })
 
+        # Extract session name from path (session_path could be string or Path)
+        if self.mw.session_path:
+            session_id = os.path.basename(str(self.mw.session_path))
+        else:
+            session_id = "unknown"
+
         return {
-            "session_id": self.mw.session_path.name if self.mw.session_path else "unknown",
+            "session_id": session_id,
             "created_at": datetime.now().isoformat(),
             "total_orders": len(orders_data),
             "total_items": int(df['Quantity'].sum()) if 'Quantity' in df.columns else len(df),

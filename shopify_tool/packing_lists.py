@@ -72,7 +72,31 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
         # Exclude specified SKUs if any are provided
         if exclude_skus and not filtered_orders.empty:
             logger.info(f"Excluding SKUs: {exclude_skus}")
-            filtered_orders = filtered_orders[~filtered_orders["SKU"].isin(exclude_skus)]
+            logger.info(f"Total items before exclusion: {len(filtered_orders)}")
+
+            # Normalize SKU for comparison - handles numeric types and leading zeros
+            def normalize_sku(sku):
+                """Normalize SKU: convert to string, remove leading zeros if numeric"""
+                sku_str = str(sku).strip()
+                try:
+                    # Try to convert to int to remove leading zeros: "07" -> 7 -> "7"
+                    return str(int(float(sku_str)))
+                except (ValueError, TypeError):
+                    # Not a number, return as-is (handles alphanumeric SKUs)
+                    return sku_str
+
+            # Normalize both DataFrame SKU column and exclude_skus
+            sku_column_normalized = filtered_orders["SKU"].apply(normalize_sku)
+            exclude_skus_normalized = [normalize_sku(s) for s in exclude_skus]
+
+            logger.info(f"Normalized exclude SKUs: {exclude_skus_normalized}")
+
+            # Create mask for items to keep (NOT in exclude list)
+            mask = ~sku_column_normalized.isin(exclude_skus_normalized)
+            filtered_orders = filtered_orders[mask]
+
+            excluded_count = (~mask).sum()
+            logger.info(f"Excluded {excluded_count} items. Remaining: {len(filtered_orders)}")
 
         if filtered_orders.empty:
             logger.warning(f"Report '{report_name}': No orders found matching the criteria.")

@@ -176,3 +176,44 @@ def test_create_packing_list_with_filters_and_exclude_skus(tmp_path):
     assert len(result_df) == 1
     assert result_df["SKU"].iloc[0] == "SKU-001"
     assert result_df["Order_Number"].iloc[0] == "A1"
+
+
+def test_exclude_skus_with_numeric_types(tmp_path):
+    """
+    Tests that exclude_skus works correctly when SKU is stored as int/float in DataFrame.
+    This is critical for cases like SKU "07" which might be stored as int 7.
+    """
+    # Create DataFrame with NUMERIC SKUs (as they might be stored in Excel/CSV)
+    df = pd.DataFrame(
+        {
+            "Order_Fulfillment_Status": ["Fulfillable"] * 5,
+            "Order_Number": ["A1", "A1", "A2", "A2", "A2"],
+            "SKU": [7, 123, 456, 7, 789],  # SKU as integers, including duplicate
+            "Product_Name": ["Virtual Product", "Real Product 1", "Real Product 2", "Virtual Product", "Real Product 3"],
+            "Quantity": [1, 2, 1, 1, 3],
+            "Shipping_Provider": ["DHL"] * 5,
+            "Destination_Country": ["BG", "", "US", "", "FR"],
+        }
+    )
+
+    out_file = tmp_path / "packing_test_numeric_exclude.xlsx"
+
+    # Exclude SKU "07" (passed as string, but stored as int 7 in DataFrame)
+    exclude_skus = ["07", "789"]  # Also test excluding "789"
+
+    packing_lists.create_packing_list(
+        df, str(out_file), report_name="TestNumericExclude", filters=None, exclude_skus=exclude_skus
+    )
+
+    assert out_file.exists()
+
+    result_df = pd.read_excel(out_file)
+
+    # Should exclude all items with SKU 7 (even though we passed "07") and 789
+    # Should keep only SKU 123 and 456
+    assert len(result_df) == 2
+    assert 123 in result_df["SKU"].values or "123" in result_df["SKU"].values
+    assert 456 in result_df["SKU"].values or "456" in result_df["SKU"].values
+    # Ensure 7 and 789 are NOT in results
+    assert 7 not in result_df["SKU"].values and "7" not in result_df["SKU"].values and "07" not in result_df["SKU"].values
+    assert 789 not in result_df["SKU"].values and "789" not in result_df["SKU"].values
