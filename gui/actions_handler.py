@@ -204,30 +204,46 @@ class ActionsHandler(QObject):
         )
 
         if settings_win.exec():
-            # Update MainWindow config after save
+            # Settings saved successfully
             try:
+                # Reload config in MainWindow
                 self.mw.active_profile_config = self.mw.profile_manager.load_shopify_config(
                     self.mw.current_client_id
                 )
 
-                # Re-validate files
+                # Re-validate files with new settings
+                self.log.info("Re-validating files with updated settings...")
+
                 if self.mw.orders_file_path:
                     self.mw.file_handler.validate_file("orders")
 
                 if self.mw.stock_file_path:
                     self.mw.file_handler.validate_file("stock")
 
-                self.log.info("Settings updated and files re-validated")
+                # Success message
+                QMessageBox.information(
+                    self.mw,
+                    "Settings Updated",
+                    "Settings saved successfully!\n\n"
+                    "Files have been re-validated with new configuration."
+                )
+
+                self.log.info("Settings updated and files re-validated successfully")
 
             except Exception as e:
                 self.log.error(f"Error updating config after save: {e}")
+                QMessageBox.warning(
+                    self.mw,
+                    "Warning",
+                    f"Settings were saved, but failed to reload configuration:\n{str(e)}\n\n"
+                    "Please restart the application."
+                )
 
     def open_report_selection_dialog(self, report_type):
-        """Opens a dialog to select and generate a pre-configured report.
+        """Opens dialog for selecting which reports to generate.
 
         Args:
-            report_type (str): The key for the report configuration list in
-                the main config (e.g., "packing_lists", "stock_exports").
+            report_type (str): Either "packing_lists" or "stock_exports"
         """
         self.log.info(f"Opening report selection dialog: {report_type}")
 
@@ -249,7 +265,6 @@ class ActionsHandler(QObject):
             )
             return
 
-        # Get current session path (use session_path as current_session_path)
         session_path = self.mw.session_path
 
         if not session_path:
@@ -260,32 +275,50 @@ class ActionsHandler(QObject):
             )
             return
 
-        # Get client config
-        client_config = self.mw.active_profile_config
+        # ✅ FIX: Reload fresh config before opening dialog
+        try:
+            fresh_config = self.mw.profile_manager.load_shopify_config(
+                self.mw.current_client_id
+            )
 
-        if not client_config:
-            QMessageBox.warning(
+            if not fresh_config:
+                raise Exception("Failed to load configuration")
+
+            # Update main window config
+            self.mw.active_profile_config = fresh_config
+
+        except Exception as e:
+            QMessageBox.critical(
                 self.mw,
                 "Configuration Error",
-                "Client configuration not loaded."
+                f"Failed to load client configuration:\n{str(e)}"
             )
             return
 
-        # Get report configs from client config
-        report_configs = client_config.get(report_type, [])
+        # ✅ FIX: Use correct config keys
+        if report_type == "packing_lists":
+            config_key = "packing_list_configs"  # Correct key
+        else:  # stock_exports
+            config_key = "stock_export_configs"  # Correct key
+
+        report_configs = fresh_config.get(config_key, [])
 
         if not report_configs:
             QMessageBox.information(
                 self.mw,
                 "No Reports Configured",
-                f"No {report_type.replace('_', ' ')} are configured for this client.\n"
+                f"No {report_type.replace('_', ' ')} are configured for this client.\n\n"
                 f"Please configure them in Client Settings."
             )
             return
 
         # Open selection dialog
+        from gui.report_selection_dialog import ReportSelectionDialog
+
         dialog = ReportSelectionDialog(report_type, report_configs, self.mw)
-        dialog.reportSelected.connect(lambda rc: self._generate_single_report(report_type, rc, session_path))
+        dialog.reportSelected.connect(
+            lambda rc: self._generate_single_report(report_type, rc, session_path)
+        )
         dialog.exec()
 
     def _apply_filters(self, df, filters):
@@ -371,19 +404,19 @@ class ActionsHandler(QObject):
         }
 
     def _generate_single_report(self, report_type, report_config, session_path):
-        """Generates a single report synchronously.
+        """Generates a single report (XLSX + JSON for packing lists).
 
         Args:
-            report_type (str): The type of report to generate ("packing_lists" or "stock_exports").
-            report_config (dict): The specific configuration for the selected report.
-            session_path (str): The path to the current session directory.
+            report_type (str): "packing_lists" or "stock_exports"
+            report_config (dict): Report configuration
+            session_path (Path): Current session directory
         """
         report_name = report_config.get("name", "Unknown")
         self.log.info(f"Generating {report_type}: {report_name}")
         self.mw.log_activity("Report", f"Generating report: {report_name}")
 
         try:
-            # Create output directory based on report type
+            # Create output directory
             if report_type == "packing_lists":
                 output_dir = os.path.join(session_path, "packing_lists")
             else:  # stock_exports
@@ -391,77 +424,82 @@ class ActionsHandler(QObject):
 
             os.makedirs(output_dir, exist_ok=True)
 
-            # Build output filename
-            if report_type == "packing_lists":
-                base_filename = report_config.get("output_filename", f"{report_name}.xlsx")
-                output_file = os.path.join(output_dir, os.path.basename(base_filename))
-            else:  # stock_exports
-                base_filename = report_config.get("output_filename", f"{report_name}.xls")
+            # ========================================
+            # APPLY FILTERS
+            # ========================================
+            filters = report_config.get("filters", [])
+            filtered_df = self._apply_filters(self.mw.analysis_results_df, filters)
+
+            if filtered_df.empty:
+                QMessageBox.warning(
+                    self.mw,
+                    "No Data",
+                    f"No data matches the filters for report: {report_name}"
+                )
+                return
+
+            # ========================================
+            # GENERATE XLSX
+            # ========================================
+            base_filename = report_config.get("output_filename", f"{report_name}.xlsx")
+
+            if report_type == "stock_exports":
+                # Add timestamp for stock exports
                 datestamp = datetime.now().strftime("%Y-%m-%d")
                 name, ext = os.path.splitext(os.path.basename(base_filename))
                 timestamped_filename = f"{name}_{datestamp}{ext}"
                 output_file = os.path.join(output_dir, timestamped_filename)
-
-            # Create a copy of config with updated output path
-            report_config_copy = report_config.copy()
-            report_config_copy["output_filename"] = output_file
-
-            # Generate report
-            if report_type == "packing_lists":
-                success, message = core.create_packing_list_report(
-                    self.mw.analysis_results_df,
-                    report_config_copy
-                )
-            else:  # stock_exports
-                success, message = core.create_stock_export_report(
-                    self.mw.analysis_results_df,
-                    report_config_copy
-                )
-
-            if success:
-                self.log.info(f"Generated {report_name}: {output_file}")
-                self.mw.log_activity("Report", f"Report generated: {output_file}")
-
-                # Generate JSON for Packing Tool (packing lists only)
-                if report_type == "packing_lists":
-                    json_path = os.path.join(output_dir, "analysis_data.json")
-
-                    try:
-                        # Apply same filters to get filtered DataFrame
-                        filters = report_config.get("filters", [])
-                        filtered_df = self._apply_filters(self.mw.analysis_results_df, filters)
-
-                        # Generate JSON
-                        analysis_json = self._create_analysis_json(filtered_df)
-
-                        import json
-                        with open(json_path, 'w', encoding='utf-8') as f:
-                            json.dump(analysis_json, f, indent=2, ensure_ascii=False)
-
-                        self.log.info(f"Generated JSON for Packing Tool: {json_path}")
-
-                    except Exception as e:
-                        self.log.error(f"Failed to generate JSON: {e}")
-
-                QMessageBox.information(
-                    self.mw,
-                    "Report Generated",
-                    f"Report generated successfully:\n\n{os.path.basename(output_file)}\n\nLocation: {output_dir}"
-                )
             else:
-                self.log.error(f"Failed to generate {report_name}: {message}")
-                QMessageBox.critical(
-                    self.mw,
-                    "Generation Failed",
-                    f"Failed to generate report:\n\n{message}"
-                )
+                output_file = os.path.join(output_dir, os.path.basename(base_filename))
+
+            # Save to Excel
+            try:
+                filtered_df.to_excel(output_file, index=False, engine='openpyxl')
+                self.log.info(f"Generated XLSX: {output_file}")
+            except Exception as e:
+                raise Exception(f"Failed to save XLSX: {str(e)}")
+
+            # ========================================
+            # GENERATE JSON (packing lists only)
+            # ========================================
+            if report_type == "packing_lists":
+                json_path = os.path.join(output_dir, "analysis_data.json")
+
+                try:
+                    analysis_json = self._create_analysis_json(filtered_df)
+
+                    import json
+                    with open(json_path, 'w', encoding='utf-8') as f:
+                        json.dump(analysis_json, f, indent=2, ensure_ascii=False)
+
+                    self.log.info(f"Generated JSON for Packing Tool: {json_path}")
+
+                except Exception as e:
+                    self.log.error(f"Failed to generate JSON: {e}")
+                    # Don't fail the whole operation if JSON generation fails
+
+            # ========================================
+            # SUCCESS MESSAGE
+            # ========================================
+            self.mw.log_activity("Report", f"Report generated: {output_file}")
+
+            message = f"Report generated successfully:\n\n{os.path.basename(output_file)}\n\nLocation: {output_dir}"
+
+            if report_type == "packing_lists":
+                message += f"\n\nJSON file for Packing Tool:\n{json_path}"
+
+            QMessageBox.information(
+                self.mw,
+                "Report Generated",
+                message
+            )
 
         except Exception as e:
-            self.log.error(f"Exception generating {report_name}: {e}", exc_info=True)
+            self.log.error(f"Failed to generate report: {e}", exc_info=True)
             QMessageBox.critical(
                 self.mw,
-                "Error",
-                f"An error occurred while generating the report:\n\n{str(e)}"
+                "Report Generation Failed",
+                f"Failed to generate report '{report_name}':\n\n{str(e)}"
             )
 
 
