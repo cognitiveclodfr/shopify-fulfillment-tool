@@ -388,13 +388,20 @@ class ActionsHandler(QObject):
             # Get order-level info from first row
             first_row = group.iloc[0]
 
+            # Handle tags - check if it's a string before splitting
+            tags_value = first_row.get('Tags', '')
+            if isinstance(tags_value, str) and tags_value.strip():
+                tags_list = [t.strip() for t in tags_value.split(',') if t.strip()]
+            else:
+                tags_list = []
+
             orders_data.append({
                 "order_number": str(order_num),
                 "order_type": str(first_row.get('Order_Type', '')),
                 "items": items,
                 "courier": str(first_row.get('Shipping_Provider', '')),
                 "destination": str(first_row.get('Destination_Country', '')),
-                "tags": first_row.get('Tags', '').split(',') if first_row.get('Tags') else []
+                "tags": tags_list
             })
 
         return {
@@ -430,18 +437,9 @@ class ActionsHandler(QObject):
             output_dir.mkdir(parents=True, exist_ok=True)
 
             # ========================================
-            # APPLY FILTERS
+            # GET FILTERS AND CONFIG
             # ========================================
             filters = report_config.get("filters", [])
-            filtered_df = self._apply_filters(self.mw.analysis_results_df, filters)
-
-            if filtered_df.empty:
-                QMessageBox.warning(
-                    self.mw,
-                    "No Data",
-                    f"No data matches the filters for report: {report_name}"
-                )
-                return
 
             # ========================================
             # DETERMINE OUTPUT FILENAME
@@ -479,8 +477,9 @@ class ActionsHandler(QObject):
                     exclude_skus = [s.strip() for s in exclude_skus.split(',') if s.strip()]
 
                 # Use the proper packing_lists module
+                # Pass UNFILTERED DataFrame - the module will apply filters itself
                 packing_lists.create_packing_list(
-                    analysis_df=filtered_df,
+                    analysis_df=self.mw.analysis_results_df,
                     output_file=output_file,
                     report_name=report_name,
                     filters=filters,
@@ -496,12 +495,19 @@ class ActionsHandler(QObject):
                 json_path = str(output_dir / json_filename)
 
                 try:
-                    analysis_json = self._create_analysis_json(filtered_df)
+                    # Apply filters to get data for JSON
+                    filtered_df = self._apply_filters(self.mw.analysis_results_df, filters)
 
-                    with open(json_path, 'w', encoding='utf-8') as f:
-                        json.dump(analysis_json, f, ensure_ascii=False, indent=2)
+                    if not filtered_df.empty:
+                        analysis_json = self._create_analysis_json(filtered_df)
 
-                    self.log.info(f"Packing list JSON created: {json_path}")
+                        with open(json_path, 'w', encoding='utf-8') as f:
+                            json.dump(analysis_json, f, ensure_ascii=False, indent=2)
+
+                        self.log.info(f"Packing list JSON created: {json_path}")
+                    else:
+                        self.log.warning(f"Skipping JSON creation - no data after filtering")
+
                 except Exception as e:
                     self.log.error(f"Failed to create JSON: {e}", exc_info=True)
                     # Don't fail the whole report if JSON fails
@@ -510,8 +516,9 @@ class ActionsHandler(QObject):
                 self.log.info(f"Creating stock export using stock_export module")
 
                 # Use the proper stock_export module
+                # Pass UNFILTERED DataFrame - the module will apply filters itself
                 stock_export.create_stock_export(
-                    analysis_df=filtered_df,
+                    analysis_df=self.mw.analysis_results_df,
                     output_file=output_file,
                     report_name=report_name,
                     filters=filters
