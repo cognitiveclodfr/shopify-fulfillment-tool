@@ -1,6 +1,7 @@
 import os
 import logging
-from PySide6.QtWidgets import QFileDialog
+import pandas as pd
+from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from shopify_tool import core
 
@@ -44,19 +45,48 @@ class FileHandler:
             self.check_files_ready()
 
     def select_stock_file(self):
-        """Opens a file dialog for the user to select the stock CSV file.
+        """Opens file dialog for stock CSV selection and loads file.
 
-        After a file is selected, it updates the corresponding UI labels,
-        triggers header validation for the file, and checks if the application
-        is ready to run the analysis.
+        After a file is selected, it validates the file with the correct
+        delimiter from the client configuration.
         """
-        filepath, _ = QFileDialog.getOpenFileName(self.mw, "Select Stock File", "", "CSV files (*.csv)")
-        if filepath:
-            self.mw.stock_file_path = filepath
-            self.mw.stock_file_path_label.setText(os.path.basename(filepath))
-            self.log.info(f"Stock file selected: {filepath}")
-            self.validate_file("stock")
-            self.check_files_ready()
+        filepath, _ = QFileDialog.getOpenFileName(
+            self.mw,
+            "Select Stock File",
+            "",
+            "CSV files (*.csv);;All Files (*)"
+        )
+
+        if not filepath:
+            return
+
+        self.mw.stock_file_path = filepath
+        self.mw.stock_file_path_label.setText(os.path.basename(filepath))
+        self.log.info(f"Stock file selected: {filepath}")
+
+        # Get delimiter from config
+        config = self.mw.active_profile_config
+        delimiter = config.get("settings", {}).get("stock_csv_delimiter", ";")
+
+        # Try to load CSV with correct delimiter to verify it's readable
+        try:
+            stock_df = pd.read_csv(filepath, delimiter=delimiter)
+            self.log.info(f"Loaded stock CSV with delimiter '{delimiter}': {len(stock_df)} rows")
+
+        except Exception as e:
+            self.log.error(f"Failed to load stock CSV: {e}")
+            QMessageBox.critical(
+                self.mw,
+                "File Load Error",
+                f"Failed to load stock file:\n{str(e)}\n\n"
+                f"Make sure the delimiter is set correctly in Settings.\n"
+                f"Current delimiter: '{delimiter}'"
+            )
+            return
+
+        # Validate headers
+        self.validate_file("stock")
+        self.check_files_ready()
 
     def validate_file(self, file_type):
         """Validates that a selected CSV file contains the required headers.

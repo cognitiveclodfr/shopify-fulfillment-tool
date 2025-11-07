@@ -176,22 +176,37 @@ class SettingsWindow(QDialog):
         settings_box = QGroupBox("General Settings")
         settings_layout = QFormLayout(settings_box)
 
-        # Stock CSV delimiter
+        # Stock CSV delimiter with improved tooltip
         delimiter_label = QLabel("Stock CSV Delimiter:")
-        delimiter_label.setToolTip("Character used to separate columns in stock CSV (usually ';' or ',')")
         self.stock_delimiter_edit = QLineEdit(
             self.config_data.get("settings", {}).get("stock_csv_delimiter", ";")
         )
         self.stock_delimiter_edit.setMaximumWidth(100)
+
+        # Add informative tooltip
+        self.stock_delimiter_edit.setToolTip(
+            "Character used to separate columns in stock CSV file.\n\n"
+            "Common values:\n"
+            "  • Semicolon (;) - for exports from local warehouse\n"
+            "  • Comma (,) - for Shopify exports\n\n"
+            "Make sure this matches your stock CSV file format."
+        )
+
         settings_layout.addRow(delimiter_label, self.stock_delimiter_edit)
 
-        # Low stock threshold
+        # Low stock threshold with improved tooltip
         threshold_label = QLabel("Low Stock Threshold:")
-        threshold_label.setToolTip("Trigger stock alerts when quantity falls below this number")
         self.low_stock_edit = QLineEdit(
             str(self.config_data.get("settings", {}).get("low_stock_threshold", 5))
         )
         self.low_stock_edit.setMaximumWidth(100)
+
+        # Add informative tooltip
+        self.low_stock_edit.setToolTip(
+            "Trigger stock alerts when quantity falls below this number.\n\n"
+            "Items with stock below this threshold will be marked in analysis."
+        )
+
         settings_layout.addRow(threshold_label, self.low_stock_edit)
 
         main_layout.addWidget(settings_box)
