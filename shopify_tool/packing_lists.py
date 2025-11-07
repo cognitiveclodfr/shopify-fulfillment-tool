@@ -71,8 +71,12 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
 
         # Exclude specified SKUs if any are provided
         if exclude_skus and not filtered_orders.empty:
-            logger.info(f"Excluding SKUs: {exclude_skus}")
-            logger.info(f"Total items before exclusion: {len(filtered_orders)}")
+            logger.info(f"[EXCLUDE_SKUS] Received exclude list: {exclude_skus}")
+            logger.info(f"[EXCLUDE_SKUS] Total items before exclusion: {len(filtered_orders)}")
+
+            # Show unique SKUs in DataFrame for debugging
+            unique_skus = filtered_orders["SKU"].unique().tolist()
+            logger.info(f"[EXCLUDE_SKUS] Unique SKUs in DataFrame: {unique_skus[:20]}...")  # Show first 20
 
             # Normalize SKU for comparison - handles numeric types and leading zeros
             def normalize_sku(sku):
@@ -89,14 +93,15 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
             sku_column_normalized = filtered_orders["SKU"].apply(normalize_sku)
             exclude_skus_normalized = [normalize_sku(s) for s in exclude_skus]
 
-            logger.info(f"Normalized exclude SKUs: {exclude_skus_normalized}")
+            logger.info(f"[EXCLUDE_SKUS] Normalized exclude list: {exclude_skus_normalized}")
+            logger.info(f"[EXCLUDE_SKUS] Sample normalized DataFrame SKUs: {sku_column_normalized.unique().tolist()[:20]}...")
 
             # Create mask for items to keep (NOT in exclude list)
             mask = ~sku_column_normalized.isin(exclude_skus_normalized)
             filtered_orders = filtered_orders[mask]
 
             excluded_count = (~mask).sum()
-            logger.info(f"Excluded {excluded_count} items. Remaining: {len(filtered_orders)}")
+            logger.info(f"[EXCLUDE_SKUS] Excluded {excluded_count} items. Remaining: {len(filtered_orders)}")
 
         if filtered_orders.empty:
             logger.warning(f"Report '{report_name}': No orders found matching the criteria.")

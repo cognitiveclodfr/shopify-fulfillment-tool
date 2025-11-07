@@ -479,8 +479,16 @@ class ActionsHandler(QObject):
 
                 # Get exclude_skus from config
                 exclude_skus = report_config.get("exclude_skus", [])
+                self.log.info(f"[EXCLUDE_SKUS] Raw from config: {exclude_skus} (type: {type(exclude_skus)})")
+
                 if isinstance(exclude_skus, str):
                     exclude_skus = [s.strip() for s in exclude_skus.split(',') if s.strip()]
+                    self.log.info(f"[EXCLUDE_SKUS] After string split: {exclude_skus}")
+                elif not isinstance(exclude_skus, list):
+                    exclude_skus = []
+                    self.log.warning(f"[EXCLUDE_SKUS] Unexpected type, reset to empty list")
+
+                self.log.info(f"[EXCLUDE_SKUS] Final value passed to packing_lists: {exclude_skus}")
 
                 # Use the proper packing_lists module
                 # Pass UNFILTERED DataFrame - the module will apply filters itself
