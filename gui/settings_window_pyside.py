@@ -1069,10 +1069,17 @@ class SettingsWindow(QDialog):
                         "value": val,
                     })
 
+                # Parse exclude_skus from comma-separated string
+                exclude_skus_text = pl_w["exclude_skus"].text().strip()
+                exclude_skus = []
+                if exclude_skus_text:
+                    exclude_skus = [s.strip() for s in exclude_skus_text.split(',') if s.strip()]
+
                 new_packing_lists.append({
                     "name": pl_w["name"].text(),
                     "output_filename": pl_w["filename"].text(),
                     "filters": filters,
+                    "exclude_skus": exclude_skus,
                 })
 
             self.config_data["packing_list_configs"] = new_packing_lists

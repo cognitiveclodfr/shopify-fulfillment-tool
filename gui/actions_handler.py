@@ -9,6 +9,8 @@ from PySide6.QtWidgets import QMessageBox, QInputDialog
 from gui.worker import Worker
 from shopify_tool import core
 from shopify_tool.analysis import toggle_order_fulfillment
+from shopify_tool import packing_lists
+from shopify_tool import stock_export
 from gui.settings_window_pyside import SettingsWindow
 from gui.report_selection_dialog import ReportSelectionDialog
 from gui.report_builder_window_pyside import ReportBuilderWindow
@@ -386,17 +388,30 @@ class ActionsHandler(QObject):
             # Get order-level info from first row
             first_row = group.iloc[0]
 
+            # Handle tags - check if it's a string before splitting
+            tags_value = first_row.get('Tags', '')
+            if isinstance(tags_value, str) and tags_value.strip():
+                tags_list = [t.strip() for t in tags_value.split(',') if t.strip()]
+            else:
+                tags_list = []
+
             orders_data.append({
                 "order_number": str(order_num),
                 "order_type": str(first_row.get('Order_Type', '')),
                 "items": items,
                 "courier": str(first_row.get('Shipping_Provider', '')),
                 "destination": str(first_row.get('Destination_Country', '')),
-                "tags": first_row.get('Tags', '').split(',') if first_row.get('Tags') else []
+                "tags": tags_list
             })
 
+        # Extract session name from path (session_path could be string or Path)
+        if self.mw.session_path:
+            session_id = os.path.basename(str(self.mw.session_path))
+        else:
+            session_id = "unknown"
+
         return {
-            "session_id": self.mw.session_path.name if self.mw.session_path else "unknown",
+            "session_id": session_id,
             "created_at": datetime.now().isoformat(),
             "total_orders": len(orders_data),
             "total_items": int(df['Quantity'].sum()) if 'Quantity' in df.columns else len(df),
@@ -408,9 +423,12 @@ class ActionsHandler(QObject):
 
         Args:
             report_type (str): "packing_lists" or "stock_exports"
-            report_config (dict): Report configuration
+            report_config (dict): Report configuration with name, filters, etc.
             session_path (Path): Current session directory
         """
+        from pathlib import Path
+        import json
+
         report_name = report_config.get("name", "Unknown")
         self.log.info(f"Generating {report_type}: {report_name}")
         self.mw.log_activity("Report", f"Generating report: {report_name}")
@@ -418,87 +436,127 @@ class ActionsHandler(QObject):
         try:
             # Create output directory
             if report_type == "packing_lists":
-                output_dir = os.path.join(session_path, "packing_lists")
+                output_dir = Path(session_path) / "packing_lists"
             else:  # stock_exports
-                output_dir = os.path.join(session_path, "stock_exports")
+                output_dir = Path(session_path) / "stock_exports"
 
-            os.makedirs(output_dir, exist_ok=True)
+            output_dir.mkdir(parents=True, exist_ok=True)
 
             # ========================================
-            # APPLY FILTERS
+            # GET FILTERS AND CONFIG
             # ========================================
             filters = report_config.get("filters", [])
-            filtered_df = self._apply_filters(self.mw.analysis_results_df, filters)
-
-            if filtered_df.empty:
-                QMessageBox.warning(
-                    self.mw,
-                    "No Data",
-                    f"No data matches the filters for report: {report_name}"
-                )
-                return
 
             # ========================================
-            # GENERATE XLSX
+            # DETERMINE OUTPUT FILENAME
             # ========================================
-            base_filename = report_config.get("output_filename", f"{report_name}.xlsx")
+            base_filename = report_config.get("output_filename", "")
 
-            if report_type == "stock_exports":
-                # Add timestamp for stock exports
-                datestamp = datetime.now().strftime("%Y-%m-%d")
-                name, ext = os.path.splitext(os.path.basename(base_filename))
-                timestamped_filename = f"{name}_{datestamp}{ext}"
-                output_file = os.path.join(output_dir, timestamped_filename)
+            if not base_filename:
+                # Generate default filename
+                if report_type == "packing_lists":
+                    base_filename = f"{report_name}.xlsx"
+                else:
+                    # Add timestamp for stock exports
+                    datestamp = datetime.now().strftime("%Y-%m-%d")
+                    base_filename = f"{report_name}_{datestamp}.xls"
+
+            # Ensure correct extension
+            if report_type == "packing_lists":
+                if not base_filename.endswith('.xlsx'):
+                    base_filename = base_filename.replace('.xls', '.xlsx')
             else:
-                output_file = os.path.join(output_dir, os.path.basename(base_filename))
+                if not base_filename.endswith('.xls'):
+                    base_filename = base_filename + '.xls'
 
-            # Save to Excel
-            try:
-                filtered_df.to_excel(output_file, index=False, engine='openpyxl')
-                self.log.info(f"Generated XLSX: {output_file}")
-            except Exception as e:
-                raise Exception(f"Failed to save XLSX: {str(e)}")
+            output_file = str(output_dir / base_filename)
 
             # ========================================
-            # GENERATE JSON (packing lists only)
+            # GENERATE REPORT USING PROPER MODULES
             # ========================================
             if report_type == "packing_lists":
-                json_path = os.path.join(output_dir, "analysis_data.json")
+                self.log.info(f"Creating packing list using packing_lists module")
+
+                # Get exclude_skus from config
+                exclude_skus = report_config.get("exclude_skus", [])
+                self.log.info(f"[EXCLUDE_SKUS] Raw from config: {exclude_skus} (type: {type(exclude_skus)})")
+
+                if isinstance(exclude_skus, str):
+                    exclude_skus = [s.strip() for s in exclude_skus.split(',') if s.strip()]
+                    self.log.info(f"[EXCLUDE_SKUS] After string split: {exclude_skus}")
+                elif not isinstance(exclude_skus, list):
+                    exclude_skus = []
+                    self.log.warning(f"[EXCLUDE_SKUS] Unexpected type, reset to empty list")
+
+                self.log.info(f"[EXCLUDE_SKUS] Final value passed to packing_lists: {exclude_skus}")
+
+                # Use the proper packing_lists module
+                # Pass UNFILTERED DataFrame - the module will apply filters itself
+                packing_lists.create_packing_list(
+                    analysis_df=self.mw.analysis_results_df,
+                    output_file=output_file,
+                    report_name=report_name,
+                    filters=filters,
+                    exclude_skus=exclude_skus
+                )
+
+                self.log.info(f"Packing list XLSX created: {output_file}")
+
+                # ========================================
+                # CREATE JSON COPY FOR PACKING TOOL
+                # ========================================
+                json_filename = base_filename.replace('.xlsx', '.json')
+                json_path = str(output_dir / json_filename)
 
                 try:
-                    analysis_json = self._create_analysis_json(filtered_df)
+                    # Apply filters to get data for JSON
+                    filtered_df = self._apply_filters(self.mw.analysis_results_df, filters)
 
-                    import json
-                    with open(json_path, 'w', encoding='utf-8') as f:
-                        json.dump(analysis_json, f, indent=2, ensure_ascii=False)
+                    if not filtered_df.empty:
+                        analysis_json = self._create_analysis_json(filtered_df)
 
-                    self.log.info(f"Generated JSON for Packing Tool: {json_path}")
+                        with open(json_path, 'w', encoding='utf-8') as f:
+                            json.dump(analysis_json, f, ensure_ascii=False, indent=2)
+
+                        self.log.info(f"Packing list JSON created: {json_path}")
+                    else:
+                        self.log.warning(f"Skipping JSON creation - no data after filtering")
 
                 except Exception as e:
-                    self.log.error(f"Failed to generate JSON: {e}")
-                    # Don't fail the whole operation if JSON generation fails
+                    self.log.error(f"Failed to create JSON: {e}", exc_info=True)
+                    # Don't fail the whole report if JSON fails
+
+            else:  # stock_exports
+                self.log.info(f"Creating stock export using stock_export module")
+
+                # Use the proper stock_export module
+                # Pass UNFILTERED DataFrame - the module will apply filters itself
+                stock_export.create_stock_export(
+                    analysis_df=self.mw.analysis_results_df,
+                    output_file=output_file,
+                    report_name=report_name,
+                    filters=filters
+                )
+
+                self.log.info(f"Stock export created: {output_file}")
 
             # ========================================
             # SUCCESS MESSAGE
             # ========================================
-            self.mw.log_activity("Report", f"Report generated: {output_file}")
-
-            message = f"Report generated successfully:\n\n{os.path.basename(output_file)}\n\nLocation: {output_dir}"
-
-            if report_type == "packing_lists":
-                message += f"\n\nJSON file for Packing Tool:\n{json_path}"
-
             QMessageBox.information(
                 self.mw,
                 "Report Generated",
-                message
+                f"Report '{report_name}' generated successfully.\n\n"
+                f"Location: {output_file}"
             )
 
+            self.mw.log_activity("Report", f"Generated: {report_name}")
+
         except Exception as e:
-            self.log.error(f"Failed to generate report: {e}", exc_info=True)
+            self.log.error(f"Failed to generate report '{report_name}': {e}", exc_info=True)
             QMessageBox.critical(
                 self.mw,
-                "Report Generation Failed",
+                "Generation Failed",
                 f"Failed to generate report '{report_name}':\n\n{str(e)}"
             )
 
