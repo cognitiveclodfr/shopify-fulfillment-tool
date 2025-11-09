@@ -99,34 +99,14 @@ class MainWindow(QMainWindow):
 
     def _init_managers(self):
         """Initialize ProfileManager and SessionManager for the new architecture."""
-        # Get file server base path from config or environment
-        # For now, use a default or read from a simple config file
-        config_path = get_persistent_data_path("server_config.json")
+        # ProfileManager now auto-detects environment:
+        # 1. First checks FULFILLMENT_SERVER_PATH environment variable (dev mode)
+        # 2. Falls back to default production path
+        # This allows seamless switching between dev and production without code changes
 
-        # Default file server path
-        default_base_path = r"\\192.168.88.101\Z_GreenDelivery\WAREHOUSE\0UFulfilment"
-
-        # Try to load from config
-        if os.path.exists(config_path):
-            try:
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    server_config = json.load(f)
-                    base_path = server_config.get("file_server_base_path", default_base_path)
-            except Exception as e:
-                logging.warning(f"Failed to load server config: {e}")
-                base_path = default_base_path
-        else:
-            base_path = default_base_path
-            # Save default config
-            try:
-                with open(config_path, 'w', encoding='utf-8') as f:
-                    json.dump({"file_server_base_path": base_path}, f, indent=2)
-            except Exception as e:
-                logging.warning(f"Failed to save server config: {e}")
-
-        # Initialize ProfileManager
+        # Initialize ProfileManager with auto-detection (pass None or no argument)
         try:
-            self.profile_manager = ProfileManager(base_path)
+            self.profile_manager = ProfileManager()  # Auto-detects from environment
             self.session_manager = SessionManager(self.profile_manager)
             logging.info("ProfileManager and SessionManager initialized successfully")
         except NetworkError as e:
