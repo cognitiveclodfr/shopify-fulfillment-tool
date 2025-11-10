@@ -563,7 +563,7 @@ pytest
 
 ### Building Executable
 ```bash
-pyinstaller --onefile --windowed --add-data "config.json;." gui_main.py
+pyinstaller --onefile --windowed --add-data "data/templates;data/templates" gui_main.py
 ```
 
 ### CI/CD Pipeline
