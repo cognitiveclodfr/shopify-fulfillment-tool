@@ -13,7 +13,6 @@ from shopify_tool import packing_lists
 from shopify_tool import stock_export
 from gui.settings_window_pyside import SettingsWindow
 from gui.report_selection_dialog import ReportSelectionDialog
-from gui.report_builder_window_pyside import ReportBuilderWindow
 
 
 class ActionsHandler(QObject):
@@ -644,14 +643,6 @@ class ActionsHandler(QObject):
         else:
             self.log.warning(f"Failed to toggle status for order {order_number}: {result}")
             QMessageBox.critical(self.mw, "Error", result)
-
-    def open_report_builder_window(self):
-        """Opens the custom report builder dialog window."""
-        if self.mw.analysis_results_df.empty:
-            QMessageBox.warning(self.mw, "No Data", "Please run an analysis before using the Report Builder.")
-            return
-        dialog = ReportBuilderWindow(self.mw.analysis_results_df, self.mw)
-        dialog.exec()
 
     def add_tag_manually(self, order_number):
         """Opens a dialog to add a manual tag to an order's 'Status_Note'.

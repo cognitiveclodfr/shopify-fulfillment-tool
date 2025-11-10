@@ -13,7 +13,7 @@ from PySide6.QtGui import QAction
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from shopify_tool.utils import get_persistent_data_path, resource_path
+from shopify_tool.utils import resource_path
 from shopify_tool.analysis import recalculate_statistics
 from shopify_tool.profile_manager import ProfileManager, NetworkError
 from shopify_tool.session_manager import SessionManager
@@ -88,14 +88,10 @@ class MainWindow(QMainWindow):
         self.file_handler = FileHandler(self)
         self.actions_handler = ActionsHandler(self)
 
-        self.session_file = get_persistent_data_path("session_data.pkl")
-
         # Setup UI and connect signals
         self.ui_manager.create_widgets()
         self.connect_signals()
         self.setup_logging()
-
-        self.load_session()
 
     def _init_managers(self):
         """Initialize ProfileManager and SessionManager for the new architecture."""
@@ -170,8 +166,6 @@ class MainWindow(QMainWindow):
                     self.packing_list_button.setEnabled(False)
                 if hasattr(self, 'stock_export_button'):
                     self.stock_export_button.setEnabled(False)
-                if hasattr(self, 'report_builder_button'):
-                    self.report_builder_button.setEnabled(False)
 
                 self.log_activity("Client", f"Switched to CLIENT_{client_id}")
             else:
@@ -224,7 +218,6 @@ class MainWindow(QMainWindow):
         self.settings_button.clicked.connect(self.actions_handler.open_settings_window)
 
         # Reports
-        self.report_builder_button.clicked.connect(self.actions_handler.open_report_builder_window)
         self.packing_list_button.clicked.connect(
             lambda: self.actions_handler.open_report_selection_dialog("packing_lists")
         )
@@ -395,8 +388,6 @@ class MainWindow(QMainWindow):
                         self.packing_list_button.setEnabled(True)
                     if hasattr(self, 'stock_export_button'):
                         self.stock_export_button.setEnabled(True)
-                    if hasattr(self, 'report_builder_button'):
-                        self.report_builder_button.setEnabled(True)
 
                     self.log_activity("Session", f"Loaded session: {session_name}")
                     QMessageBox.information(
@@ -625,46 +616,9 @@ class MainWindow(QMainWindow):
         Args:
             event: The close event.
         """
-        if self.analysis_results_df is not None and not self.analysis_results_df.empty:
-            try:
-                session_data = {"dataframe": self.analysis_results_df, "visible_columns": self.visible_columns}
-                with open(self.session_file, "wb") as f:
-                    pickle.dump(session_data, f)
-                self.log_activity("Session", "Session data saved on exit.")
-            except Exception as e:
-                logging.error(f"Error saving session automatically: {e}", exc_info=True)
+        # Session data is now managed by SessionManager on the server
+        # No need to save local session files
         event.accept()
-
-    def load_session(self):
-        """Loads a previous session from a pickle file if available.
-
-        If a session file exists, it prompts the user to restore it. If they
-        agree, the DataFrame and column visibility are loaded from the file,
-        and the UI is updated. The session file is deleted after the attempt.
-        """
-        if os.path.exists(self.session_file):
-            reply = QMessageBox.question(
-                self, "Restore Session", "A previous session was found. Do you want to restore it?"
-            )
-            if reply == QMessageBox.Yes:
-                try:
-                    with open(self.session_file, "rb") as f:
-                        session_data = pickle.load(f)
-                    self.analysis_results_df = session_data.get("dataframe", None)
-                    if self.analysis_results_df is not None and not self.analysis_results_df.empty:
-                        all_df_cols = [c for c in self.analysis_results_df.columns if c != "Order_Number"]
-                        self.visible_columns = session_data.get("visible_columns", all_df_cols)
-                        self.all_columns = all_df_cols
-                        self._update_all_views()
-                        self.log_activity("Session", "Restored previous session.")
-                    else:
-                        logging.info("No valid session data to restore")
-                except Exception as e:
-                    QMessageBox.critical(self, "Load Error", f"Failed to load session file: {e}")
-            try:
-                os.remove(self.session_file)
-            except Exception as e:
-                self.log_activity("Error", f"Failed to remove session file: {e}")
 
 
 if __name__ == "__main__":

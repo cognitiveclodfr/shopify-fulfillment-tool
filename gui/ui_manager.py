@@ -150,16 +150,12 @@ class UIManager:
         self.mw.packing_list_button.setToolTip("Generate packing lists based on pre-defined filters.")
         self.mw.stock_export_button = QPushButton("Create Stock Export")
         self.mw.stock_export_button.setToolTip("Generate stock export files for couriers.")
-        self.mw.report_builder_button = QPushButton("Report Builder")
-        self.mw.report_builder_button.setToolTip("Create a custom report with your own filters and columns.")
 
         self.mw.packing_list_button.setEnabled(False)
         self.mw.stock_export_button.setEnabled(False)
-        self.mw.report_builder_button.setEnabled(False)
 
         layout.addWidget(self.mw.packing_list_button)
         layout.addWidget(self.mw.stock_export_button)
-        layout.addWidget(self.mw.report_builder_button)
         layout.addStretch()
         return group
 
@@ -296,7 +292,6 @@ class UIManager:
 
         self.mw.packing_list_button.setEnabled(not is_busy and is_data_loaded)
         self.mw.stock_export_button.setEnabled(not is_busy and is_data_loaded)
-        self.mw.report_builder_button.setEnabled(not is_busy and is_data_loaded)
 
         self.log.debug(f"UI busy state set to: {is_busy}, data_loaded: {is_data_loaded}")
 
