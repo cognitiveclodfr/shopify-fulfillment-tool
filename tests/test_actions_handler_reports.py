@@ -243,6 +243,8 @@ def test_generate_packing_list_with_exclude_skus(mock_packing_lists, tmp_path):
     with open(json_path, 'r', encoding='utf-8') as f:
         json_data = json.load(f)
 
-    # Both items should be in JSON (exclusion happens in packing module, not in JSON)
+    # JSON should exclude SKU-EXCLUDE (same as XLSX)
     assert len(json_data["orders"]) == 1
-    assert len(json_data["orders"][0]["items"]) == 2
+    assert len(json_data["orders"][0]["items"]) == 1  # Only SKU-001, SKU-EXCLUDE is excluded
+    assert json_data["orders"][0]["items"][0]["sku"] == "SKU-001"
+    assert json_data["total_items"] == 1  # Only 1 item after exclusion
