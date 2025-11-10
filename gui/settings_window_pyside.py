@@ -1,4 +1,5 @@
 import sys
+import os
 import json
 import pandas as pd
 from PySide6.QtWidgets import (
@@ -595,7 +596,7 @@ class SettingsWindow(QDialog):
         self.packing_lists_layout.setAlignment(Qt.AlignTop)
         scroll_area.setWidget(scroll_content)
         self.tab_widget.addTab(tab, "Packing Lists")
-        for pl_config in self.config_data.get("packing_lists", []):
+        for pl_config in self.config_data.get("packing_list_configs", []):
             self.add_packing_list_widget(pl_config)
 
     def add_packing_list_widget(self, config=None):
@@ -755,7 +756,7 @@ class SettingsWindow(QDialog):
         self.stock_exports_layout.setAlignment(Qt.AlignTop)
         scroll_area.setWidget(scroll_content)
         self.tab_widget.addTab(tab, "Stock Exports")
-        for se_config in self.config_data.get("stock_exports", []):
+        for se_config in self.config_data.get("stock_export_configs", []):
             self.add_stock_export_widget(se_config)
 
     def add_stock_export_widget(self, config=None):
