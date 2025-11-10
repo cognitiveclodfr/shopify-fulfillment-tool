@@ -559,15 +559,32 @@ class ActionsHandler(QObject):
                     # Apply filters to get data for JSON
                     filtered_df = self._apply_filters(self.mw.analysis_results_df, filters)
 
-                    if not filtered_df.empty:
-                        analysis_json = self._create_analysis_json(filtered_df)
+                    # ========================================
+                    # Apply exclude_skus to DataFrame for JSON (same as XLSX)
+                    # ========================================
+                    if isinstance(exclude_skus, str):
+                        exclude_skus_list = [s.strip() for s in exclude_skus.split(',') if s.strip()]
+                    elif isinstance(exclude_skus, list):
+                        exclude_skus_list = exclude_skus
+                    else:
+                        exclude_skus_list = []
+
+                    # Create DataFrame without excluded SKUs (same as XLSX)
+                    json_df = filtered_df.copy()
+                    if exclude_skus_list and not json_df.empty and 'SKU' in json_df.columns:
+                        self.log.info(f"[JSON] Excluding SKUs from JSON: {exclude_skus_list}")
+                        json_df = json_df[~json_df["SKU"].isin(exclude_skus_list)]
+                        self.log.info(f"[JSON] Rows after exclude_skus: {len(json_df)}")
+
+                    if not json_df.empty:
+                        analysis_json = self._create_analysis_json(json_df)
 
                         with open(json_path, 'w', encoding='utf-8') as f:
                             json.dump(analysis_json, f, ensure_ascii=False, indent=2)
 
-                        self.log.info(f"Packing list JSON created: {json_path}")
+                        self.log.info(f"Packing list JSON created (exclude_skus applied): {json_path}")
                     else:
-                        self.log.warning(f"Skipping JSON creation - no data after filtering")
+                        self.log.warning(f"Skipping JSON creation - no data after filtering and exclude_skus")
 
                 except Exception as e:
                     self.log.error(f"Failed to create JSON: {e}", exc_info=True)
