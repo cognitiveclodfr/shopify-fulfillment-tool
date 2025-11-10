@@ -309,15 +309,34 @@ def run_full_analysis(
         logger.error(f"Validation Error: {error_message}")
         return False, error_message, None, None
 
-    # Use a persistent path for the history file to avoid permission errors on network drives
-    history_path = get_persistent_data_path("fulfillment_history.csv")
+    # NEW: Use server-based history storage
+    # Determine history file location
+    if profile_manager and client_id:
+        # Server-based storage in client directory
+        client_dir = profile_manager.get_client_directory(client_id)
+        history_path = client_dir / "fulfillment_history.csv"
+        logger.info(f"Using server-based history: {history_path}")
+    else:
+        # Fallback to local storage for tests/compatibility
+        history_path = get_persistent_data_path("fulfillment_history.csv")
+        logger.warning("Using local history fallback (no profile manager)")
+
+    # Load history
     if stock_file_path is not None and orders_file_path is not None:
         try:
-            history_df = pd.read_csv(history_path)
-            logger.info(f"Loaded {len(history_df)} records from fulfillment history.")
+            if isinstance(history_path, Path):
+                history_path_str = str(history_path)
+            else:
+                history_path_str = history_path
+
+            history_df = pd.read_csv(history_path_str)
+            logger.info(f"Loaded {len(history_df)} records from fulfillment history: {history_path}")
         except FileNotFoundError:
             history_df = pd.DataFrame(columns=["Order_Number", "Execution_Date"])
-            logger.warning("Fulfillment history not found. A new one will be created.")
+            logger.info("No history file found. Starting with empty history.")
+        except Exception as e:
+            logger.error(f"Error loading history: {e}")
+            history_df = pd.DataFrame(columns=["Order_Number", "Execution_Date"])
 
     # 2. Run analysis (computation only)
     logger.info("Step 2: Running fulfillment simulation...")
@@ -426,8 +445,25 @@ def run_full_analysis(
             updated_history = pd.concat([history_df, newly_fulfilled]).drop_duplicates(
                 subset=["Order_Number"], keep="last"
             )
-            updated_history.to_csv(history_path, index=False)
-            logger.info(f"Updated fulfillment history with {len(newly_fulfilled)} new records.")
+
+            # Save updated history (path already determined above)
+            try:
+                # Ensure parent directory exists
+                if isinstance(history_path, Path):
+                    history_path.parent.mkdir(parents=True, exist_ok=True)
+                    history_path_str = str(history_path)
+                else:
+                    history_path_str = history_path
+                    # Create parent directory if needed
+                    parent_dir = os.path.dirname(history_path_str)
+                    if parent_dir:
+                        os.makedirs(parent_dir, exist_ok=True)
+
+                updated_history.to_csv(history_path_str, index=False)
+                logger.info(f"History updated and saved to: {history_path} ({len(newly_fulfilled)} new records)")
+            except Exception as e:
+                logger.error(f"Failed to save history: {e}")
+                # Don't fail the entire analysis if history save fails
 
         # Return appropriate path based on mode
         if use_session_mode:
