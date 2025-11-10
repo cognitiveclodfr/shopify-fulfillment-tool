@@ -65,17 +65,30 @@ class ProfileManager:
     _config_cache: Dict[str, Tuple[Dict, datetime]] = {}
     CACHE_TIMEOUT_SECONDS = 60  # Cache valid for 1 minute
 
-    def __init__(self, base_path: str):
-        """Initialize ProfileManager with file server path.
+    def __init__(self, base_path: str = None):
+        """Initialize ProfileManager with automatic environment detection.
 
         Args:
-            base_path (str): Root path on file server, e.g.:
-                \\\\192.168.88.101\\Z_GreenDelivery\\WAREHOUSE\\0UFulfilment
+            base_path: Base path to fulfillment directory.
+                       If None, attempts to auto-detect from:
+                       1. FULFILLMENT_SERVER_PATH environment variable (dev mode)
+                       2. Default production path (\\\\192.168.88.101\\...)
 
         Raises:
             NetworkError: If file server is not accessible
         """
+        # Auto-detect base path if not provided
+        if base_path is None:
+            base_path = self._get_base_path()
+
         self.base_path = Path(base_path)
+
+        # Log which environment we're using
+        if self._is_dev_environment():
+            logger.info(f"🔧 DEV MODE - Using local mock server: {self.base_path}")
+        else:
+            logger.info(f"🏭 PRODUCTION MODE - Using network server: {self.base_path}")
+
         self.clients_dir = self.base_path / "Clients"
         self.sessions_dir = self.base_path / "Sessions"
         self.stats_dir = self.base_path / "Stats"
@@ -94,6 +107,36 @@ class ProfileManager:
             )
 
         logger.info(f"ProfileManager initialized with base path: {self.base_path}")
+
+    def _get_base_path(self) -> str:
+        """Get base path with automatic environment detection.
+
+        Priority:
+            1. FULFILLMENT_SERVER_PATH environment variable (for dev)
+            2. Default production path
+
+        Returns:
+            Base path string
+        """
+        # Check for development environment variable
+        env_path = os.environ.get('FULFILLMENT_SERVER_PATH')
+
+        if env_path:
+            logger.info(f"Using server path from environment variable: {env_path}")
+            return env_path
+
+        # Default to production path
+        prod_path = r"\\192.168.88.101\Z_GreenDelivery\WAREHOUSE\0UFulfilment"
+        logger.info(f"Using default production server path: {prod_path}")
+        return prod_path
+
+    def _is_dev_environment(self) -> bool:
+        """Check if running in development environment.
+
+        Returns:
+            True if FULFILLMENT_SERVER_PATH environment variable is set
+        """
+        return 'FULFILLMENT_SERVER_PATH' in os.environ
 
     def _test_connection(self) -> bool:
         """Test if file server is accessible.

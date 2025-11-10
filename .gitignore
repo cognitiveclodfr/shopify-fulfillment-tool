@@ -67,3 +67,24 @@ jules-scratch/
 fulfillment_history.csv
 data/output/
 .DS_Store
+
+# Development environment
+fulfillment-server-mock/
+/dev-server/
+
+# Test data
+/data/test_input/
+
+# Local development files
+*.local.*
+*_dev_*.csv
+*_dev_*.xlsx
+*_test_*.csv
+*_test_*.xlsx
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
