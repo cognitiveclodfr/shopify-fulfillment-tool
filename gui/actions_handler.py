@@ -149,6 +149,53 @@ class ActionsHandler(QObject):
             self.mw.analysis_stats = stats
             self.data_changed.emit()
             self.mw.log_activity("Analysis", f"Analysis complete. Report saved to: {result_msg}")
+
+            # ========================================
+            # NEW: RECORD STATISTICS TO SERVER
+            # ========================================
+            try:
+                from pathlib import Path
+                from shared.stats_manager import StatsManager
+
+                self.log.info("Recording analysis statistics to server...")
+
+                stats_mgr = StatsManager(
+                    base_path=str(self.mw.profile_manager.base_path)
+                )
+
+                # Get session info
+                session_name = Path(self.mw.session_path).name if self.mw.session_path else "unknown"
+
+                # Count unique orders and items
+                orders_count = len(df['Order_Number'].unique()) if 'Order_Number' in df.columns else 0
+                items_count = len(df)
+
+                # Calculate fulfillable orders for metadata
+                fulfillable_orders = 0
+                if 'Order_Fulfillment_Status' in df.columns:
+                    fulfillable_df = df[df['Order_Fulfillment_Status'] == 'Fulfillable']
+                    fulfillable_orders = len(fulfillable_df['Order_Number'].unique()) if not fulfillable_df.empty else 0
+
+                # Record to stats
+                stats_mgr.record_analysis(
+                    client_id=self.mw.current_client_id,
+                    session_id=session_name,
+                    orders_count=orders_count,
+                    metadata={
+                        "items_count": items_count,
+                        "fulfillable_orders": fulfillable_orders
+                    }
+                )
+
+                self.log.info(f"Statistics recorded: {orders_count} orders, {items_count} items, {fulfillable_orders} fulfillable")
+
+            except Exception as e:
+                # Don't fail the analysis if stats recording fails
+                self.log.error(f"Failed to record statistics: {e}", exc_info=True)
+                # Continue with normal flow
+            # ========================================
+            # END STATISTICS RECORDING
+            # ========================================
         else:
             self.log.error(f"Analysis failed: {result_msg}")
             QMessageBox.critical(self.mw, "Analysis Error", f"An error occurred during analysis:\n{result_msg}")
