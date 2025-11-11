@@ -217,14 +217,34 @@ class FileHandler:
         client_config = self.mw.current_client_config
         required_cols = client_config.get("column_mappings", {}).get("orders_required", [])
 
+        # Get source platform and column mapping
+        source_platform = client_config.get("column_mappings", {}).get("source_platform", "shopify")
+        orders_source_mappings = client_config.get("column_mappings", {}).get("orders_source_mappings", {})
+        column_mapping = orders_source_mappings.get(source_platform, {})
+
+        # Get required columns in source format (before mapping)
+        # We need to find the source column names that map to our required columns
+        source_required_cols = []
+        for source_col, target_col in column_mapping.items():
+            if target_col in ["Name", "Lineitem sku", "Lineitem name", "Lineitem quantity", "Shipping Method"]:
+                source_required_cols.append(source_col)
+
+        # If no mapping found, fall back to required_cols
+        if not source_required_cols:
+            source_required_cols = required_cols
+
+        self.log.info(f"Using source platform: {source_platform}")
+        self.log.info(f"Column mapping: {column_mapping}")
+
         try:
             # Load and merge all CSV files from folder
             result = batch_loader.load_orders_from_folder(
                 Path(folder_path),
-                required_columns=required_cols,
-                order_number_column="Order_Number",
+                required_columns=source_required_cols,
+                order_number_column="Name",  # Use "Name" after mapping (not "Order_Number")
                 delimiter=",",
-                encoding="utf-8"  # Orders files are typically UTF-8
+                encoding="utf-8",  # Orders files are typically UTF-8
+                column_mapping=column_mapping
             )
 
             # Store the result for later use
@@ -323,17 +343,27 @@ class FileHandler:
             delimiter = configured_delimiter
             encoding = 'utf-8'
 
-        # Determine the deduplication column (usually SKU)
-        dedup_column = client_config.get("column_mappings", {}).get("stock_sku_column", "SKU")
+        # Get stock column mapping (for now just use default, which is identity mapping for Cyrillic names)
+        stock_source_mappings = client_config.get("column_mappings", {}).get("stock_source_mappings", {})
+        stock_column_mapping = stock_source_mappings.get("default", {})
+
+        # Determine the deduplication column (usually SKU / Артикул)
+        dedup_column = "Артикул"  # Use Cyrillic name before mapping
+
+        # Get required columns in source format
+        source_required_cols = list(stock_column_mapping.keys()) if stock_column_mapping else required_cols
+
+        self.log.info(f"Stock column mapping: {stock_column_mapping}")
 
         try:
             # Load and merge all CSV files from folder
             result = batch_loader.load_orders_from_folder(
                 Path(folder_path),
-                required_columns=required_cols,
+                required_columns=source_required_cols,
                 order_number_column=dedup_column,  # Use SKU or equivalent for stock
                 delimiter=delimiter,
-                encoding=encoding
+                encoding=encoding,
+                column_mapping=stock_column_mapping
             )
 
             # Store the detected delimiter and encoding for later use

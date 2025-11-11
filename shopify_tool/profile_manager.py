@@ -329,7 +329,39 @@ class ProfileManager:
                     "SKU",
                     "Product_Name",
                     "Available_Stock"
-                ]
+                ],
+                "source_platform": "shopify",
+                "orders_source_mappings": {
+                    "shopify": {
+                        "Name": "Name",
+                        "Lineitem sku": "Lineitem sku",
+                        "Lineitem name": "Lineitem name",
+                        "Lineitem quantity": "Lineitem quantity",
+                        "Shipping Method": "Shipping Method",
+                        "Shipping Country": "Shipping Country",
+                        "Tags": "Tags",
+                        "Notes": "Notes",
+                        "Total": "Total"
+                    },
+                    "woocommerce": {
+                        "Order ID": "Name",
+                        "Lineitem sku": "Lineitem sku",
+                        "Lineitem name": "Lineitem name",
+                        "Lineitem quantity": "Lineitem quantity",
+                        "Shipping Method": "Shipping Method",
+                        "Shipping Country": "Shipping Country",
+                        "Tags": "Tags",
+                        "Notes": "Notes",
+                        "Total": "Total"
+                    }
+                },
+                "stock_source_mappings": {
+                    "default": {
+                        "Артикул": "Артикул",
+                        "Име": "Име",
+                        "Наличност": "Наличност"
+                    }
+                }
             },
 
             "courier_mappings": {

@@ -10,6 +10,41 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
+def apply_column_mapping(df: pd.DataFrame, column_mapping: Optional[Dict[str, str]]) -> pd.DataFrame:
+    """
+    Apply column name mapping to a DataFrame.
+
+    This converts source column names (e.g., WooCommerce "Order ID") to
+    target column names (e.g., Shopify "Name") that the analysis code expects.
+
+    Args:
+        df: DataFrame to apply mapping to
+        column_mapping: Dictionary mapping source column names to target names
+                       Example: {"Order ID": "Name", "Lineitem sku": "Lineitem sku"}
+
+    Returns:
+        DataFrame with renamed columns
+    """
+    if not column_mapping:
+        logger.debug("No column mapping provided, returning DataFrame as-is")
+        return df
+
+    # Only rename columns that exist in the DataFrame
+    rename_dict = {
+        source: target
+        for source, target in column_mapping.items()
+        if source in df.columns and source != target
+    }
+
+    if rename_dict:
+        logger.info(f"Applying column mapping: {rename_dict}")
+        df = df.rename(columns=rename_dict)
+    else:
+        logger.debug("No columns to rename (all source columns already match target)")
+
+    return df
+
+
 class BatchLoaderResult:
     """Result object for batch loading operations."""
 
@@ -109,7 +144,8 @@ def load_and_merge_csvs(
     csv_files: List[Path],
     order_number_column: str = "Order_Number",
     delimiter: str = ",",
-    encoding: str = "utf-8"
+    encoding: str = "utf-8",
+    column_mapping: Optional[Dict[str, str]] = None
 ) -> BatchLoaderResult:
     """
     Load multiple CSV files and merge them into a single DataFrame.
@@ -119,6 +155,8 @@ def load_and_merge_csvs(
         order_number_column: Column name for order number (for deduplication)
         delimiter: CSV delimiter (default: comma)
         encoding: File encoding (default: utf-8)
+        column_mapping: Optional dictionary to map source column names to target names
+                       Example: {"Order ID": "Name"} converts WooCommerce to Shopify format
 
     Returns:
         BatchLoaderResult object with merged DataFrame and statistics
@@ -149,6 +187,10 @@ def load_and_merge_csvs(
     total_rows_before = len(merged_df)
 
     logger.info(f"Merged {len(dataframes)} files into {total_rows_before} total rows")
+
+    # Apply column mapping if provided (e.g., WooCommerce -> Shopify format)
+    if column_mapping:
+        merged_df = apply_column_mapping(merged_df, column_mapping)
 
     # Remove duplicates by Order_Number
     duplicates_removed = 0
@@ -183,7 +225,8 @@ def load_orders_from_folder(
     required_columns: List[str],
     order_number_column: str = "Order_Number",
     delimiter: str = ",",
-    encoding: str = "utf-8"
+    encoding: str = "utf-8",
+    column_mapping: Optional[Dict[str, str]] = None
 ) -> BatchLoaderResult:
     """
     Complete workflow for loading orders from a folder of CSV files.
@@ -192,15 +235,18 @@ def load_orders_from_folder(
     1. Discover all CSV files in the folder
     2. Validate that all files have the same structure
     3. Load and merge all files
-    4. Deduplicate by Order_Number
-    5. Return summary statistics
+    4. Apply column mapping (e.g., WooCommerce -> Shopify format)
+    5. Deduplicate by Order_Number
+    6. Return summary statistics
 
     Args:
         folder_path: Path to folder containing CSV files
-        required_columns: List of required column names
-        order_number_column: Column name for order number (for deduplication)
+        required_columns: List of required column names (in SOURCE format, before mapping)
+        order_number_column: Column name for order number (for deduplication, in TARGET format after mapping)
         delimiter: CSV delimiter (default: comma)
         encoding: File encoding (default: utf-8)
+        column_mapping: Optional dictionary to map source column names to target names
+                       Example: {"Order ID": "Name"} converts WooCommerce to Shopify format
 
     Returns:
         BatchLoaderResult object with merged DataFrame and statistics
@@ -223,6 +269,6 @@ def load_orders_from_folder(
         raise ValueError(f"CSV validation failed: {error_message}")
 
     # Step 3: Load and merge
-    result = load_and_merge_csvs(csv_files, order_number_column, delimiter, encoding)
+    result = load_and_merge_csvs(csv_files, order_number_column, delimiter, encoding, column_mapping)
 
     return result

@@ -7,7 +7,7 @@ import csv
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple, Dict, Any
-from . import analysis, packing_lists, stock_export
+from . import analysis, packing_lists, stock_export, batch_loader
 from .rules import RuleEngine
 from .utils import get_persistent_data_path
 import numpy as np
@@ -416,6 +416,25 @@ def run_full_analysis(
         logger.info(f"Reading orders file from normalized path: {orders_file_path}")
         logger.info(f"Using encoding: {orders_encoding}")
         orders_df = pd.read_csv(orders_file_path, encoding=orders_encoding)
+
+        # Apply column mapping if configured (e.g., WooCommerce -> Shopify format)
+        if config:
+            column_mappings = config.get("column_mappings", {})
+            source_platform = column_mappings.get("source_platform", "shopify")
+            orders_source_mappings = column_mappings.get("orders_source_mappings", {})
+            orders_column_mapping = orders_source_mappings.get(source_platform, {})
+
+            if orders_column_mapping:
+                logger.info(f"Applying orders column mapping for platform: {source_platform}")
+                orders_df = batch_loader.apply_column_mapping(orders_df, orders_column_mapping)
+
+            # Apply stock column mapping (usually identity mapping for Cyrillic names)
+            stock_source_mappings = column_mappings.get("stock_source_mappings", {})
+            stock_column_mapping = stock_source_mappings.get("default", {})
+
+            if stock_column_mapping:
+                logger.info(f"Applying stock column mapping")
+                stock_df = batch_loader.apply_column_mapping(stock_df, stock_column_mapping)
     else:
         # For testing: allow passing DataFrames directly
         stock_df = config.get("test_stock_df")
