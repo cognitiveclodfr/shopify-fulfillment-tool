@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QComboBox,
     QTextEdit,
+    QRadioButton,
 )
 from PySide6.QtCore import Qt
 
@@ -826,6 +827,37 @@ class SettingsWindow(QDialog):
         instructions.setStyleSheet("color: gray; font-style: italic; font-size: 10pt;")
         column_mappings_layout.addWidget(instructions)
 
+        # Source Platform Selection
+        platform_box = QGroupBox("Source Platform")
+        platform_layout = QVBoxLayout(platform_box)
+
+        platform_info = QLabel(
+            "Select your e-commerce platform. This determines how column names are mapped:\n"
+            "• Shopify: Uses 'Name' for order number\n"
+            "• WooCommerce: Uses 'Order ID' for order number (will be mapped to 'Name')"
+        )
+        platform_info.setWordWrap(True)
+        platform_info.setStyleSheet("color: gray; font-style: italic; font-size: 9pt;")
+        platform_layout.addWidget(platform_info)
+
+        platform_radio_layout = QHBoxLayout()
+        self.source_platform_shopify = QRadioButton("Shopify")
+        self.source_platform_woocommerce = QRadioButton("WooCommerce")
+
+        # Load existing platform or default to shopify
+        source_platform = self.config_data.get("column_mappings", {}).get("source_platform", "shopify")
+        if source_platform == "woocommerce":
+            self.source_platform_woocommerce.setChecked(True)
+        else:
+            self.source_platform_shopify.setChecked(True)
+
+        platform_radio_layout.addWidget(self.source_platform_shopify)
+        platform_radio_layout.addWidget(self.source_platform_woocommerce)
+        platform_radio_layout.addStretch()
+
+        platform_layout.addLayout(platform_radio_layout)
+        column_mappings_layout.addWidget(platform_box)
+
         # Orders Required Columns
         orders_box = QGroupBox("Orders CSV - Required Columns")
         orders_layout = QVBoxLayout(orders_box)
@@ -1117,9 +1149,48 @@ class SettingsWindow(QDialog):
             # ========================================
             # Mappings Tab - Column Mappings
             # ========================================
+            # Determine source platform
+            if self.source_platform_woocommerce.isChecked():
+                source_platform = "woocommerce"
+            else:
+                source_platform = "shopify"
+
+            # Create full column_mappings structure
             self.config_data["column_mappings"] = {
                 "orders_required": [],
-                "stock_required": []
+                "stock_required": [],
+                "source_platform": source_platform,
+                "orders_source_mappings": {
+                    "shopify": {
+                        "Name": "Name",
+                        "Lineitem sku": "Lineitem sku",
+                        "Lineitem name": "Lineitem name",
+                        "Lineitem quantity": "Lineitem quantity",
+                        "Shipping Method": "Shipping Method",
+                        "Shipping Country": "Shipping Country",
+                        "Tags": "Tags",
+                        "Notes": "Notes",
+                        "Total": "Total"
+                    },
+                    "woocommerce": {
+                        "Order ID": "Name",
+                        "Lineitem sku": "Lineitem sku",
+                        "Lineitem name": "Lineitem name",
+                        "Lineitem quantity": "Lineitem quantity",
+                        "Shipping Method": "Shipping Method",
+                        "Shipping Country": "Shipping Country",
+                        "Tags": "Tags",
+                        "Notes": "Notes",
+                        "Total": "Total"
+                    }
+                },
+                "stock_source_mappings": {
+                    "default": {
+                        "Артикул": "Артикул",
+                        "Име": "Име",
+                        "Наличност": "Наличност"
+                    }
+                }
             }
 
             # Parse orders required columns
