@@ -2,7 +2,7 @@ import logging
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, QLabel,
     QTabWidget, QGroupBox, QTableView, QPlainTextEdit, QTableWidget, QLineEdit,
-    QComboBox, QCheckBox
+    QComboBox, QCheckBox, QRadioButton, QButtonGroup
 )
 from PySide6.QtCore import Qt
 from .pandas_model import PandasModel
@@ -107,30 +107,85 @@ class UIManager:
         return group
 
     def _create_files_group(self):
-        """Creates the 'Load Data' QGroupBox."""
+        """Creates the 'Load Data' QGroupBox with file/folder selection options."""
         group = QGroupBox("Load Data")
-        layout = QGridLayout()
+        layout = QVBoxLayout()
         group.setLayout(layout)
 
-        self.mw.load_orders_btn = QPushButton("Load Orders File (.csv)")
+        # Orders section
+        orders_section = QGroupBox("Orders")
+        orders_layout = QGridLayout()
+        orders_section.setLayout(orders_layout)
+
+        # Radio buttons for orders
+        self.mw.orders_mode_group = QButtonGroup()
+        self.mw.orders_single_file_radio = QRadioButton("Single File")
+        self.mw.orders_folder_radio = QRadioButton("Multiple Files (Folder)")
+        self.mw.orders_single_file_radio.setChecked(True)  # Default to single file
+        self.mw.orders_mode_group.addButton(self.mw.orders_single_file_radio, 0)
+        self.mw.orders_mode_group.addButton(self.mw.orders_folder_radio, 1)
+
+        # Buttons for orders
+        self.mw.load_orders_btn = QPushButton("Select Orders File 📄")
         self.mw.load_orders_btn.setToolTip("Select the orders_export.csv file from Shopify.")
-        self.mw.orders_file_path_label = QLabel("Orders file not selected")
-        self.mw.orders_file_status_label = QLabel("")
         self.mw.load_orders_btn.setEnabled(False)
 
-        self.mw.load_stock_btn = QPushButton("Load Stock File (.csv)")
+        self.mw.load_orders_folder_btn = QPushButton("Select Orders Folder 📁")
+        self.mw.load_orders_folder_btn.setToolTip("Select a folder containing multiple orders CSV files.")
+        self.mw.load_orders_folder_btn.setEnabled(False)
+        self.mw.load_orders_folder_btn.setVisible(False)  # Hidden by default
+
+        # Status labels for orders
+        self.mw.orders_file_path_label = QLabel("Orders file not selected")
+        self.mw.orders_file_status_label = QLabel("")
+
+        # Add orders widgets to layout
+        orders_layout.addWidget(self.mw.orders_single_file_radio, 0, 0)
+        orders_layout.addWidget(self.mw.orders_folder_radio, 0, 1)
+        orders_layout.addWidget(self.mw.load_orders_btn, 1, 0, 1, 2)
+        orders_layout.addWidget(self.mw.load_orders_folder_btn, 1, 0, 1, 2)
+        orders_layout.addWidget(self.mw.orders_file_path_label, 2, 0, 1, 2)
+        orders_layout.addWidget(self.mw.orders_file_status_label, 2, 2)
+
+        # Stock section
+        stock_section = QGroupBox("Stock")
+        stock_layout = QGridLayout()
+        stock_section.setLayout(stock_layout)
+
+        # Radio buttons for stock
+        self.mw.stock_mode_group = QButtonGroup()
+        self.mw.stock_single_file_radio = QRadioButton("Single File")
+        self.mw.stock_folder_radio = QRadioButton("Multiple Files (Folder)")
+        self.mw.stock_single_file_radio.setChecked(True)  # Default to single file
+        self.mw.stock_mode_group.addButton(self.mw.stock_single_file_radio, 0)
+        self.mw.stock_mode_group.addButton(self.mw.stock_folder_radio, 1)
+
+        # Buttons for stock
+        self.mw.load_stock_btn = QPushButton("Select Stock File 📄")
         self.mw.load_stock_btn.setToolTip("Select the inventory/stock CSV file.")
-        self.mw.stock_file_path_label = QLabel("Stock file not selected")
-        self.mw.stock_file_status_label = QLabel("")
         self.mw.load_stock_btn.setEnabled(False)
 
-        layout.addWidget(self.mw.load_orders_btn, 0, 0)
-        layout.addWidget(self.mw.orders_file_path_label, 0, 1)
-        layout.addWidget(self.mw.orders_file_status_label, 0, 2)
-        layout.addWidget(self.mw.load_stock_btn, 1, 0)
-        layout.addWidget(self.mw.stock_file_path_label, 1, 1)
-        layout.addWidget(self.mw.stock_file_status_label, 1, 2)
-        layout.setColumnStretch(1, 1)
+        self.mw.load_stock_folder_btn = QPushButton("Select Stock Folder 📁")
+        self.mw.load_stock_folder_btn.setToolTip("Select a folder containing multiple stock CSV files.")
+        self.mw.load_stock_folder_btn.setEnabled(False)
+        self.mw.load_stock_folder_btn.setVisible(False)  # Hidden by default
+
+        # Status labels for stock
+        self.mw.stock_file_path_label = QLabel("Stock file not selected")
+        self.mw.stock_file_status_label = QLabel("")
+
+        # Add stock widgets to layout
+        stock_layout.addWidget(self.mw.stock_single_file_radio, 0, 0)
+        stock_layout.addWidget(self.mw.stock_folder_radio, 0, 1)
+        stock_layout.addWidget(self.mw.load_stock_btn, 1, 0, 1, 2)
+        stock_layout.addWidget(self.mw.load_stock_folder_btn, 1, 0, 1, 2)
+        stock_layout.addWidget(self.mw.stock_file_path_label, 2, 0, 1, 2)
+        stock_layout.addWidget(self.mw.stock_file_status_label, 2, 2)
+
+        # Add sections to main layout
+        layout.addWidget(orders_section)
+        layout.addWidget(stock_section)
+
         return group
 
     def _create_actions_layout(self):

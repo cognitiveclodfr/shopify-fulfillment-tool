@@ -49,6 +49,66 @@ class ActionsHandler(QObject):
         self.mw = main_window
         self.log = logging.getLogger(__name__)
 
+    def toggle_orders_mode(self, button_id):
+        """Toggles between single file and folder mode for orders.
+
+        Args:
+            button_id (int): 0 for single file, 1 for folder
+        """
+        if button_id == 0:  # Single file mode
+            self.log.info("Switched to single file mode for orders")
+            self.mw.load_orders_btn.setVisible(True)
+            self.mw.load_orders_folder_btn.setVisible(False)
+            self.mw.orders_file_path_label.setText("Orders file not selected")
+            self.mw.orders_file_status_label.setText("")
+            # Clear any previous selection
+            self.mw.orders_file_path = None
+            if hasattr(self.mw, 'orders_batch_result'):
+                self.mw.orders_batch_result = None
+        else:  # Folder mode
+            self.log.info("Switched to folder mode for orders")
+            self.mw.load_orders_btn.setVisible(False)
+            self.mw.load_orders_folder_btn.setVisible(True)
+            self.mw.orders_file_path_label.setText("Orders folder not selected")
+            self.mw.orders_file_status_label.setText("")
+            # Clear any previous selection
+            self.mw.orders_file_path = None
+            if hasattr(self.mw, 'orders_batch_result'):
+                self.mw.orders_batch_result = None
+
+        # Reset the ready status
+        self.mw.file_handler.check_files_ready()
+
+    def toggle_stock_mode(self, button_id):
+        """Toggles between single file and folder mode for stock.
+
+        Args:
+            button_id (int): 0 for single file, 1 for folder
+        """
+        if button_id == 0:  # Single file mode
+            self.log.info("Switched to single file mode for stock")
+            self.mw.load_stock_btn.setVisible(True)
+            self.mw.load_stock_folder_btn.setVisible(False)
+            self.mw.stock_file_path_label.setText("Stock file not selected")
+            self.mw.stock_file_status_label.setText("")
+            # Clear any previous selection
+            self.mw.stock_file_path = None
+            if hasattr(self.mw, 'stock_batch_result'):
+                self.mw.stock_batch_result = None
+        else:  # Folder mode
+            self.log.info("Switched to folder mode for stock")
+            self.mw.load_stock_btn.setVisible(False)
+            self.mw.load_stock_folder_btn.setVisible(True)
+            self.mw.stock_file_path_label.setText("Stock folder not selected")
+            self.mw.stock_file_status_label.setText("")
+            # Clear any previous selection
+            self.mw.stock_file_path = None
+            if hasattr(self.mw, 'stock_batch_result'):
+                self.mw.stock_batch_result = None
+
+        # Reset the ready status
+        self.mw.file_handler.check_files_ready()
+
     def create_new_session(self):
         """Creates a new session using SessionManager.
 
@@ -74,6 +134,8 @@ class ActionsHandler(QObject):
             # Enable file loading buttons
             self.mw.load_orders_btn.setEnabled(True)
             self.mw.load_stock_btn.setEnabled(True)
+            self.mw.load_orders_folder_btn.setEnabled(True)
+            self.mw.load_stock_folder_btn.setEnabled(True)
 
             # Refresh session browser to show the new session
             self.mw.session_browser.refresh_sessions()
@@ -114,10 +176,61 @@ class ActionsHandler(QObject):
         self.log.info("Starting analysis thread.")
         stock_delimiter = self.mw.active_profile_config.get("settings", {}).get("stock_delimiter", ";")
 
+        # Handle batch-loaded data (from folders)
+        orders_file = self.mw.orders_file_path
+        stock_file = self.mw.stock_file_path
+
+        # If batch results exist, save them to temporary CSV files
+        import tempfile
+        from pathlib import Path
+
+        temp_files = []  # Track temp files for cleanup
+
+        try:
+            if hasattr(self.mw, 'orders_batch_result') and self.mw.orders_batch_result:
+                # Create temporary CSV file for merged orders
+                temp_orders = tempfile.NamedTemporaryFile(
+                    mode='w',
+                    suffix='.csv',
+                    delete=False,
+                    encoding='utf-8'
+                )
+                self.mw.orders_batch_result.df.to_csv(temp_orders.name, index=False)
+                orders_file = temp_orders.name
+                temp_files.append(temp_orders.name)
+                self.log.info(f"Using batch-loaded orders data from {self.mw.orders_batch_result.files_count} files")
+
+            if hasattr(self.mw, 'stock_batch_result') and self.mw.stock_batch_result:
+                # Create temporary CSV file for merged stock
+                temp_stock = tempfile.NamedTemporaryFile(
+                    mode='w',
+                    suffix='.csv',
+                    delete=False,
+                    encoding='utf-8'
+                )
+                self.mw.stock_batch_result.df.to_csv(
+                    temp_stock.name,
+                    index=False,
+                    sep=stock_delimiter
+                )
+                stock_file = temp_stock.name
+                temp_files.append(temp_stock.name)
+                self.log.info(f"Using batch-loaded stock data from {self.mw.stock_batch_result.files_count} files")
+
+        except Exception as e:
+            self.log.error(f"Failed to prepare batch data: {e}")
+            QMessageBox.critical(
+                self.mw,
+                "Data Preparation Error",
+                f"Failed to prepare batch-loaded data for analysis:\n{str(e)}"
+            )
+            self.mw.ui_manager.set_ui_busy(False)
+            return
+
         worker = Worker(
             core.run_full_analysis,
-            self.mw.stock_file_path,
-            self.mw.orders_file_path,
+            stock_file,
+            orders_file,
             None,  # output_dir_path (not used in session mode)
             stock_delimiter,
             self.mw.active_profile_config,
@@ -128,7 +241,19 @@ class ActionsHandler(QObject):
         )
         worker.signals.result.connect(self.on_analysis_complete)
         worker.signals.error.connect(self.on_task_error)
-        worker.signals.finished.connect(lambda: self.mw.ui_manager.set_ui_busy(False))
+
+        # Create cleanup function for temp files
+        def cleanup_temp_files():
+            self.mw.ui_manager.set_ui_busy(False)
+            # Clean up temporary files
+            for temp_file in temp_files:
+                try:
+                    Path(temp_file).unlink()
+                    self.log.info(f"Cleaned up temporary file: {temp_file}")
+                except Exception as e:
+                    self.log.warning(f"Failed to clean up temporary file {temp_file}: {e}")
+
+        worker.signals.finished.connect(cleanup_temp_files)
         self.mw.threadpool.start(worker)
 
     def on_analysis_complete(self, result):

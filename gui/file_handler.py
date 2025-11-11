@@ -1,9 +1,11 @@
 import os
 import logging
 import pandas as pd
+from pathlib import Path
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from shopify_tool import core
+from shopify_tool import batch_loader
 
 
 class FileHandler:
@@ -152,3 +154,173 @@ class FileHandler:
             self.log.info("Both files are validated and ready for analysis.")
         else:
             self.mw.run_analysis_button.setEnabled(False)
+
+    def select_orders_folder(self):
+        """Opens a folder dialog for selecting multiple orders CSV files.
+
+        This method allows users to select a folder containing multiple CSV
+        files. All CSV files in the folder will be loaded, validated, and
+        merged into a single dataset. Duplicates are removed based on Order_Number.
+        """
+        folder_path = QFileDialog.getExistingDirectory(
+            self.mw,
+            "Select Folder with Orders CSV Files",
+            "",
+            QFileDialog.Option.ShowDirsOnly
+        )
+
+        if not folder_path:
+            return
+
+        self.log.info(f"Orders folder selected: {folder_path}")
+
+        # Get required columns from client config
+        if not self.mw.current_client_id or not self.mw.current_client_config:
+            QMessageBox.warning(
+                self.mw,
+                "No Client Selected",
+                "Please select a client before loading files."
+            )
+            return
+
+        client_config = self.mw.current_client_config
+        required_cols = client_config.get("column_mappings", {}).get("orders_required", [])
+
+        try:
+            # Load and merge all CSV files from folder
+            result = batch_loader.load_orders_from_folder(
+                Path(folder_path),
+                required_columns=required_cols,
+                order_number_column="Order_Number",
+                delimiter=","
+            )
+
+            # Store the result for later use
+            self.mw.orders_folder_path = folder_path
+            self.mw.orders_batch_result = result
+
+            # Update UI with summary
+            summary = (
+                f"{result.files_count} files "
+                f"({result.total_orders} orders"
+            )
+            if result.duplicates_removed > 0:
+                summary += f", {result.duplicates_removed} duplicates removed"
+            summary += ")"
+
+            self.mw.orders_file_path_label.setText(summary)
+            self.mw.orders_file_status_label.setText("✓")
+            self.mw.orders_file_status_label.setStyleSheet("color: green; font-weight: bold;")
+            self.mw.orders_file_status_label.setToolTip(
+                f"Files loaded:\n" + "\n".join(result.files_loaded)
+            )
+
+            # Set a flag to indicate folder mode
+            self.mw.orders_file_path = folder_path  # Store folder path for compatibility
+
+            self.log.info(f"Batch loading successful: {result.get_summary()}")
+
+            if result.duplicates_removed > 0:
+                QMessageBox.information(
+                    self.mw,
+                    "Duplicates Removed",
+                    f"Found and removed {result.duplicates_removed} duplicate orders based on Order_Number.\n\n"
+                    f"Total orders loaded: {result.total_orders}"
+                )
+
+            self.check_files_ready()
+
+        except Exception as e:
+            self.log.error(f"Error loading orders from folder: {str(e)}")
+            QMessageBox.critical(
+                self.mw,
+                "Folder Load Error",
+                f"Failed to load orders from folder:\n{str(e)}"
+            )
+
+    def select_stock_folder(self):
+        """Opens a folder dialog for selecting multiple stock CSV files.
+
+        This method allows users to select a folder containing multiple CSV
+        files. All CSV files in the folder will be loaded, validated, and
+        merged into a single dataset. Duplicates are removed based on SKU.
+        """
+        folder_path = QFileDialog.getExistingDirectory(
+            self.mw,
+            "Select Folder with Stock CSV Files",
+            "",
+            QFileDialog.Option.ShowDirsOnly
+        )
+
+        if not folder_path:
+            return
+
+        self.log.info(f"Stock folder selected: {folder_path}")
+
+        # Get required columns and delimiter from client config
+        if not self.mw.current_client_id or not self.mw.current_client_config:
+            QMessageBox.warning(
+                self.mw,
+                "No Client Selected",
+                "Please select a client before loading files."
+            )
+            return
+
+        client_config = self.mw.current_client_config
+        required_cols = client_config.get("column_mappings", {}).get("stock_required", [])
+        delimiter = client_config.get("settings", {}).get("stock_csv_delimiter", ";")
+
+        # Determine the deduplication column (usually SKU)
+        dedup_column = client_config.get("column_mappings", {}).get("stock_sku_column", "SKU")
+
+        try:
+            # Load and merge all CSV files from folder
+            result = batch_loader.load_orders_from_folder(
+                Path(folder_path),
+                required_columns=required_cols,
+                order_number_column=dedup_column,  # Use SKU or equivalent for stock
+                delimiter=delimiter
+            )
+
+            # Store the result for later use
+            self.mw.stock_folder_path = folder_path
+            self.mw.stock_batch_result = result
+
+            # Update UI with summary
+            summary = (
+                f"{result.files_count} files "
+                f"({result.total_orders} items"
+            )
+            if result.duplicates_removed > 0:
+                summary += f", {result.duplicates_removed} duplicates removed"
+            summary += ")"
+
+            self.mw.stock_file_path_label.setText(summary)
+            self.mw.stock_file_status_label.setText("✓")
+            self.mw.stock_file_status_label.setStyleSheet("color: green; font-weight: bold;")
+            self.mw.stock_file_status_label.setToolTip(
+                f"Files loaded:\n" + "\n".join(result.files_loaded)
+            )
+
+            # Set a flag to indicate folder mode
+            self.mw.stock_file_path = folder_path  # Store folder path for compatibility
+
+            self.log.info(f"Batch loading successful: {result.get_summary()}")
+
+            if result.duplicates_removed > 0:
+                QMessageBox.information(
+                    self.mw,
+                    "Duplicates Removed",
+                    f"Found and removed {result.duplicates_removed} duplicate items based on {dedup_column}.\n\n"
+                    f"Total items loaded: {result.total_orders}"
+                )
+
+            self.check_files_ready()
+
+        except Exception as e:
+            self.log.error(f"Error loading stock from folder: {str(e)}")
+            QMessageBox.critical(
+                self.mw,
+                "Folder Load Error",
+                f"Failed to load stock from folder:\n{str(e)}"
+            )
