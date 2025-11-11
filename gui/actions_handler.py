@@ -174,7 +174,14 @@ class ActionsHandler(QObject):
 
         self.mw.ui_manager.set_ui_busy(True)
         self.log.info("Starting analysis thread.")
-        stock_delimiter = self.mw.active_profile_config.get("settings", {}).get("stock_delimiter", ";")
+
+        # Use detected delimiter if available, otherwise use configured
+        if hasattr(self.mw, 'stock_file_detected_delimiter'):
+            stock_delimiter = self.mw.stock_file_detected_delimiter
+            self.log.info(f"Using auto-detected stock delimiter: '{stock_delimiter}'")
+        else:
+            stock_delimiter = self.mw.active_profile_config.get("settings", {}).get("stock_csv_delimiter", ";")
+            self.log.info(f"Using configured stock delimiter: '{stock_delimiter}'")
 
         # Handle batch-loaded data (from folders)
         orders_file = self.mw.orders_file_path

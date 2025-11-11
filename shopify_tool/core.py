@@ -3,6 +3,7 @@ import logging
 import pandas as pd
 import json
 import shutil
+import csv
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple, Dict, Any
@@ -123,6 +124,78 @@ def _validate_dataframes(orders_df, stock_df, config):
             errors.append(f"Missing required column in Stock file: '{col}'")
 
     return errors
+
+
+def detect_csv_delimiter(file_path, sample_size=5):
+    """Automatically detect the delimiter used in a CSV file.
+
+    Uses Python's csv.Sniffer to detect the delimiter by analyzing
+    a sample of the file. Falls back to common delimiters if detection fails.
+
+    Args:
+        file_path (str): The path to the CSV file.
+        sample_size (int, optional): Number of lines to sample. Defaults to 5.
+
+    Returns:
+        str: The detected delimiter (most commonly ',' or ';')
+    """
+    common_delimiters = [',', ';', '\t', '|']
+
+    try:
+        with open(file_path, 'r', encoding='utf-8') as file:
+            # Read sample lines
+            sample_lines = []
+            for _ in range(sample_size):
+                line = file.readline()
+                if not line:
+                    break
+                sample_lines.append(line)
+
+            if not sample_lines:
+                logger.warning(f"File {file_path} is empty, using default delimiter ','")
+                return ','
+
+            sample = ''.join(sample_lines)
+
+            # Try to detect delimiter using csv.Sniffer
+            try:
+                sniffer = csv.Sniffer()
+                delimiter = sniffer.sniff(sample, delimiters=''.join(common_delimiters)).delimiter
+                logger.info(f"Detected delimiter '{delimiter}' for file {file_path}")
+                return delimiter
+            except csv.Error:
+                # If sniffer fails, try to count occurrences of common delimiters
+                delimiter_counts = {}
+                for delim in common_delimiters:
+                    # Count occurrences in first line (header)
+                    count = sample_lines[0].count(delim)
+                    if count > 0:
+                        delimiter_counts[delim] = count
+
+                if delimiter_counts:
+                    # Return delimiter with highest count
+                    detected = max(delimiter_counts, key=delimiter_counts.get)
+                    logger.info(f"Detected delimiter '{detected}' by counting (file: {file_path})")
+                    return detected
+                else:
+                    logger.warning(f"Could not detect delimiter for {file_path}, using default ','")
+                    return ','
+
+    except UnicodeDecodeError:
+        # Try with different encoding
+        try:
+            with open(file_path, 'r', encoding='latin-1') as file:
+                sample = file.read(1024)
+                sniffer = csv.Sniffer()
+                delimiter = sniffer.sniff(sample, delimiters=''.join(common_delimiters)).delimiter
+                logger.info(f"Detected delimiter '{delimiter}' for file {file_path} (latin-1 encoding)")
+                return delimiter
+        except Exception as e:
+            logger.warning(f"Error detecting delimiter with latin-1 encoding: {e}")
+            return ','
+    except Exception as e:
+        logger.error(f"Error detecting delimiter for {file_path}: {e}")
+        return ','
 
 
 def validate_csv_headers(file_path, required_columns, delimiter=","):

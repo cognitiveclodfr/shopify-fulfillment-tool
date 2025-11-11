@@ -49,8 +49,8 @@ class FileHandler:
     def select_stock_file(self):
         """Opens file dialog for stock CSV selection and loads file.
 
-        After a file is selected, it validates the file with the correct
-        delimiter from the client configuration.
+        After a file is selected, it validates the file with auto-detected
+        or configured delimiter.
         """
         filepath, _ = QFileDialog.getOpenFileName(
             self.mw,
@@ -66,14 +66,36 @@ class FileHandler:
         self.mw.stock_file_path_label.setText(os.path.basename(filepath))
         self.log.info(f"Stock file selected: {filepath}")
 
-        # Get delimiter from config
+        # Get configured delimiter from config
         config = self.mw.active_profile_config
-        delimiter = config.get("settings", {}).get("stock_csv_delimiter", ";")
+        configured_delimiter = config.get("settings", {}).get("stock_csv_delimiter", ";")
 
-        # Try to load CSV with correct delimiter to verify it's readable
+        # Auto-detect delimiter
+        try:
+            detected_delimiter = core.detect_csv_delimiter(filepath)
+            self.log.info(f"Auto-detected delimiter: '{detected_delimiter}'")
+
+            # If detected delimiter differs from configured, inform user but use detected
+            if detected_delimiter != configured_delimiter:
+                self.log.warning(
+                    f"Detected delimiter '{detected_delimiter}' differs from configured '{configured_delimiter}'. "
+                    f"Using detected delimiter."
+                )
+                delimiter = detected_delimiter
+            else:
+                delimiter = configured_delimiter
+
+        except Exception as e:
+            self.log.warning(f"Failed to auto-detect delimiter: {e}. Using configured delimiter.")
+            delimiter = configured_delimiter
+
+        # Try to load CSV with detected delimiter to verify it's readable
         try:
             stock_df = pd.read_csv(filepath, delimiter=delimiter)
             self.log.info(f"Loaded stock CSV with delimiter '{delimiter}': {len(stock_df)} rows")
+
+            # Store the detected delimiter for later use
+            self.mw.stock_file_detected_delimiter = delimiter
 
         except Exception as e:
             self.log.error(f"Failed to load stock CSV: {e}")
@@ -81,8 +103,8 @@ class FileHandler:
                 self.mw,
                 "File Load Error",
                 f"Failed to load stock file:\n{str(e)}\n\n"
-                f"Make sure the delimiter is set correctly in Settings.\n"
-                f"Current delimiter: '{delimiter}'"
+                f"Tried delimiter: '{delimiter}'\n"
+                f"You may need to adjust the delimiter in Settings."
             )
             return
 
@@ -119,7 +141,11 @@ class FileHandler:
             path = self.mw.stock_file_path
             label = self.mw.stock_file_status_label
             required_cols = client_config.get("column_mappings", {}).get("stock_required", [])
-            delimiter = client_config.get("settings", {}).get("stock_csv_delimiter", ";")
+            # Use detected delimiter if available, otherwise use configured
+            if hasattr(self.mw, 'stock_file_detected_delimiter'):
+                delimiter = self.mw.stock_file_detected_delimiter
+            else:
+                delimiter = client_config.get("settings", {}).get("stock_csv_delimiter", ";")
 
         if not path:
             self.log.warning(f"Validation skipped for '{file_type}': path is missing.")
@@ -268,7 +294,24 @@ class FileHandler:
 
         client_config = self.mw.current_client_config
         required_cols = client_config.get("column_mappings", {}).get("stock_required", [])
-        delimiter = client_config.get("settings", {}).get("stock_csv_delimiter", ";")
+        configured_delimiter = client_config.get("settings", {}).get("stock_csv_delimiter", ";")
+
+        # Auto-detect delimiter from first CSV file in folder
+        delimiter = configured_delimiter
+        try:
+            csv_files = list(Path(folder_path).glob("*.csv"))
+            if csv_files:
+                detected_delimiter = core.detect_csv_delimiter(str(csv_files[0]))
+                self.log.info(f"Auto-detected delimiter from first file: '{detected_delimiter}'")
+                if detected_delimiter != configured_delimiter:
+                    self.log.warning(
+                        f"Detected delimiter '{detected_delimiter}' differs from configured '{configured_delimiter}'. "
+                        f"Using detected delimiter."
+                    )
+                delimiter = detected_delimiter
+        except Exception as e:
+            self.log.warning(f"Failed to auto-detect delimiter: {e}. Using configured delimiter.")
+            delimiter = configured_delimiter
 
         # Determine the deduplication column (usually SKU)
         dedup_column = client_config.get("column_mappings", {}).get("stock_sku_column", "SKU")
@@ -281,6 +324,9 @@ class FileHandler:
                 order_number_column=dedup_column,  # Use SKU or equivalent for stock
                 delimiter=delimiter
             )
+
+            # Store the detected delimiter for later use
+            self.mw.stock_file_detected_delimiter = delimiter
 
             # Store the result for later use
             self.mw.stock_folder_path = folder_path
