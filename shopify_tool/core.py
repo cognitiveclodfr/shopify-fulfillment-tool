@@ -3,10 +3,11 @@ import logging
 import pandas as pd
 import json
 import shutil
+import csv
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple, Dict, Any
-from . import analysis, packing_lists, stock_export
+from . import analysis, packing_lists, stock_export, batch_loader
 from .rules import RuleEngine
 from .utils import get_persistent_data_path
 import numpy as np
@@ -125,7 +126,115 @@ def _validate_dataframes(orders_df, stock_df, config):
     return errors
 
 
-def validate_csv_headers(file_path, required_columns, delimiter=","):
+def detect_csv_encoding(file_path):
+    """Automatically detect the encoding of a CSV file.
+
+    Tries multiple common encodings and returns the first one that works.
+    Prioritizes encodings commonly used for CSV files.
+
+    Args:
+        file_path (str): The path to the CSV file.
+
+    Returns:
+        str: The detected encoding (e.g., 'utf-8', 'windows-1251', 'cp1252')
+    """
+    # Common encodings to try, in order of preference
+    encodings_to_try = [
+        'utf-8-sig',      # UTF-8 with BOM (common in Excel exports)
+        'utf-8',          # Standard UTF-8
+        'windows-1251',   # Cyrillic (Ukrainian, Russian, Bulgarian)
+        'cp1252',         # Western European (common in Windows)
+        'latin-1',        # ISO-8859-1 (never fails, but may produce garbage)
+    ]
+
+    for encoding in encodings_to_try:
+        try:
+            with open(file_path, 'r', encoding=encoding) as file:
+                # Try to read first few lines
+                sample = file.read(8192)  # Read first 8KB
+
+                # If we can decode it without errors, it's likely correct
+                if sample:
+                    logger.info(f"Detected encoding '{encoding}' for file {file_path}")
+                    return encoding
+
+        except (UnicodeDecodeError, UnicodeError):
+            # This encoding doesn't work, try next one
+            continue
+        except Exception as e:
+            # Other error, skip this encoding
+            logger.debug(f"Error trying encoding '{encoding}' for {file_path}: {e}")
+            continue
+
+    # If nothing worked, fall back to latin-1 (it never fails)
+    logger.warning(f"Could not detect encoding for {file_path}, using 'latin-1' as fallback")
+    return 'latin-1'
+
+
+def detect_csv_delimiter(file_path, sample_size=5):
+    """Automatically detect the delimiter used in a CSV file.
+
+    Uses Python's csv.Sniffer to detect the delimiter by analyzing
+    a sample of the file. Falls back to common delimiters if detection fails.
+
+    Args:
+        file_path (str): The path to the CSV file.
+        sample_size (int, optional): Number of lines to sample. Defaults to 5.
+
+    Returns:
+        str: The detected delimiter (most commonly ',' or ';')
+    """
+    common_delimiters = [',', ';', '\t', '|']
+
+    # First, detect encoding
+    encoding = detect_csv_encoding(file_path)
+
+    try:
+        with open(file_path, 'r', encoding=encoding) as file:
+            # Read sample lines
+            sample_lines = []
+            for _ in range(sample_size):
+                line = file.readline()
+                if not line:
+                    break
+                sample_lines.append(line)
+
+            if not sample_lines:
+                logger.warning(f"File {file_path} is empty, using default delimiter ','")
+                return ','
+
+            sample = ''.join(sample_lines)
+
+            # Try to detect delimiter using csv.Sniffer
+            try:
+                sniffer = csv.Sniffer()
+                delimiter = sniffer.sniff(sample, delimiters=''.join(common_delimiters)).delimiter
+                logger.info(f"Detected delimiter '{delimiter}' for file {file_path}")
+                return delimiter
+            except csv.Error:
+                # If sniffer fails, try to count occurrences of common delimiters
+                delimiter_counts = {}
+                for delim in common_delimiters:
+                    # Count occurrences in first line (header)
+                    count = sample_lines[0].count(delim)
+                    if count > 0:
+                        delimiter_counts[delim] = count
+
+                if delimiter_counts:
+                    # Return delimiter with highest count
+                    detected = max(delimiter_counts, key=delimiter_counts.get)
+                    logger.info(f"Detected delimiter '{detected}' by counting (file: {file_path})")
+                    return detected
+                else:
+                    logger.warning(f"Could not detect delimiter for {file_path}, using default ','")
+                    return ','
+
+    except Exception as e:
+        logger.error(f"Error detecting delimiter for {file_path}: {e}")
+        return ','
+
+
+def validate_csv_headers(file_path, required_columns, delimiter=",", encoding=None):
     """Quickly validates if a CSV file contains the required column headers.
 
     This function reads only the header row of a CSV file to check for the
@@ -136,6 +245,7 @@ def validate_csv_headers(file_path, required_columns, delimiter=","):
         required_columns (list[str]): A list of column names that must be present.
         delimiter (str, optional): The delimiter used in the CSV file.
             Defaults to ",".
+        encoding (str, optional): The file encoding. If None, will auto-detect.
 
     Returns:
         tuple[bool, list[str]]: A tuple containing:
@@ -147,8 +257,12 @@ def validate_csv_headers(file_path, required_columns, delimiter=","):
     if not required_columns:
         return True, []
 
+    # Auto-detect encoding if not provided
+    if encoding is None:
+        encoding = detect_csv_encoding(file_path)
+
     try:
-        headers = pd.read_csv(file_path, nrows=0, delimiter=delimiter).columns.tolist()
+        headers = pd.read_csv(file_path, nrows=0, delimiter=delimiter, encoding=encoding).columns.tolist()
         missing_columns = [col for col in required_columns if col not in headers]
 
         if not missing_columns:
@@ -291,10 +405,36 @@ def run_full_analysis(
         if not os.path.exists(stock_file_path) or not os.path.exists(orders_file_path):
             return False, "One or both input files were not found.", None, None
 
+        # Detect encodings for both files
+        stock_encoding = detect_csv_encoding(stock_file_path)
+        orders_encoding = detect_csv_encoding(orders_file_path)
+
         logger.info(f"Reading stock file from normalized path: {stock_file_path}")
-        stock_df = pd.read_csv(stock_file_path, delimiter=stock_delimiter)
+        logger.info(f"Using encoding: {stock_encoding}, delimiter: '{stock_delimiter}'")
+        stock_df = pd.read_csv(stock_file_path, delimiter=stock_delimiter, encoding=stock_encoding)
+
         logger.info(f"Reading orders file from normalized path: {orders_file_path}")
-        orders_df = pd.read_csv(orders_file_path)
+        logger.info(f"Using encoding: {orders_encoding}")
+        orders_df = pd.read_csv(orders_file_path, encoding=orders_encoding)
+
+        # Apply column mapping if configured (e.g., WooCommerce -> Shopify format)
+        if config:
+            column_mappings = config.get("column_mappings", {})
+            source_platform = column_mappings.get("source_platform", "shopify")
+            orders_source_mappings = column_mappings.get("orders_source_mappings", {})
+            orders_column_mapping = orders_source_mappings.get(source_platform, {})
+
+            if orders_column_mapping:
+                logger.info(f"Applying orders column mapping for platform: {source_platform}")
+                orders_df = batch_loader.apply_column_mapping(orders_df, orders_column_mapping)
+
+            # Apply stock column mapping (usually identity mapping for Cyrillic names)
+            stock_source_mappings = column_mappings.get("stock_source_mappings", {})
+            stock_column_mapping = stock_source_mappings.get("default", {})
+
+            if stock_column_mapping:
+                logger.info(f"Applying stock column mapping")
+                stock_df = batch_loader.apply_column_mapping(stock_df, stock_column_mapping)
     else:
         # For testing: allow passing DataFrames directly
         stock_df = config.get("test_stock_df")

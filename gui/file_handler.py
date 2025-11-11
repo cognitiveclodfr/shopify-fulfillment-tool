@@ -1,9 +1,11 @@
 import os
 import logging
 import pandas as pd
+from pathlib import Path
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from shopify_tool import core
+from shopify_tool import batch_loader
 
 
 class FileHandler:
@@ -47,8 +49,8 @@ class FileHandler:
     def select_stock_file(self):
         """Opens file dialog for stock CSV selection and loads file.
 
-        After a file is selected, it validates the file with the correct
-        delimiter from the client configuration.
+        After a file is selected, it validates the file with auto-detected
+        or configured delimiter.
         """
         filepath, _ = QFileDialog.getOpenFileName(
             self.mw,
@@ -64,14 +66,41 @@ class FileHandler:
         self.mw.stock_file_path_label.setText(os.path.basename(filepath))
         self.log.info(f"Stock file selected: {filepath}")
 
-        # Get delimiter from config
+        # Get configured delimiter from config
         config = self.mw.active_profile_config
-        delimiter = config.get("settings", {}).get("stock_csv_delimiter", ";")
+        configured_delimiter = config.get("settings", {}).get("stock_csv_delimiter", ";")
 
-        # Try to load CSV with correct delimiter to verify it's readable
+        # Auto-detect encoding and delimiter
         try:
-            stock_df = pd.read_csv(filepath, delimiter=delimiter)
-            self.log.info(f"Loaded stock CSV with delimiter '{delimiter}': {len(stock_df)} rows")
+            detected_encoding = core.detect_csv_encoding(filepath)
+            detected_delimiter = core.detect_csv_delimiter(filepath)
+            self.log.info(f"Auto-detected encoding: '{detected_encoding}', delimiter: '{detected_delimiter}'")
+
+            # If detected delimiter differs from configured, inform user but use detected
+            if detected_delimiter != configured_delimiter:
+                self.log.warning(
+                    f"Detected delimiter '{detected_delimiter}' differs from configured '{configured_delimiter}'. "
+                    f"Using detected delimiter."
+                )
+                delimiter = detected_delimiter
+            else:
+                delimiter = configured_delimiter
+
+            encoding = detected_encoding
+
+        except Exception as e:
+            self.log.warning(f"Failed to auto-detect delimiter/encoding: {e}. Using configured delimiter and UTF-8.")
+            delimiter = configured_delimiter
+            encoding = 'utf-8'
+
+        # Try to load CSV with detected delimiter and encoding to verify it's readable
+        try:
+            stock_df = pd.read_csv(filepath, delimiter=delimiter, encoding=encoding)
+            self.log.info(f"Loaded stock CSV with delimiter '{delimiter}', encoding '{encoding}': {len(stock_df)} rows")
+
+            # Store the detected delimiter and encoding for later use
+            self.mw.stock_file_detected_delimiter = delimiter
+            self.mw.stock_file_detected_encoding = encoding
 
         except Exception as e:
             self.log.error(f"Failed to load stock CSV: {e}")
@@ -79,8 +108,8 @@ class FileHandler:
                 self.mw,
                 "File Load Error",
                 f"Failed to load stock file:\n{str(e)}\n\n"
-                f"Make sure the delimiter is set correctly in Settings.\n"
-                f"Current delimiter: '{delimiter}'"
+                f"Tried delimiter: '{delimiter}'\n"
+                f"You may need to adjust the delimiter in Settings."
             )
             return
 
@@ -117,7 +146,11 @@ class FileHandler:
             path = self.mw.stock_file_path
             label = self.mw.stock_file_status_label
             required_cols = client_config.get("column_mappings", {}).get("stock_required", [])
-            delimiter = client_config.get("settings", {}).get("stock_csv_delimiter", ";")
+            # Use detected delimiter if available, otherwise use configured
+            if hasattr(self.mw, 'stock_file_detected_delimiter'):
+                delimiter = self.mw.stock_file_detected_delimiter
+            else:
+                delimiter = client_config.get("settings", {}).get("stock_csv_delimiter", ";")
 
         if not path:
             self.log.warning(f"Validation skipped for '{file_type}': path is missing.")
@@ -152,3 +185,230 @@ class FileHandler:
             self.log.info("Both files are validated and ready for analysis.")
         else:
             self.mw.run_analysis_button.setEnabled(False)
+
+    def select_orders_folder(self):
+        """Opens a folder dialog for selecting multiple orders CSV files.
+
+        This method allows users to select a folder containing multiple CSV
+        files. All CSV files in the folder will be loaded, validated, and
+        merged into a single dataset. Duplicates are removed based on Order_Number.
+        """
+        folder_path = QFileDialog.getExistingDirectory(
+            self.mw,
+            "Select Folder with Orders CSV Files",
+            "",
+            QFileDialog.Option.ShowDirsOnly
+        )
+
+        if not folder_path:
+            return
+
+        self.log.info(f"Orders folder selected: {folder_path}")
+
+        # Get required columns from client config
+        if not self.mw.current_client_id or not self.mw.current_client_config:
+            QMessageBox.warning(
+                self.mw,
+                "No Client Selected",
+                "Please select a client before loading files."
+            )
+            return
+
+        client_config = self.mw.current_client_config
+        required_cols = client_config.get("column_mappings", {}).get("orders_required", [])
+
+        # Get source platform and column mapping
+        source_platform = client_config.get("column_mappings", {}).get("source_platform", "shopify")
+        orders_source_mappings = client_config.get("column_mappings", {}).get("orders_source_mappings", {})
+        column_mapping = orders_source_mappings.get(source_platform, {})
+
+        # Get required columns in source format (before mapping)
+        # We need to find the source column names that map to our required columns
+        source_required_cols = []
+        for source_col, target_col in column_mapping.items():
+            if target_col in ["Name", "Lineitem sku", "Lineitem name", "Lineitem quantity", "Shipping Method"]:
+                source_required_cols.append(source_col)
+
+        # If no mapping found, fall back to required_cols
+        if not source_required_cols:
+            source_required_cols = required_cols
+
+        self.log.info(f"Using source platform: {source_platform}")
+        self.log.info(f"Column mapping: {column_mapping}")
+
+        try:
+            # Load and merge all CSV files from folder
+            result = batch_loader.load_orders_from_folder(
+                Path(folder_path),
+                required_columns=source_required_cols,
+                order_number_column="Name",  # Use "Name" after mapping (not "Order_Number")
+                delimiter=",",
+                encoding="utf-8",  # Orders files are typically UTF-8
+                column_mapping=column_mapping
+            )
+
+            # Store the result for later use
+            self.mw.orders_folder_path = folder_path
+            self.mw.orders_batch_result = result
+
+            # Update UI with summary
+            summary = (
+                f"{result.files_count} files "
+                f"({result.total_orders} orders"
+            )
+            if result.duplicates_removed > 0:
+                summary += f", {result.duplicates_removed} duplicates removed"
+            summary += ")"
+
+            self.mw.orders_file_path_label.setText(summary)
+            self.mw.orders_file_status_label.setText("✓")
+            self.mw.orders_file_status_label.setStyleSheet("color: green; font-weight: bold;")
+            self.mw.orders_file_status_label.setToolTip(
+                f"Files loaded:\n" + "\n".join(result.files_loaded)
+            )
+
+            # Set a flag to indicate folder mode
+            self.mw.orders_file_path = folder_path  # Store folder path for compatibility
+
+            self.log.info(f"Batch loading successful: {result.get_summary()}")
+
+            if result.duplicates_removed > 0:
+                QMessageBox.information(
+                    self.mw,
+                    "Duplicates Removed",
+                    f"Found and removed {result.duplicates_removed} duplicate orders based on Order_Number.\n\n"
+                    f"Total orders loaded: {result.total_orders}"
+                )
+
+            self.check_files_ready()
+
+        except Exception as e:
+            self.log.error(f"Error loading orders from folder: {str(e)}")
+            QMessageBox.critical(
+                self.mw,
+                "Folder Load Error",
+                f"Failed to load orders from folder:\n{str(e)}"
+            )
+
+    def select_stock_folder(self):
+        """Opens a folder dialog for selecting multiple stock CSV files.
+
+        This method allows users to select a folder containing multiple CSV
+        files. All CSV files in the folder will be loaded, validated, and
+        merged into a single dataset. Duplicates are removed based on SKU.
+        """
+        folder_path = QFileDialog.getExistingDirectory(
+            self.mw,
+            "Select Folder with Stock CSV Files",
+            "",
+            QFileDialog.Option.ShowDirsOnly
+        )
+
+        if not folder_path:
+            return
+
+        self.log.info(f"Stock folder selected: {folder_path}")
+
+        # Get required columns and delimiter from client config
+        if not self.mw.current_client_id or not self.mw.current_client_config:
+            QMessageBox.warning(
+                self.mw,
+                "No Client Selected",
+                "Please select a client before loading files."
+            )
+            return
+
+        client_config = self.mw.current_client_config
+        required_cols = client_config.get("column_mappings", {}).get("stock_required", [])
+        configured_delimiter = client_config.get("settings", {}).get("stock_csv_delimiter", ";")
+
+        # Auto-detect delimiter and encoding from first CSV file in folder
+        delimiter = configured_delimiter
+        encoding = 'utf-8'
+        try:
+            csv_files = list(Path(folder_path).glob("*.csv"))
+            if csv_files:
+                detected_encoding = core.detect_csv_encoding(str(csv_files[0]))
+                detected_delimiter = core.detect_csv_delimiter(str(csv_files[0]))
+                self.log.info(f"Auto-detected from first file - encoding: '{detected_encoding}', delimiter: '{detected_delimiter}'")
+                if detected_delimiter != configured_delimiter:
+                    self.log.warning(
+                        f"Detected delimiter '{detected_delimiter}' differs from configured '{configured_delimiter}'. "
+                        f"Using detected delimiter."
+                    )
+                delimiter = detected_delimiter
+                encoding = detected_encoding
+        except Exception as e:
+            self.log.warning(f"Failed to auto-detect delimiter/encoding: {e}. Using configured delimiter and UTF-8.")
+            delimiter = configured_delimiter
+            encoding = 'utf-8'
+
+        # Get stock column mapping (for now just use default, which is identity mapping for Cyrillic names)
+        stock_source_mappings = client_config.get("column_mappings", {}).get("stock_source_mappings", {})
+        stock_column_mapping = stock_source_mappings.get("default", {})
+
+        # Determine the deduplication column (usually SKU / Артикул)
+        dedup_column = "Артикул"  # Use Cyrillic name before mapping
+
+        # Get required columns in source format
+        source_required_cols = list(stock_column_mapping.keys()) if stock_column_mapping else required_cols
+
+        self.log.info(f"Stock column mapping: {stock_column_mapping}")
+
+        try:
+            # Load and merge all CSV files from folder
+            result = batch_loader.load_orders_from_folder(
+                Path(folder_path),
+                required_columns=source_required_cols,
+                order_number_column=dedup_column,  # Use SKU or equivalent for stock
+                delimiter=delimiter,
+                encoding=encoding,
+                column_mapping=stock_column_mapping
+            )
+
+            # Store the detected delimiter and encoding for later use
+            self.mw.stock_file_detected_delimiter = delimiter
+            self.mw.stock_file_detected_encoding = encoding
+
+            # Store the result for later use
+            self.mw.stock_folder_path = folder_path
+            self.mw.stock_batch_result = result
+
+            # Update UI with summary
+            summary = (
+                f"{result.files_count} files "
+                f"({result.total_orders} items"
+            )
+            if result.duplicates_removed > 0:
+                summary += f", {result.duplicates_removed} duplicates removed"
+            summary += ")"
+
+            self.mw.stock_file_path_label.setText(summary)
+            self.mw.stock_file_status_label.setText("✓")
+            self.mw.stock_file_status_label.setStyleSheet("color: green; font-weight: bold;")
+            self.mw.stock_file_status_label.setToolTip(
+                f"Files loaded:\n" + "\n".join(result.files_loaded)
+            )
+
+            # Set a flag to indicate folder mode
+            self.mw.stock_file_path = folder_path  # Store folder path for compatibility
+
+            self.log.info(f"Batch loading successful: {result.get_summary()}")
+
+            if result.duplicates_removed > 0:
+                QMessageBox.information(
+                    self.mw,
+                    "Duplicates Removed",
+                    f"Found and removed {result.duplicates_removed} duplicate items based on {dedup_column}.\n\n"
+                    f"Total items loaded: {result.total_orders}"
+                )
+
+            self.check_files_ready()
+
+        except Exception as e:
+            self.log.error(f"Error loading stock from folder: {str(e)}")
+            QMessageBox.critical(
+                self.mw,
+                "Folder Load Error",
+                f"Failed to load stock from folder:\n{str(e)}"
+            )

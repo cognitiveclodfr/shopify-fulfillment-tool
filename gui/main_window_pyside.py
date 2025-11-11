@@ -213,6 +213,14 @@ class MainWindow(QMainWindow):
         self.load_orders_btn.clicked.connect(self.file_handler.select_orders_file)
         self.load_stock_btn.clicked.connect(self.file_handler.select_stock_file)
 
+        # Folder loading (new)
+        self.load_orders_folder_btn.clicked.connect(self.file_handler.select_orders_folder)
+        self.load_stock_folder_btn.clicked.connect(self.file_handler.select_stock_folder)
+
+        # Radio button toggles
+        self.orders_mode_group.idClicked.connect(self.actions_handler.toggle_orders_mode)
+        self.stock_mode_group.idClicked.connect(self.actions_handler.toggle_stock_mode)
+
         # Main actions
         self.run_analysis_button.clicked.connect(self.actions_handler.run_analysis)
         self.settings_button.clicked.connect(self.actions_handler.open_settings_window)
