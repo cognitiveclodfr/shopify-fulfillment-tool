@@ -62,7 +62,8 @@ def discover_csv_files(folder_path: Path) -> List[Path]:
 def validate_csv_structure(
     csv_files: List[Path],
     required_columns: List[str],
-    delimiter: str = ","
+    delimiter: str = ",",
+    encoding: str = "utf-8"
 ) -> Tuple[bool, Optional[str]]:
     """
     Validate that all CSV files have the same structure and required columns.
@@ -71,6 +72,7 @@ def validate_csv_structure(
         csv_files: List of CSV file paths to validate
         required_columns: List of required column names
         delimiter: CSV delimiter (default: comma)
+        encoding: File encoding (default: utf-8)
 
     Returns:
         Tuple of (is_valid, error_message)
@@ -80,7 +82,7 @@ def validate_csv_structure(
 
     # Read headers from first file
     try:
-        first_headers = pd.read_csv(csv_files[0], nrows=0, delimiter=delimiter).columns.tolist()
+        first_headers = pd.read_csv(csv_files[0], nrows=0, delimiter=delimiter, encoding=encoding).columns.tolist()
     except Exception as e:
         return False, f"Error reading first file {csv_files[0].name}: {str(e)}"
 
@@ -92,7 +94,7 @@ def validate_csv_structure(
     # Check that all other files have the same columns
     for csv_file in csv_files[1:]:
         try:
-            headers = pd.read_csv(csv_file, nrows=0, delimiter=delimiter).columns.tolist()
+            headers = pd.read_csv(csv_file, nrows=0, delimiter=delimiter, encoding=encoding).columns.tolist()
         except Exception as e:
             return False, f"Error reading file {csv_file.name}: {str(e)}"
 
@@ -106,7 +108,8 @@ def validate_csv_structure(
 def load_and_merge_csvs(
     csv_files: List[Path],
     order_number_column: str = "Order_Number",
-    delimiter: str = ","
+    delimiter: str = ",",
+    encoding: str = "utf-8"
 ) -> BatchLoaderResult:
     """
     Load multiple CSV files and merge them into a single DataFrame.
@@ -115,6 +118,7 @@ def load_and_merge_csvs(
         csv_files: List of CSV file paths to load
         order_number_column: Column name for order number (for deduplication)
         delimiter: CSV delimiter (default: comma)
+        encoding: File encoding (default: utf-8)
 
     Returns:
         BatchLoaderResult object with merged DataFrame and statistics
@@ -132,7 +136,7 @@ def load_and_merge_csvs(
 
     for csv_file in csv_files:
         try:
-            df = pd.read_csv(csv_file, delimiter=delimiter)
+            df = pd.read_csv(csv_file, delimiter=delimiter, encoding=encoding)
             dataframes.append(df)
             files_loaded.append(csv_file.name)
             logger.info(f"Loaded {len(df)} rows from {csv_file.name}")
@@ -178,7 +182,8 @@ def load_orders_from_folder(
     folder_path: Path,
     required_columns: List[str],
     order_number_column: str = "Order_Number",
-    delimiter: str = ","
+    delimiter: str = ",",
+    encoding: str = "utf-8"
 ) -> BatchLoaderResult:
     """
     Complete workflow for loading orders from a folder of CSV files.
@@ -195,6 +200,7 @@ def load_orders_from_folder(
         required_columns: List of required column names
         order_number_column: Column name for order number (for deduplication)
         delimiter: CSV delimiter (default: comma)
+        encoding: File encoding (default: utf-8)
 
     Returns:
         BatchLoaderResult object with merged DataFrame and statistics
@@ -211,12 +217,12 @@ def load_orders_from_folder(
         raise ValueError(f"No CSV files found in folder: {folder_path}")
 
     # Step 2: Validate structure
-    is_valid, error_message = validate_csv_structure(csv_files, required_columns, delimiter)
+    is_valid, error_message = validate_csv_structure(csv_files, required_columns, delimiter, encoding)
 
     if not is_valid:
         raise ValueError(f"CSV validation failed: {error_message}")
 
     # Step 3: Load and merge
-    result = load_and_merge_csvs(csv_files, order_number_column, delimiter)
+    result = load_and_merge_csvs(csv_files, order_number_column, delimiter, encoding)
 
     return result

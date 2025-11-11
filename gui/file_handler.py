@@ -70,10 +70,11 @@ class FileHandler:
         config = self.mw.active_profile_config
         configured_delimiter = config.get("settings", {}).get("stock_csv_delimiter", ";")
 
-        # Auto-detect delimiter
+        # Auto-detect encoding and delimiter
         try:
+            detected_encoding = core.detect_csv_encoding(filepath)
             detected_delimiter = core.detect_csv_delimiter(filepath)
-            self.log.info(f"Auto-detected delimiter: '{detected_delimiter}'")
+            self.log.info(f"Auto-detected encoding: '{detected_encoding}', delimiter: '{detected_delimiter}'")
 
             # If detected delimiter differs from configured, inform user but use detected
             if detected_delimiter != configured_delimiter:
@@ -85,17 +86,21 @@ class FileHandler:
             else:
                 delimiter = configured_delimiter
 
+            encoding = detected_encoding
+
         except Exception as e:
-            self.log.warning(f"Failed to auto-detect delimiter: {e}. Using configured delimiter.")
+            self.log.warning(f"Failed to auto-detect delimiter/encoding: {e}. Using configured delimiter and UTF-8.")
             delimiter = configured_delimiter
+            encoding = 'utf-8'
 
-        # Try to load CSV with detected delimiter to verify it's readable
+        # Try to load CSV with detected delimiter and encoding to verify it's readable
         try:
-            stock_df = pd.read_csv(filepath, delimiter=delimiter)
-            self.log.info(f"Loaded stock CSV with delimiter '{delimiter}': {len(stock_df)} rows")
+            stock_df = pd.read_csv(filepath, delimiter=delimiter, encoding=encoding)
+            self.log.info(f"Loaded stock CSV with delimiter '{delimiter}', encoding '{encoding}': {len(stock_df)} rows")
 
-            # Store the detected delimiter for later use
+            # Store the detected delimiter and encoding for later use
             self.mw.stock_file_detected_delimiter = delimiter
+            self.mw.stock_file_detected_encoding = encoding
 
         except Exception as e:
             self.log.error(f"Failed to load stock CSV: {e}")
@@ -218,7 +223,8 @@ class FileHandler:
                 Path(folder_path),
                 required_columns=required_cols,
                 order_number_column="Order_Number",
-                delimiter=","
+                delimiter=",",
+                encoding="utf-8"  # Orders files are typically UTF-8
             )
 
             # Store the result for later use
@@ -296,22 +302,26 @@ class FileHandler:
         required_cols = client_config.get("column_mappings", {}).get("stock_required", [])
         configured_delimiter = client_config.get("settings", {}).get("stock_csv_delimiter", ";")
 
-        # Auto-detect delimiter from first CSV file in folder
+        # Auto-detect delimiter and encoding from first CSV file in folder
         delimiter = configured_delimiter
+        encoding = 'utf-8'
         try:
             csv_files = list(Path(folder_path).glob("*.csv"))
             if csv_files:
+                detected_encoding = core.detect_csv_encoding(str(csv_files[0]))
                 detected_delimiter = core.detect_csv_delimiter(str(csv_files[0]))
-                self.log.info(f"Auto-detected delimiter from first file: '{detected_delimiter}'")
+                self.log.info(f"Auto-detected from first file - encoding: '{detected_encoding}', delimiter: '{detected_delimiter}'")
                 if detected_delimiter != configured_delimiter:
                     self.log.warning(
                         f"Detected delimiter '{detected_delimiter}' differs from configured '{configured_delimiter}'. "
                         f"Using detected delimiter."
                     )
                 delimiter = detected_delimiter
+                encoding = detected_encoding
         except Exception as e:
-            self.log.warning(f"Failed to auto-detect delimiter: {e}. Using configured delimiter.")
+            self.log.warning(f"Failed to auto-detect delimiter/encoding: {e}. Using configured delimiter and UTF-8.")
             delimiter = configured_delimiter
+            encoding = 'utf-8'
 
         # Determine the deduplication column (usually SKU)
         dedup_column = client_config.get("column_mappings", {}).get("stock_sku_column", "SKU")
@@ -322,11 +332,13 @@ class FileHandler:
                 Path(folder_path),
                 required_columns=required_cols,
                 order_number_column=dedup_column,  # Use SKU or equivalent for stock
-                delimiter=delimiter
+                delimiter=delimiter,
+                encoding=encoding
             )
 
-            # Store the detected delimiter for later use
+            # Store the detected delimiter and encoding for later use
             self.mw.stock_file_detected_delimiter = delimiter
+            self.mw.stock_file_detected_encoding = encoding
 
             # Store the result for later use
             self.mw.stock_folder_path = folder_path
