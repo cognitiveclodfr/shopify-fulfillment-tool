@@ -211,7 +211,12 @@ class MainWindow(QMainWindow):
         # Session and file loading
         self.new_session_btn.clicked.connect(self.actions_handler.create_new_session)
         self.load_orders_btn.clicked.connect(self.file_handler.select_orders_file)
+        self.load_orders_folder_btn.clicked.connect(self.file_handler.select_orders_folder)
         self.load_stock_btn.clicked.connect(self.file_handler.select_stock_file)
+
+        # Orders mode radio buttons
+        self.orders_mode_single.toggled.connect(self.on_orders_mode_changed)
+        self.orders_mode_folder.toggled.connect(self.on_orders_mode_changed)
 
         # Main actions
         self.run_analysis_button.clicked.connect(self.actions_handler.run_analysis)
@@ -606,6 +611,25 @@ class MainWindow(QMainWindow):
                     action.triggered.connect(func)
                     menu.addAction(action)
             menu.exec(table.viewport().mapToGlobal(pos))
+
+    def on_orders_mode_changed(self):
+        """Handle change between single file and folder mode for orders."""
+        if self.orders_mode_single.isChecked():
+            # Show single file button, hide folder button
+            self.load_orders_btn.setVisible(True)
+            self.load_orders_folder_btn.setVisible(False)
+            logging.info("Switched to single file mode for orders")
+        else:
+            # Show folder button, hide single file button
+            self.load_orders_btn.setVisible(False)
+            self.load_orders_folder_btn.setVisible(True)
+            logging.info("Switched to folder mode for orders")
+
+        # Reset file selection when switching modes
+        self.orders_file_path = None
+        self.orders_file_path_label.setText("No file/folder selected")
+        self.orders_file_status_label.setText("")
+        self.run_analysis_button.setEnabled(False)
 
     def closeEvent(self, event):
         """Handles the application window being closed.

@@ -1,9 +1,11 @@
 import os
 import logging
 import pandas as pd
+from pathlib import Path
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from shopify_tool import core
+from shopify_tool.csv_loader import load_single_csv, load_orders_from_folder
 
 
 class FileHandler:
@@ -38,11 +40,98 @@ class FileHandler:
         """
         filepath, _ = QFileDialog.getOpenFileName(self.mw, "Select Orders File", "", "CSV files (*.csv)")
         if filepath:
+            # Use new csv_loader for enhanced loading
+            result = load_single_csv(Path(filepath))
+
+            if not result.success:
+                QMessageBox.critical(
+                    self.mw,
+                    "CSV Load Error",
+                    f"Failed to load orders file:\n\n{result.get_summary()}"
+                )
+                return
+
+            # Show info if there were warnings (e.g., duplicates)
+            if result.warnings:
+                QMessageBox.warning(
+                    self.mw,
+                    "CSV Load Warnings",
+                    result.get_summary()
+                )
+
             self.mw.orders_file_path = filepath
             self.mw.orders_file_path_label.setText(os.path.basename(filepath))
             self.log.info(f"Orders file selected: {filepath}")
+
+            # Store loaded dataframe for later use (optional optimization)
+            if hasattr(self.mw, 'loaded_orders_df'):
+                self.mw.loaded_orders_df = result.dataframe
+
             self.validate_file("orders")
             self.check_files_ready()
+
+    def select_orders_folder(self):
+        """Opens a folder dialog for the user to select a folder with multiple CSV files.
+
+        Loads all CSV files from the folder, validates and merges them,
+        removes duplicates, and shows a summary to the user.
+        """
+        folder_path = QFileDialog.getExistingDirectory(
+            self.mw,
+            "Select Folder with CSV Files",
+            "",
+            QFileDialog.ShowDirsOnly
+        )
+
+        if not folder_path:
+            return
+
+        # Use csv_loader to load and merge all files
+        result = load_orders_from_folder(Path(folder_path))
+
+        if not result.success:
+            QMessageBox.critical(
+                self.mw,
+                "Folder Load Error",
+                f"Failed to load CSV files from folder:\n\n{result.get_summary()}"
+            )
+            return
+
+        # Show summary with file count, orders, duplicates
+        summary_msg = result.get_summary()
+        QMessageBox.information(
+            self.mw,
+            "Folder Loaded Successfully",
+            f"CSV files loaded from folder:\n\n{summary_msg}"
+        )
+
+        # Set the folder path as orders path (we'll save merged CSV)
+        # For now, use first file in folder as reference
+        self.mw.orders_file_path = folder_path
+        folder_name = os.path.basename(folder_path)
+        self.mw.orders_file_path_label.setText(
+            f"📁 {folder_name} ({result.files_processed} files, {result.total_orders} orders)"
+        )
+
+        self.log.info(
+            f"Orders folder selected: {folder_path} - "
+            f"{result.files_processed} files, {result.total_orders} orders, "
+            f"{result.duplicates_removed} duplicates removed"
+        )
+
+        # Store the merged dataframe for analysis
+        if hasattr(self.mw, 'loaded_orders_df'):
+            self.mw.loaded_orders_df = result.dataframe
+
+        # Mark as valid since we already loaded successfully
+        if hasattr(self.mw, 'orders_file_status_label'):
+            self.mw.orders_file_status_label.setText("✓")
+            self.mw.orders_file_status_label.setStyleSheet("color: green; font-weight: bold;")
+            self.mw.orders_file_status_label.setToolTip(
+                f"Loaded {result.files_processed} files with {result.total_orders} orders"
+            )
+
+        self.check_files_ready()
 
     def select_stock_file(self):
         """Opens file dialog for stock CSV selection and loads file.
