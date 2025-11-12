@@ -302,6 +302,87 @@ class ProfileManager:
                 shutil.rmtree(client_dir, ignore_errors=True)
             raise ProfileManagerError(f"Failed to create client profile: {e}")
 
+    def _migrate_column_mappings_v1_to_v2(self, client_id: str, config: Dict) -> bool:
+        """Migrate column mappings from v1 to v2 format.
+
+        V1 format (old):
+            "column_mappings": {
+                "orders_required": ["Order_Number", "SKU", ...],
+                "stock_required": ["SKU", "Product_Name", ...]
+            }
+
+        V2 format (new):
+            "column_mappings": {
+                "version": 2,
+                "orders": {"Name": "Order_Number", "Lineitem sku": "SKU", ...},
+                "stock": {"Артикул": "SKU", "Име": "Product_Name", ...}
+            }
+
+        Args:
+            client_id (str): Client ID (for logging)
+            config (Dict): Configuration dictionary to migrate (modified in-place)
+
+        Returns:
+            bool: True if migration was performed, False if already v2 or no column_mappings
+        """
+        if "column_mappings" not in config:
+            logger.warning(f"No column_mappings found in config for CLIENT_{client_id}")
+            return False
+
+        column_mappings = config["column_mappings"]
+
+        # Check if already v2
+        if isinstance(column_mappings, dict) and "version" in column_mappings:
+            version = column_mappings.get("version", 1)
+            if version >= 2:
+                logger.debug(f"Config already v{version} for CLIENT_{client_id}")
+                return False
+
+        # Check if v1 format (has orders_required/stock_required)
+        is_v1 = ("orders_required" in column_mappings or "stock_required" in column_mappings)
+
+        if not is_v1:
+            # Unknown format, assume it needs migration
+            logger.warning(f"Unknown column_mappings format for CLIENT_{client_id}, applying default v2")
+
+        # Migrate to v2 with default Shopify/Bulgarian mappings
+        logger.info(f"Migrating column mappings v1 → v2 for CLIENT_{client_id}")
+
+        # Use default mappings (Shopify orders + Bulgarian stock)
+        new_mappings = {
+            "version": 2,
+            "orders": {
+                "Name": "Order_Number",
+                "Lineitem sku": "SKU",
+                "Lineitem quantity": "Quantity",
+                "Lineitem name": "Product_Name",
+                "Shipping Method": "Shipping_Method",
+                "Shipping Country": "Shipping_Country",
+                "Tags": "Tags",
+                "Notes": "Notes",
+                "Total": "Total_Price"
+            },
+            "stock": {
+                "Артикул": "SKU",
+                "Име": "Product_Name",
+                "Наличност": "Stock"
+            }
+        }
+
+        # Replace old mappings with new
+        config["column_mappings"] = new_mappings
+
+        # Add migration metadata
+        config["_migration_info"] = {
+            "migrated_at": datetime.now().isoformat(),
+            "from_version": 1,
+            "to_version": 2,
+            "migrated_by": os.environ.get('COMPUTERNAME', 'Unknown')
+        }
+
+        logger.info(f"Migration successful for CLIENT_{client_id}")
+        return True
+
     def _create_default_shopify_config(self, client_id: str, client_name: str) -> Dict:
         """Create default Shopify configuration.
 
@@ -318,18 +399,23 @@ class ProfileManager:
             "created_at": datetime.now().isoformat(),
 
             "column_mappings": {
-                "orders_required": [
-                    "Order_Number",
-                    "SKU",
-                    "Product_Name",
-                    "Quantity",
-                    "Shipping_Method"
-                ],
-                "stock_required": [
-                    "SKU",
-                    "Product_Name",
-                    "Available_Stock"
-                ]
+                "version": 2,
+                "orders": {
+                    "Name": "Order_Number",
+                    "Lineitem sku": "SKU",
+                    "Lineitem quantity": "Quantity",
+                    "Lineitem name": "Product_Name",
+                    "Shipping Method": "Shipping_Method",
+                    "Shipping Country": "Shipping_Country",
+                    "Tags": "Tags",
+                    "Notes": "Notes",
+                    "Total": "Total_Price"
+                },
+                "stock": {
+                    "Артикул": "SKU",
+                    "Име": "Product_Name",
+                    "Наличност": "Stock"
+                }
             },
 
             "courier_mappings": {
@@ -389,6 +475,7 @@ class ProfileManager:
         """Load Shopify configuration for a client with caching.
 
         Uses time-based caching (60 seconds) to reduce network round-trips.
+        Automatically migrates old v1 configs to v2 format.
 
         Args:
             client_id (str): Client ID
@@ -418,6 +505,13 @@ class ProfileManager:
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 config = json.load(f)
+
+            # Check if migration is needed
+            migrated = self._migrate_column_mappings_v1_to_v2(client_id, config)
+            if migrated:
+                # If config was migrated, save it immediately
+                self.save_shopify_config(client_id, config)
+                logger.info(f"Config migrated from v1 to v2 for CLIENT_{client_id}")
 
             # Update cache
             self._config_cache[cache_key] = (config, datetime.now())
