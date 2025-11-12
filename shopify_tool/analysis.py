@@ -160,6 +160,9 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None):
     orders_clean_df = orders_df[columns_to_keep_existing].copy()
     orders_clean_df = orders_clean_df.dropna(subset=["SKU"])
 
+    # CRITICAL: Normalize SKU to string for consistent merging
+    orders_clean_df["SKU"] = orders_clean_df["SKU"].astype(str).str.strip()
+
     # Clean stock DataFrame (internal names)
     required_stock_cols = ["SKU", "Stock"]
     stock_cols_to_keep = [col for col in ["SKU", "Product_Name", "Stock"] if col in stock_df.columns]
@@ -172,6 +175,9 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None):
     stock_clean_df = stock_df[stock_cols_to_keep].copy()
     stock_clean_df = stock_clean_df.dropna(subset=["SKU"])
     stock_clean_df = stock_clean_df.drop_duplicates(subset=["SKU"], keep="first")
+
+    # CRITICAL: Normalize SKU to string for consistent merging
+    stock_clean_df["SKU"] = stock_clean_df["SKU"].astype(str).str.strip()
 
     # --- Fulfillment Simulation ---
     order_item_counts = orders_clean_df.groupby("Order_Number").size().rename("item_count")
@@ -206,7 +212,21 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None):
     final_stock_levels = pd.Series(live_stock, name="Final_Stock").reset_index().rename(columns={"index": "SKU"})
 
     # --- Final Report Generation ---
-    final_df = pd.merge(orders_clean_df, stock_clean_df, on="SKU", how="left")
+    # Merge orders with stock data
+    # If both have Product_Name, prefer the one from orders (use suffixes to handle conflict)
+    has_product_name_in_orders = "Product_Name" in orders_clean_df.columns
+    has_product_name_in_stock = "Product_Name" in stock_clean_df.columns
+
+    if has_product_name_in_orders and has_product_name_in_stock:
+        # Both have Product_Name - use suffixes and prefer orders
+        final_df = pd.merge(orders_clean_df, stock_clean_df, on="SKU", how="left", suffixes=('', '_stock'))
+        # Drop stock Product_Name, keep orders Product_Name
+        if 'Product_Name_stock' in final_df.columns:
+            final_df = final_df.drop(columns=['Product_Name_stock'])
+    else:
+        # Simple merge - no conflict
+        final_df = pd.merge(orders_clean_df, stock_clean_df, on="SKU", how="left")
+
     final_df = pd.merge(final_df, order_item_counts, on="Order_Number")
     # Merge final stock levels to the main dataframe
     final_df = pd.merge(final_df, final_stock_levels, on="SKU", how="left")

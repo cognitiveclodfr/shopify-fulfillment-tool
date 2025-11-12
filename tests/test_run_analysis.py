@@ -24,8 +24,27 @@ def make_test_data():
     )
     # History: empty for simplicity
     history_df = pd.DataFrame({"Order_Number": []})
-    # Config with low_stock_threshold
-    config = {"settings": {"low_stock_threshold": 10, "stock_csv_delimiter": ";"}}
+    # Config with low_stock_threshold and column mappings (v2 format)
+    config = {
+        "settings": {"low_stock_threshold": 10, "stock_csv_delimiter": ";"},
+        "column_mappings": {
+            "version": 2,
+            "orders": {
+                "Name": "Order_Number",
+                "Lineitem sku": "SKU",
+                "Lineitem quantity": "Quantity",
+                "Shipping Method": "Shipping_Method",
+                "Shipping Country": "Shipping_Country",
+                "Tags": "Tags",
+                "Notes": "Notes"
+            },
+            "stock": {
+                "Артикул": "SKU",
+                "Име": "Product_Name",
+                "Наличност": "Stock"
+            }
+        }
+    }
     # Attach DataFrames to config for test mode
     config["test_stock_df"] = stock_df
     config["test_orders_df"] = orders_df

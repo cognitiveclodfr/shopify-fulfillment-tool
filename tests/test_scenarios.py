@@ -8,7 +8,26 @@ from shopify_tool import core
 
 def run_test(stock_df, orders_df, history_df=None, low_stock_threshold=10):
     """Helper function to run an analysis with given data and return the results."""
-    config = {"settings": {"low_stock_threshold": low_stock_threshold}}
+    config = {
+        "settings": {"low_stock_threshold": low_stock_threshold},
+        "column_mappings": {
+            "version": 2,
+            "orders": {
+                "Name": "Order_Number",
+                "Lineitem sku": "SKU",
+                "Lineitem quantity": "Quantity",
+                "Shipping Method": "Shipping_Method",
+                "Shipping Country": "Shipping_Country",
+                "Tags": "Tags",
+                "Notes": "Notes"
+            },
+            "stock": {
+                "Артикул": "SKU",
+                "Име": "Product_Name",
+                "Наличност": "Stock"
+            }
+        }
+    }
     config["test_stock_df"] = stock_df
     config["test_orders_df"] = orders_df
     config["test_history_df"] = history_df if history_df is not None else pd.DataFrame({"Order_Number": []})

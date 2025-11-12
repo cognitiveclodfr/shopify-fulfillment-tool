@@ -27,12 +27,36 @@ def make_orders_df():
     )
 
 
+def make_default_config(low_stock_threshold=4):
+    """Creates a default test config with v2 column mappings."""
+    return {
+        "settings": {"low_stock_threshold": low_stock_threshold, "stock_csv_delimiter": ";"},
+        "column_mappings": {
+            "version": 2,
+            "orders": {
+                "Name": "Order_Number",
+                "Lineitem sku": "SKU",
+                "Lineitem quantity": "Quantity",
+                "Shipping Method": "Shipping_Method",
+                "Shipping Country": "Shipping_Country",
+                "Tags": "Tags",
+                "Notes": "Notes"
+            },
+            "stock": {
+                "Артикул": "SKU",
+                "Име": "Product_Name",
+                "Наличност": "Stock"
+            }
+        }
+    }
+
+
 def test_run_full_analysis_basic():
     """Tests the basic in-memory execution of run_full_analysis."""
     stock_df = make_stock_df()
     orders_df = make_orders_df()
     # set threshold to 4 so final stock 3 will be flagged as Low Stock
-    config = {"settings": {"low_stock_threshold": 4}, "tagging_rules": {}}
+    config = make_default_config(low_stock_threshold=4)
     # inject test dfs
     config["test_stock_df"] = stock_df
     config["test_orders_df"] = orders_df
@@ -67,13 +91,10 @@ def test_full_run_with_file_io(tmp_path):
     orders_df.to_csv(orders_file, index=False)
 
     # 3. Create a config dictionary pointing to our temp files
-    config = {
-        "settings": {"stock_csv_delimiter": ";", "low_stock_threshold": 4},
-        "column_mappings": {"orders_required": ["Name", "Lineitem sku"], "stock_required": ["Артикул", "Наличност"]},
-        "rules": [],
-        "packing_lists": [{"name": "Test Packing List", "output_filename": "test_packing_list.xlsx", "filters": []}],
-        "stock_exports": [{"name": "Test Stock Export", "output_filename": "test_stock_export.xls", "filters": []}],
-    }
+    config = make_default_config(low_stock_threshold=4)
+    config["rules"] = []
+    config["packing_lists"] = [{"name": "Test Packing List", "output_filename": "test_packing_list.xlsx", "filters": []}]
+    config["stock_exports"] = [{"name": "Test Stock Export", "output_filename": "test_stock_export.xls", "filters": []}]
 
     # 4. Run the main analysis function
     success, analysis_path, final_df, stats = core.run_full_analysis(
@@ -219,11 +240,11 @@ def test_validate_dataframes_with_missing_columns():
 def test_run_full_analysis_with_rules(mocker):
     """Tests that the rule engine is correctly called during a full analysis."""
     mock_engine_apply = mocker.patch("shopify_tool.rules.RuleEngine.apply")
-    config = {
-        "test_stock_df": make_stock_df(),
-        "test_orders_df": make_orders_df(),
-        "rules": [{"if": [], "then": []}],  # Presence of rules triggers the engine
-    }
+    config = make_default_config()
+    config["test_stock_df"] = make_stock_df()
+    config["test_orders_df"] = make_orders_df()
+    config["test_history_df"] = pd.DataFrame({"Order_Number": []})
+    config["rules"] = [{"if": [], "then": []}]  # Presence of rules triggers the engine
     core.run_full_analysis(None, None, None, ";", config)
     mock_engine_apply.assert_called_once()
 
@@ -244,11 +265,8 @@ def test_run_full_analysis_updates_history(tmp_path, mocker):
 
     mocker.patch("shopify_tool.core.get_persistent_data_path", return_value=str(history_file))
 
-    config = {
-        "settings": {"stock_csv_delimiter": ";"},
-        "column_mappings": {"orders_required": ["Name", "Lineitem sku"], "stock_required": ["Артикул", "Наличност"]},
-        "rules": [],
-    }
+    config = make_default_config()
+    config["rules"] = []
 
     # Run analysis
     core.run_full_analysis(str(stock_file), str(orders_file), str(output_dir), ";", config)
