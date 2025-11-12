@@ -34,21 +34,78 @@ class FileHandler:
 
         After a file is selected, it updates the corresponding UI labels,
         triggers header validation for the file, and checks if the application
-        is ready to run the analysis.
+        is ready to run the analysis. Auto-detects delimiter and prompts user
+        if detected delimiter differs from configured one.
         """
         filepath, _ = QFileDialog.getOpenFileName(self.mw, "Select Orders File", "", "CSV files (*.csv)")
-        if filepath:
-            self.mw.orders_file_path = filepath
-            self.mw.orders_file_path_label.setText(os.path.basename(filepath))
-            self.log.info(f"Orders file selected: {filepath}")
-            self.validate_file("orders")
-            self.check_files_ready()
+        if not filepath:
+            return
+
+        self.mw.orders_file_path = filepath
+        self.mw.orders_file_path_label.setText(os.path.basename(filepath))
+        self.log.info(f"Orders file selected: {filepath}")
+
+        # Get delimiter from config (default to comma for Shopify exports)
+        config = self.mw.active_profile_config
+        config_delimiter = config.get("settings", {}).get("orders_csv_delimiter", ",")
+
+        # Auto-detect delimiter
+        from shopify_tool.csv_utils import detect_csv_delimiter
+
+        try:
+            detected_delimiter, method = detect_csv_delimiter(filepath)
+            self.log.info(f"Orders file: detected delimiter '{detected_delimiter}' using {method}")
+        except Exception as e:
+            self.log.error(f"Delimiter detection failed for orders: {e}")
+            detected_delimiter = ","  # fallback to comma
+
+        # Determine which delimiter to use
+        delimiter = detected_delimiter  # Default to detected
+
+        # If detected differs from config, prompt user
+        if detected_delimiter != config_delimiter:
+            result = QMessageBox.question(
+                self.mw,
+                "Delimiter Detected",
+                f"Detected delimiter: '{detected_delimiter}'\n"
+                f"Configured delimiter: '{config_delimiter}'\n\n"
+                f"Which delimiter should be used for orders file?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes
+            )
+
+            if result == QMessageBox.StandardButton.Yes:
+                delimiter = detected_delimiter
+                self.log.info(f"Using detected delimiter: '{delimiter}'")
+
+                # Offer to update config
+                update = QMessageBox.question(
+                    self.mw,
+                    "Update Settings",
+                    f"Would you like to save '{delimiter}' as default orders delimiter?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+
+                if update == QMessageBox.StandardButton.Yes:
+                    self.mw.active_profile_config["settings"]["orders_csv_delimiter"] = delimiter
+                    # Save config through ProfileManager
+                    client_id = self.mw.active_profile_config.get("client_id")
+                    if client_id and hasattr(self.mw, 'profile_manager'):
+                        self.mw.profile_manager.save_shopify_config(client_id, self.mw.active_profile_config)
+                        self.log.info(f"Saved orders delimiter '{delimiter}' to config")
+            else:
+                delimiter = config_delimiter
+                self.log.info(f"Using configured orders delimiter: '{delimiter}'")
+
+        self.validate_file("orders")
+        self.check_files_ready()
 
     def select_stock_file(self):
         """Opens file dialog for stock CSV selection and loads file.
 
         After a file is selected, it validates the file with the correct
-        delimiter from the client configuration.
+        delimiter from the client configuration. Auto-detects delimiter
+        and prompts user if detected delimiter differs from configured one.
         """
         filepath, _ = QFileDialog.getOpenFileName(
             self.mw,
@@ -66,11 +123,59 @@ class FileHandler:
 
         # Get delimiter from config
         config = self.mw.active_profile_config
-        delimiter = config.get("settings", {}).get("stock_csv_delimiter", ";")
+        config_delimiter = config.get("settings", {}).get("stock_csv_delimiter", ";")
 
-        # Try to load CSV with correct delimiter to verify it's readable
+        # Auto-detect delimiter
+        from shopify_tool.csv_utils import detect_csv_delimiter
+
         try:
-            stock_df = pd.read_csv(filepath, delimiter=delimiter)
+            detected_delimiter, method = detect_csv_delimiter(filepath)
+            self.log.info(f"Detected delimiter '{detected_delimiter}' using {method}")
+        except Exception as e:
+            self.log.error(f"Delimiter detection failed: {e}")
+            detected_delimiter = ";"  # fallback
+
+        # Determine which delimiter to use
+        delimiter = detected_delimiter  # Default to detected
+
+        # If detected differs from config, prompt user
+        if detected_delimiter != config_delimiter:
+            result = QMessageBox.question(
+                self.mw,
+                "Delimiter Detected",
+                f"Detected delimiter: '{detected_delimiter}'\n"
+                f"Configured delimiter: '{config_delimiter}'\n\n"
+                f"Which delimiter should be used?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes
+            )
+
+            if result == QMessageBox.StandardButton.Yes:
+                delimiter = detected_delimiter
+                self.log.info(f"Using detected delimiter: '{delimiter}'")
+
+                # Offer to update config
+                update = QMessageBox.question(
+                    self.mw,
+                    "Update Settings",
+                    f"Would you like to save '{delimiter}' as default stock delimiter?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+
+                if update == QMessageBox.StandardButton.Yes:
+                    self.mw.active_profile_config["settings"]["stock_csv_delimiter"] = delimiter
+                    # Save config through ProfileManager
+                    client_id = self.mw.active_profile_config.get("client_id")
+                    if client_id and hasattr(self.mw, 'profile_manager'):
+                        self.mw.profile_manager.save_shopify_config(client_id, self.mw.active_profile_config)
+                        self.log.info(f"Saved delimiter '{delimiter}' to config")
+            else:
+                delimiter = config_delimiter
+                self.log.info(f"Using configured delimiter: '{delimiter}'")
+
+        # Try to load CSV with determined delimiter to verify it's readable
+        try:
+            stock_df = pd.read_csv(filepath, delimiter=delimiter, encoding='utf-8-sig')
             self.log.info(f"Loaded stock CSV with delimiter '{delimiter}': {len(stock_df)} rows")
 
         except Exception as e:

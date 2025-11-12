@@ -112,7 +112,8 @@ class ActionsHandler(QObject):
 
         self.mw.ui_manager.set_ui_busy(True)
         self.log.info("Starting analysis thread.")
-        stock_delimiter = self.mw.active_profile_config.get("settings", {}).get("stock_delimiter", ";")
+        stock_delimiter = self.mw.active_profile_config.get("settings", {}).get("stock_csv_delimiter", ";")
+        orders_delimiter = self.mw.active_profile_config.get("settings", {}).get("orders_csv_delimiter", ",")
 
         worker = Worker(
             core.run_full_analysis,
@@ -120,6 +121,7 @@ class ActionsHandler(QObject):
             self.mw.orders_file_path,
             None,  # output_dir_path (not used in session mode)
             stock_delimiter,
+            orders_delimiter,
             self.mw.active_profile_config,
             client_id=self.mw.current_client_id,
             session_manager=self.mw.session_manager,

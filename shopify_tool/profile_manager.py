@@ -383,6 +383,58 @@ class ProfileManager:
         logger.info(f"Migration successful for CLIENT_{client_id}")
         return True
 
+    def _migrate_delimiter_config_v1_to_v2(self, client_id: str, config: Dict) -> bool:
+        """Migrate delimiter configuration from v1 to v2 format.
+
+        V1 format (old):
+            "settings": {
+                "stock_delimiter": ";"
+            }
+
+        V2 format (new):
+            "settings": {
+                "stock_csv_delimiter": ";",
+                "orders_csv_delimiter": ","
+            }
+
+        Args:
+            client_id (str): Client ID (for logging)
+            config (Dict): Configuration dictionary to migrate (modified in-place)
+
+        Returns:
+            bool: True if migration was performed, False if already v2
+        """
+        if "settings" not in config:
+            logger.debug(f"No settings found in config for CLIENT_{client_id}")
+            return False
+
+        settings = config["settings"]
+        migrated = False
+
+        # Migrate stock_delimiter → stock_csv_delimiter
+        if "stock_delimiter" in settings:
+            if "stock_csv_delimiter" not in settings:
+                settings["stock_csv_delimiter"] = settings["stock_delimiter"]
+                logger.info(f"Migrated 'stock_delimiter' to 'stock_csv_delimiter' for CLIENT_{client_id}")
+                migrated = True
+            del settings["stock_delimiter"]
+            logger.info(f"Removed old 'stock_delimiter' key for CLIENT_{client_id}")
+            migrated = True
+
+        # Add orders_csv_delimiter if missing (with default value)
+        if "orders_csv_delimiter" not in settings:
+            settings["orders_csv_delimiter"] = ","
+            logger.info(f"Added default 'orders_csv_delimiter' for CLIENT_{client_id}")
+            migrated = True
+
+        # Update config version if migration occurred
+        if migrated:
+            config["config_version"] = "2.1"
+            config["migrated_at"] = datetime.now().isoformat()
+            logger.info(f"Delimiter migration successful for CLIENT_{client_id}, version: 2.1")
+
+        return migrated
+
     def _create_default_shopify_config(self, client_id: str, client_name: str) -> Dict:
         """Create default Shopify configuration.
 
@@ -435,7 +487,8 @@ class ProfileManager:
 
             "settings": {
                 "low_stock_threshold": 5,
-                "stock_delimiter": ";"
+                "stock_csv_delimiter": ";",
+                "orders_csv_delimiter": ","
             },
 
             "rules": [],
@@ -506,12 +559,14 @@ class ProfileManager:
             with open(config_path, 'r', encoding='utf-8') as f:
                 config = json.load(f)
 
-            # Check if migration is needed
-            migrated = self._migrate_column_mappings_v1_to_v2(client_id, config)
-            if migrated:
+            # Check if migrations are needed
+            migrated_mappings = self._migrate_column_mappings_v1_to_v2(client_id, config)
+            migrated_delimiters = self._migrate_delimiter_config_v1_to_v2(client_id, config)
+
+            if migrated_mappings or migrated_delimiters:
                 # If config was migrated, save it immediately
                 self.save_shopify_config(client_id, config)
-                logger.info(f"Config migrated from v1 to v2 for CLIENT_{client_id}")
+                logger.info(f"Config migrations completed for CLIENT_{client_id}")
 
             # Update cache
             self._config_cache[cache_key] = (config, datetime.now())
