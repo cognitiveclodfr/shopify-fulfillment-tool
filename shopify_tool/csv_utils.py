@@ -351,8 +351,14 @@ def merge_csv_files(
                 keep='first'
             )
         else:
-            # Check duplicates across all columns
-            merged_df = merged_df.drop_duplicates(keep='first')
+            # Check duplicates across all columns (excluding _source_file if present)
+            # We exclude _source_file because it's just for tracking and shouldn't affect duplicate detection
+            cols_to_check = [col for col in merged_df.columns if col != '_source_file']
+            if cols_to_check:
+                merged_df = merged_df.drop_duplicates(subset=cols_to_check, keep='first')
+            else:
+                # Fallback if somehow no columns left
+                merged_df = merged_df.drop_duplicates(keep='first')
 
         removed = original_count - len(merged_df)
         if removed > 0:
