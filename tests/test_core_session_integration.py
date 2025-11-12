@@ -16,6 +16,31 @@ from shopify_tool.profile_manager import ProfileManager
 from shopify_tool.session_manager import SessionManager
 
 
+def make_test_config(low_stock_threshold=4):
+    """Create test config with v2 column mappings."""
+    return {
+        "settings": {"low_stock_threshold": low_stock_threshold, "stock_csv_delimiter": ";"},
+        "column_mappings": {
+            "version": 2,
+            "orders": {
+                "Name": "Order_Number",
+                "Lineitem sku": "SKU",
+                "Lineitem quantity": "Quantity",
+                "Shipping Method": "Shipping_Method",
+                "Shipping Country": "Shipping_Country",
+                "Tags": "Tags",
+                "Notes": "Notes"
+            },
+            "stock": {
+                "Артикул": "SKU",
+                "Име": "Product_Name",
+                "Наличност": "Stock"
+            }
+        },
+        "rules": []
+    }
+
+
 @pytest.fixture
 def mock_file_server(tmp_path):
     """Create a mock file server structure for testing."""
@@ -81,14 +106,7 @@ def test_run_full_analysis_with_session(
     """Test run_full_analysis with session-based workflow."""
     stock_file, orders_file = test_data_files
 
-    config = {
-        "settings": {"low_stock_threshold": 4},
-        "column_mappings": {
-            "orders_required": ["Name", "Lineitem sku"],
-            "stock_required": ["Артикул", "Наличност"]
-        },
-        "rules": []
-    }
+    config = make_test_config(low_stock_threshold=4)
 
     # Run analysis with session mode
     success, session_path, final_df, stats = core.run_full_analysis(
