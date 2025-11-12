@@ -5,10 +5,11 @@ import json
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Tuple, Dict, Any
+from typing import Optional, Tuple, Dict, Any, List
 from . import analysis, packing_lists, stock_export
 from .rules import RuleEngine
 from .utils import get_persistent_data_path
+from .csv_utils import normalize_sku
 import numpy as np
 
 SYSTEM_TAGS = ["Repeat", "Priority", "Error"]
@@ -22,6 +23,40 @@ def _normalize_unc_path(path):
         return path
     # os.path.normpath will convert / to \ on Windows and handle other inconsistencies
     return os.path.normpath(path)
+
+
+def _get_sku_dtype_dict(column_mappings: dict, file_type: str) -> dict:
+    """
+    Get dtype dictionary to force SKU columns to string type during CSV loading.
+
+    This prevents pandas from auto-detecting numeric SKUs as float64, which
+    causes "5170" to become "5170.0" after string conversion.
+
+    Args:
+        column_mappings: Column mappings from config
+        file_type: 'orders' or 'stock'
+
+    Returns:
+        dict: dtype specification for pd.read_csv() (e.g., {"Lineitem sku": str})
+
+    Examples:
+        >>> mappings = {"orders": {"Lineitem sku": "SKU"}}
+        >>> _get_sku_dtype_dict(mappings, "orders")
+        {"Lineitem sku": str}
+    """
+    mappings = column_mappings.get(file_type, {})
+
+    # Find all CSV column names that map to SKU
+    sku_columns = [csv_col for csv_col, internal_name in mappings.items()
+                   if internal_name == "SKU"]
+
+    # Create dtype dict: {column_name: str}
+    dtype_dict = {col: str for col in sku_columns}
+
+    if dtype_dict:
+        logger.info(f"Forcing string dtype for {file_type} SKU columns: {list(dtype_dict.keys())}")
+
+    return dtype_dict
 
 
 def _create_analysis_data_for_packing(final_df: pd.DataFrame) -> Dict[str, Any]:
@@ -327,10 +362,15 @@ def run_full_analysis(
         if not os.path.exists(stock_file_path) or not os.path.exists(orders_file_path):
             return False, "One or both input files were not found.", None, None
 
+        # Get dtype specifications to force SKU columns to string
+        column_mappings = config.get("column_mappings", {})
+        stock_dtype = _get_sku_dtype_dict(column_mappings, "stock")
+        orders_dtype = _get_sku_dtype_dict(column_mappings, "orders")
+
         # Load stock file with error handling
         try:
             logger.info(f"Reading stock file from normalized path: {stock_file_path}")
-            stock_df = pd.read_csv(stock_file_path, delimiter=stock_delimiter, encoding='utf-8-sig')
+            stock_df = pd.read_csv(stock_file_path, delimiter=stock_delimiter, encoding='utf-8-sig', dtype=stock_dtype)
             logger.info(f"Stock data loaded: {len(stock_df)} rows, {len(stock_df.columns)} columns")
         except pd.errors.ParserError as e:
             error_msg = (
@@ -356,7 +396,7 @@ def run_full_analysis(
         # Load orders file with error handling
         try:
             logger.info(f"Reading orders file from normalized path: {orders_file_path}")
-            orders_df = pd.read_csv(orders_file_path, delimiter=orders_delimiter, encoding='utf-8-sig')
+            orders_df = pd.read_csv(orders_file_path, delimiter=orders_delimiter, encoding='utf-8-sig', dtype=orders_dtype)
             logger.info(f"Orders data loaded: {len(orders_df)} rows, {len(orders_df.columns)} columns")
         except pd.errors.ParserError as e:
             error_msg = (
@@ -412,8 +452,15 @@ def run_full_analysis(
             else:
                 history_path_str = history_path
 
-            history_df = pd.read_csv(history_path_str, encoding='utf-8-sig')
+            # Force SKU column to string to prevent dtype issues
+            history_dtype = {"SKU": str} if "SKU" in pd.read_csv(history_path_str, nrows=0, encoding='utf-8-sig').columns else {}
+            history_df = pd.read_csv(history_path_str, encoding='utf-8-sig', dtype=history_dtype)
             logger.info(f"Loaded {len(history_df)} records from fulfillment history: {history_path}")
+
+            # Apply SKU normalization if SKU column exists
+            if not history_df.empty and "SKU" in history_df.columns:
+                history_df["SKU"] = history_df["SKU"].apply(normalize_sku)
+                logger.debug("Applied SKU normalization to history data")
         except FileNotFoundError:
             history_df = pd.DataFrame(columns=["Order_Number", "Execution_Date"])
             logger.info("No history file found. Starting with empty history.")

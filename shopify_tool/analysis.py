@@ -160,8 +160,10 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None):
     orders_clean_df = orders_df[columns_to_keep_existing].copy()
     orders_clean_df = orders_clean_df.dropna(subset=["SKU"])
 
-    # CRITICAL: Normalize SKU to string for consistent merging
-    orders_clean_df["SKU"] = orders_clean_df["SKU"].astype(str).str.strip()
+    # CRITICAL: Normalize SKU to standard format for consistent merging
+    # This handles float artifacts (5170.0 → "5170"), whitespace, and leading zeros
+    from .csv_utils import normalize_sku
+    orders_clean_df["SKU"] = orders_clean_df["SKU"].apply(normalize_sku)
 
     # Clean stock DataFrame (internal names)
     required_stock_cols = ["SKU", "Stock"]
@@ -176,8 +178,9 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None):
     stock_clean_df = stock_clean_df.dropna(subset=["SKU"])
     stock_clean_df = stock_clean_df.drop_duplicates(subset=["SKU"], keep="first")
 
-    # CRITICAL: Normalize SKU to string for consistent merging
-    stock_clean_df["SKU"] = stock_clean_df["SKU"].astype(str).str.strip()
+    # CRITICAL: Normalize SKU to standard format for consistent merging
+    # This handles float artifacts (5170.0 → "5170"), whitespace, and leading zeros
+    stock_clean_df["SKU"] = stock_clean_df["SKU"].apply(normalize_sku)
 
     # --- Fulfillment Simulation ---
     order_item_counts = orders_clean_df.groupby("Order_Number").size().rename("item_count")

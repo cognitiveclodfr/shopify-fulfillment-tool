@@ -3,7 +3,7 @@ CSV utility functions for delimiter detection and validation.
 """
 import csv
 import logging
-from typing import Tuple
+from typing import Tuple, Any
 import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -150,3 +150,66 @@ def suggest_delimiter_fix(file_path: str, failed_delimiter: str,
         confidence = 'low'
 
     return detected, confidence
+
+
+def normalize_sku(sku: Any) -> str:
+    """
+    Normalize SKU to standard string format.
+
+    Handles common SKU data type issues:
+    - Float conversion artifacts (5170.0 → "5170")
+    - Leading zeros for numeric SKUs ("07" → "7")
+    - Whitespace (strips leading/trailing spaces)
+    - Alphanumeric SKUs (preserved as-is)
+    - None/NaN values (returns empty string)
+
+    This function is critical for ensuring SKU matching works correctly
+    when pandas auto-detects numeric SKUs as float64 during CSV loading.
+
+    Args:
+        sku: SKU value to normalize (can be str, int, float, or NaN)
+
+    Returns:
+        str: Normalized SKU string
+
+    Examples:
+        >>> normalize_sku(5170.0)
+        "5170"
+        >>> normalize_sku("5170.0")
+        "5170"
+        >>> normalize_sku("5170")
+        "5170"
+        >>> normalize_sku(" 5170 ")
+        "5170"
+        >>> normalize_sku("ABC-123")
+        "ABC-123"
+        >>> normalize_sku("07")
+        "7"
+        >>> normalize_sku(None)
+        ""
+        >>> normalize_sku(pd.NA)
+        ""
+
+    Note:
+        For numeric SKUs, this function removes leading zeros by converting
+        to int. If you need to preserve leading zeros, consider forcing
+        dtype=str when loading CSV files.
+    """
+    if pd.isna(sku):
+        return ""
+
+    sku_str = str(sku).strip()
+
+    if not sku_str:
+        return ""
+
+    try:
+        # Try to parse as number and convert back to string
+        # This removes:
+        # - Float artifacts: 5170.0 → 5170 → "5170"
+        # - Leading zeros: "07" → 7 → "7"
+        return str(int(float(sku_str)))
+    except (ValueError, TypeError):
+        # Not a number, return cleaned string (handles alphanumeric SKUs)
+        # Examples: "ABC-123", "SKU-001", etc.
+        return sku_str
