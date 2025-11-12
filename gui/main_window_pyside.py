@@ -210,8 +210,14 @@ class MainWindow(QMainWindow):
 
         # Session and file loading
         self.new_session_btn.clicked.connect(self.actions_handler.create_new_session)
-        self.load_orders_btn.clicked.connect(self.file_handler.select_orders_file)
-        self.load_stock_btn.clicked.connect(self.file_handler.select_stock_file)
+
+        # Connect mode change signals
+        self.orders_single_radio.toggled.connect(self.ui_manager.on_orders_mode_changed)
+        self.stock_single_radio.toggled.connect(self.ui_manager.on_stock_mode_changed)
+
+        # Connect file/folder selection buttons (will handle both modes)
+        self.load_orders_btn.clicked.connect(self.file_handler.on_orders_select_clicked)
+        self.load_stock_btn.clicked.connect(self.file_handler.on_stock_select_clicked)
 
         # Main actions
         self.run_analysis_button.clicked.connect(self.actions_handler.run_analysis)

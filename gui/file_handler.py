@@ -1,7 +1,11 @@
 import os
 import logging
+import tempfile
+from pathlib import Path
+from typing import List, Tuple, Optional, Dict
 import pandas as pd
-from PySide6.QtWidgets import QFileDialog, QMessageBox
+from PySide6.QtWidgets import QFileDialog, QMessageBox, QListWidgetItem
+from PySide6.QtGui import QColor
 
 from shopify_tool import core
 
@@ -291,3 +295,530 @@ class FileHandler:
             self.log.info("Both files are validated and ready for analysis.")
         else:
             self.mw.run_analysis_button.setEnabled(False)
+
+    # ============================================================
+    # Folder Loading Support (New)
+    # ============================================================
+
+    def on_orders_select_clicked(self):
+        """Handle orders select button click (adapts to mode)."""
+        is_folder_mode = self.mw.orders_folder_radio.isChecked()
+
+        if is_folder_mode:
+            self.select_orders_folder()
+        else:
+            self.select_orders_file()
+
+    def on_stock_select_clicked(self):
+        """Handle stock select button click (adapts to mode)."""
+        is_folder_mode = self.mw.stock_folder_radio.isChecked()
+
+        if is_folder_mode:
+            self.select_stock_folder()
+        else:
+            self.select_stock_file()
+
+    def select_orders_folder(self):
+        """
+        Handle orders folder selection with multiple CSV files.
+
+        Workflow:
+        1. Open folder dialog
+        2. Scan for CSV files
+        3. Validate all files
+        4. Show preview
+        5. Merge files
+        6. Save to temp
+        7. Store merged path
+        """
+        # 1. Open folder dialog
+        folder_path = QFileDialog.getExistingDirectory(
+            self.mw,
+            "Select Orders Folder",
+            "",
+            QFileDialog.ShowDirsOnly
+        )
+
+        if not folder_path:
+            return
+
+        self.log.info(f"Orders folder selected: {folder_path}")
+
+        # 2. Scan for CSV files
+        recursive = self.mw.orders_recursive_checkbox.isChecked()
+        csv_files = self.scan_folder_for_csv(folder_path, recursive)
+
+        if not csv_files:
+            QMessageBox.warning(
+                self.mw,
+                "No Files Found",
+                f"No CSV files found in folder:\n{folder_path}"
+            )
+            return
+
+        self.log.info(f"Found {len(csv_files)} CSV files")
+
+        # 3. Validate all files
+        try:
+            valid_files, invalid_files, total_rows = self.validate_multiple_files(
+                csv_files,
+                "orders"
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self.mw,
+                "Validation Error",
+                f"Error validating files:\n{str(e)}"
+            )
+            return
+
+        # 4. Check if any valid files
+        if not valid_files:
+            msg = f"All {len(csv_files)} files are invalid.\n\n"
+            msg += "Invalid files:\n"
+            for filepath, missing in invalid_files[:5]:  # Show first 5
+                msg += f"  • {os.path.basename(filepath)}: missing {', '.join(missing)}\n"
+
+            QMessageBox.critical(self.mw, "No Valid Files", msg)
+            return
+
+        # 5. Show preview and confirm
+        if not self.show_file_preview("orders", valid_files, invalid_files, total_rows):
+            return  # User cancelled
+
+        # 6. Merge files
+        try:
+            merged_path = self.merge_and_save_files(
+                valid_files,
+                "orders",
+                folder_path
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self.mw,
+                "Merge Failed",
+                f"Failed to merge files:\n{str(e)}"
+            )
+            return
+
+        # 7. Store merged path and update UI
+        self.mw.orders_file_path = merged_path
+        self.mw.orders_source_files = valid_files  # Store for reference
+
+        # Update UI
+        self.mw.orders_file_path_label.setText(
+            f"{len(valid_files)} files merged ({total_rows} rows)"
+        )
+
+        # Update file list widget
+        self.mw.orders_file_list_widget.clear()
+        for filepath in valid_files:
+            item = QListWidgetItem(f"✓ {os.path.basename(filepath)}")
+            item.setForeground(QColor("green"))
+            self.mw.orders_file_list_widget.addItem(item)
+
+        for filepath, missing in invalid_files:
+            item = QListWidgetItem(f"✗ {os.path.basename(filepath)} (missing: {', '.join(missing)})")
+            item.setForeground(QColor("red"))
+            self.mw.orders_file_list_widget.addItem(item)
+
+        self.mw.orders_file_count_label.setText(
+            f"Total: {len(valid_files)} valid, {len(invalid_files)} invalid, {total_rows} rows"
+        )
+
+        # Validate merged file
+        self.validate_file("orders")
+
+        # Check if ready to run analysis
+        self.check_files_ready()
+
+        self.log.info(f"✓ Successfully merged {len(valid_files)} files into {merged_path}")
+
+    def select_stock_folder(self):
+        """
+        Handle stock folder selection with multiple CSV files.
+
+        Workflow is same as select_orders_folder but for stock files.
+        """
+        # 1. Open folder dialog
+        folder_path = QFileDialog.getExistingDirectory(
+            self.mw,
+            "Select Stock Folder",
+            "",
+            QFileDialog.ShowDirsOnly
+        )
+
+        if not folder_path:
+            return
+
+        self.log.info(f"Stock folder selected: {folder_path}")
+
+        # 2. Scan for CSV files
+        recursive = self.mw.stock_recursive_checkbox.isChecked()
+        csv_files = self.scan_folder_for_csv(folder_path, recursive)
+
+        if not csv_files:
+            QMessageBox.warning(
+                self.mw,
+                "No Files Found",
+                f"No CSV files found in folder:\n{folder_path}"
+            )
+            return
+
+        self.log.info(f"Found {len(csv_files)} CSV files")
+
+        # 3. Validate all files
+        try:
+            valid_files, invalid_files, total_rows = self.validate_multiple_files(
+                csv_files,
+                "stock"
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self.mw,
+                "Validation Error",
+                f"Error validating files:\n{str(e)}"
+            )
+            return
+
+        # 4. Check if any valid files
+        if not valid_files:
+            msg = f"All {len(csv_files)} files are invalid.\n\n"
+            msg += "Invalid files:\n"
+            for filepath, missing in invalid_files[:5]:  # Show first 5
+                msg += f"  • {os.path.basename(filepath)}: missing {', '.join(missing)}\n"
+
+            QMessageBox.critical(self.mw, "No Valid Files", msg)
+            return
+
+        # 5. Show preview and confirm
+        if not self.show_file_preview("stock", valid_files, invalid_files, total_rows):
+            return  # User cancelled
+
+        # 6. Merge files
+        try:
+            merged_path = self.merge_and_save_files(
+                valid_files,
+                "stock",
+                folder_path
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self.mw,
+                "Merge Failed",
+                f"Failed to merge files:\n{str(e)}"
+            )
+            return
+
+        # 7. Store merged path and update UI
+        self.mw.stock_file_path = merged_path
+        self.mw.stock_source_files = valid_files  # Store for reference
+
+        # Update UI
+        self.mw.stock_file_path_label.setText(
+            f"{len(valid_files)} files merged ({total_rows} rows)"
+        )
+
+        # Update file list widget
+        self.mw.stock_file_list_widget.clear()
+        for filepath in valid_files:
+            item = QListWidgetItem(f"✓ {os.path.basename(filepath)}")
+            item.setForeground(QColor("green"))
+            self.mw.stock_file_list_widget.addItem(item)
+
+        for filepath, missing in invalid_files:
+            item = QListWidgetItem(f"✗ {os.path.basename(filepath)} (missing: {', '.join(missing)})")
+            item.setForeground(QColor("red"))
+            self.mw.stock_file_list_widget.addItem(item)
+
+        self.mw.stock_file_count_label.setText(
+            f"Total: {len(valid_files)} valid, {len(invalid_files)} invalid, {total_rows} rows"
+        )
+
+        # Validate merged file
+        self.validate_file("stock")
+
+        # Check if ready to run analysis
+        self.check_files_ready()
+
+        self.log.info(f"✓ Successfully merged {len(valid_files)} files into {merged_path}")
+
+    def scan_folder_for_csv(
+        self,
+        folder_path: str,
+        recursive: bool = False,
+        pattern: str = "*.csv"
+    ) -> List[str]:
+        """
+        Scan folder for CSV files.
+
+        Args:
+            folder_path: Folder to scan
+            recursive: Include subfolders
+            pattern: File pattern (default: *.csv)
+
+        Returns:
+            List of CSV file paths (sorted by name)
+        """
+        folder = Path(folder_path)
+
+        if recursive:
+            csv_files = list(folder.rglob(pattern))
+        else:
+            csv_files = list(folder.glob(pattern))
+
+        # Sort by filename
+        csv_files.sort(key=lambda p: p.name.lower())
+
+        # Convert to strings
+        result = [str(f) for f in csv_files]
+
+        self.log.info(f"Scanned folder (recursive={recursive}): found {len(result)} files")
+
+        return result
+
+    def validate_multiple_files(
+        self,
+        file_paths: List[str],
+        file_type: str
+    ) -> Tuple[List[str], List[Tuple[str, List[str]]], int]:
+        """
+        Validate multiple CSV files.
+
+        Args:
+            file_paths: List of file paths to validate
+            file_type: "orders" or "stock"
+
+        Returns:
+            Tuple: (valid_files, invalid_files, total_rows)
+                valid_files: List of valid file paths
+                invalid_files: List of (filepath, missing_columns)
+                total_rows: Total rows across all valid files
+        """
+        valid_files = []
+        invalid_files = []
+        total_rows = 0
+
+        # Get config
+        config = self.mw.active_profile_config
+        column_mappings = config.get("column_mappings", {})
+
+        # Get required columns based on file type
+        if file_type == "orders":
+            REQUIRED_INTERNAL = ["Order_Number", "SKU", "Quantity", "Shipping_Method"]
+            mappings = column_mappings.get("orders", {})
+            delimiter_key = "orders_csv_delimiter"
+            default_delimiter = ","
+        else:  # stock
+            REQUIRED_INTERNAL = ["SKU", "Stock"]
+            mappings = column_mappings.get("stock", {})
+            delimiter_key = "stock_csv_delimiter"
+            default_delimiter = ";"
+
+        # Get CSV column names that map to required internal names
+        required_csv_cols = [
+            csv_col for csv_col, internal_name in mappings.items()
+            if internal_name in REQUIRED_INTERNAL
+        ]
+
+        # Get delimiter from config
+        delimiter = config.get("settings", {}).get(delimiter_key, default_delimiter)
+
+        self.log.info(f"Validating {len(file_paths)} {file_type} files...")
+        self.log.info(f"Required columns: {required_csv_cols}")
+
+        # Validate each file
+        for filepath in file_paths:
+            try:
+                # Auto-detect delimiter for this file
+                from shopify_tool.csv_utils import detect_csv_delimiter
+                detected_delimiter, _ = detect_csv_delimiter(filepath)
+
+                # Use detected delimiter
+                file_delimiter = detected_delimiter
+
+                # Validate headers
+                is_valid, missing_cols = core.validate_csv_headers(
+                    filepath,
+                    required_csv_cols,
+                    file_delimiter
+                )
+
+                if is_valid:
+                    valid_files.append(filepath)
+
+                    # Count rows
+                    df = pd.read_csv(
+                        filepath,
+                        delimiter=file_delimiter,
+                        encoding='utf-8-sig'
+                    )
+                    total_rows += len(df)
+
+                    self.log.info(f"  ✓ {os.path.basename(filepath)}: {len(df)} rows")
+                else:
+                    invalid_files.append((filepath, missing_cols))
+                    self.log.warning(f"  ✗ {os.path.basename(filepath)}: missing {missing_cols}")
+
+            except Exception as e:
+                invalid_files.append((filepath, [f"Error: {str(e)}"]))
+                self.log.error(f"  ✗ {os.path.basename(filepath)}: {e}")
+
+        return valid_files, invalid_files, total_rows
+
+    def show_file_preview(
+        self,
+        file_type: str,
+        valid_files: List[str],
+        invalid_files: List[Tuple[str, List[str]]],
+        total_rows: int
+    ) -> bool:
+        """
+        Show preview dialog with file list.
+
+        Returns:
+            True if user confirms, False if cancelled
+        """
+        msg = f"Found {len(valid_files) + len(invalid_files)} CSV files\n\n"
+
+        msg += f"✓ Valid: {len(valid_files)} files ({total_rows} rows)\n"
+        if invalid_files:
+            msg += f"✗ Invalid: {len(invalid_files)} files\n"
+
+        msg += "\n"
+
+        # Show first 10 valid files
+        if valid_files:
+            msg += "Valid files:\n"
+            for filepath in valid_files[:10]:
+                msg += f"  • {os.path.basename(filepath)}\n"
+            if len(valid_files) > 10:
+                msg += f"  ... and {len(valid_files) - 10} more\n"
+            msg += "\n"
+
+        # Show first 5 invalid files
+        if invalid_files:
+            msg += "Invalid files:\n"
+            for filepath, missing in invalid_files[:5]:
+                msg += f"  • {os.path.basename(filepath)}: missing {', '.join(missing)}\n"
+            if len(invalid_files) > 5:
+                msg += f"  ... and {len(invalid_files) - 5} more\n"
+            msg += "\n"
+
+        # Duplicate warning (if applicable)
+        remove_duplicates = getattr(
+            self.mw,
+            f"{file_type}_remove_duplicates_checkbox",
+            None
+        )
+        if remove_duplicates and remove_duplicates.isChecked():
+            msg += "⚠ Duplicates will be removed (keep first occurrence)\n\n"
+
+        msg += f"Continue with {len(valid_files)} valid files?"
+
+        reply = QMessageBox.question(
+            self.mw,
+            "Confirm Merge",
+            msg,
+            QMessageBox.Yes | QMessageBox.No
+        )
+
+        return reply == QMessageBox.Yes
+
+    def merge_and_save_files(
+        self,
+        file_paths: List[str],
+        file_type: str,
+        original_folder: str
+    ) -> str:
+        """
+        Merge CSV files and save to temp location.
+
+        Args:
+            file_paths: List of valid file paths
+            file_type: "orders" or "stock"
+            original_folder: Original folder path (for logging)
+
+        Returns:
+            Path to merged CSV file
+        """
+        from shopify_tool.csv_utils import merge_csv_files
+
+        # Get config
+        config = self.mw.active_profile_config
+        column_mappings = config.get("column_mappings", {})
+
+        # Get settings based on file type
+        if file_type == "orders":
+            delimiter = config.get("settings", {}).get("orders_csv_delimiter", ",")
+
+            # Get SKU columns to force as string type
+            orders_mappings = column_mappings.get("orders", {})
+            sku_columns = [csv_col for csv_col, internal_name in orders_mappings.items()
+                          if internal_name == "SKU"]
+            dtype_dict = {col: str for col in sku_columns}
+
+            # Dynamically find duplicate key columns from mappings
+            # For orders: check duplicates on Order_Number + SKU
+            duplicate_keys = []
+            for csv_col, internal_name in orders_mappings.items():
+                if internal_name in ["Order_Number", "SKU"]:
+                    duplicate_keys.append(csv_col)
+
+            remove_dups_checkbox = self.mw.orders_remove_duplicates_checkbox
+        else:  # stock
+            delimiter = config.get("settings", {}).get("stock_csv_delimiter", ";")
+
+            # Get SKU columns to force as string type
+            stock_mappings = column_mappings.get("stock", {})
+            sku_columns = [csv_col for csv_col, internal_name in stock_mappings.items()
+                          if internal_name == "SKU"]
+            dtype_dict = {col: str for col in sku_columns}
+
+            # Try to find the SKU column name from mappings
+            sku_col_name = None
+            for csv_col, internal_name in stock_mappings.items():
+                if internal_name == "SKU":
+                    sku_col_name = csv_col
+                    break
+
+            duplicate_keys = [sku_col_name] if sku_col_name else []
+            remove_dups_checkbox = self.mw.stock_remove_duplicates_checkbox
+
+        # Merge files
+        self.log.info(f"Merging {len(file_paths)} {file_type} files...")
+        self.log.info(f"Duplicate keys for {file_type}: {duplicate_keys}")
+        self.log.info(f"Remove duplicates: {remove_dups_checkbox.isChecked()}")
+
+        merged_df = merge_csv_files(
+            file_paths,
+            delimiter=delimiter,
+            dtype_dict=dtype_dict,
+            add_source_column=True,
+            remove_duplicates=remove_dups_checkbox.isChecked(),
+            duplicate_keys=duplicate_keys if (remove_dups_checkbox.isChecked() and duplicate_keys) else None
+        )
+
+        self.log.info(f"Merge complete: {len(merged_df)} rows")
+
+        # Save to temp location
+        # Use session path if available, otherwise temp dir
+        if hasattr(self.mw, 'session_path') and self.mw.session_path:
+            temp_dir = Path(self.mw.session_path) / "input"
+            temp_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            temp_dir = Path(tempfile.gettempdir())
+
+        merged_filename = f"merged_{file_type}.csv"
+        merged_path = temp_dir / merged_filename
+
+        # Save
+        merged_df.to_csv(
+            merged_path,
+            index=False,
+            encoding='utf-8-sig'
+        )
+
+        self.log.info(f"Saved merged file: {merged_path}")
+
+        return str(merged_path)
