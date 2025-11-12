@@ -182,6 +182,23 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None):
     # This handles float artifacts (5170.0 → "5170"), whitespace, and leading zeros
     stock_clean_df["SKU"] = stock_clean_df["SKU"].apply(normalize_sku)
 
+    # --- Set/Bundle Decoding ---
+    # Expand sets into component SKUs before fulfillment simulation
+    from .set_decoder import decode_sets_in_orders
+    import logging
+    logger = logging.getLogger(__name__)
+
+    set_decoders = column_mappings.get("set_decoders", {}) if column_mappings else {}
+    if set_decoders:
+        logger.info(f"Decoding sets: {len(set_decoders)} definitions")
+        orders_clean_df = decode_sets_in_orders(orders_clean_df, set_decoders)
+        logger.info(f"Orders after expansion: {len(orders_clean_df)} rows")
+    else:
+        # No sets defined - add tracking columns anyway for consistency
+        orders_clean_df["Original_SKU"] = orders_clean_df["SKU"]
+        orders_clean_df["Original_Quantity"] = orders_clean_df["Quantity"]
+        orders_clean_df["Is_Set_Component"] = False
+
     # --- Fulfillment Simulation ---
     order_item_counts = orders_clean_df.groupby("Order_Number").size().rename("item_count")
     orders_with_counts = pd.merge(orders_clean_df, order_item_counts, on="Order_Number")
