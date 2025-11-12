@@ -62,7 +62,7 @@ def test_run_full_analysis_basic():
     config["test_orders_df"] = orders_df
     config["test_history_df"] = pd.DataFrame({"Order_Number": []})
 
-    success, output_path, final_df, stats = core.run_full_analysis(None, None, None, ";", config)
+    success, output_path, final_df, stats = core.run_full_analysis(None, None, None, ";", ",", config)
     assert success
     assert output_path is None
     assert "Final_Stock" in final_df.columns
@@ -98,7 +98,7 @@ def test_full_run_with_file_io(tmp_path):
 
     # 4. Run the main analysis function
     success, analysis_path, final_df, stats = core.run_full_analysis(
-        str(stock_file), str(orders_file), str(output_dir), ";", config
+        str(stock_file), str(orders_file), str(output_dir), ";", ",", config
     )
 
     # 5. Assert main analysis results
@@ -169,7 +169,7 @@ def test_validate_csv_headers_generic_exception(mocker):
 def test_run_full_analysis_file_not_found(mocker):
     """Tests run_full_analysis behavior when input files do not exist."""
     mocker.patch("os.path.exists", return_value=False)
-    success, msg, _, _ = core.run_full_analysis("fake", "fake", "fake", ";", {})
+    success, msg, _, _ = core.run_full_analysis("fake", "fake", "fake", ";", ",", {})
     assert not success
     assert "input files were not found" in msg
 
@@ -179,7 +179,7 @@ def test_run_full_analysis_validation_fails(mocker):
     # This mocks the internal _validate_dataframes function to return errors
     mocker.patch("shopify_tool.core._validate_dataframes", return_value=["Missing column 'X'"])
     success, msg, _, _ = core.run_full_analysis(
-        None, None, None, ";", {"test_stock_df": pd.DataFrame(), "test_orders_df": pd.DataFrame()}
+        None, None, None, ";", ",", {"test_stock_df": pd.DataFrame(), "test_orders_df": pd.DataFrame()}
     )
     assert not success
     assert "Missing column 'X'" in msg
@@ -245,7 +245,7 @@ def test_run_full_analysis_with_rules(mocker):
     config["test_orders_df"] = make_orders_df()
     config["test_history_df"] = pd.DataFrame({"Order_Number": []})
     config["rules"] = [{"if": [], "then": []}]  # Presence of rules triggers the engine
-    core.run_full_analysis(None, None, None, ";", config)
+    core.run_full_analysis(None, None, None, ";", ",", config)
     mock_engine_apply.assert_called_once()
 
 
@@ -269,10 +269,10 @@ def test_run_full_analysis_updates_history(tmp_path, mocker):
     config["rules"] = []
 
     # Run analysis
-    core.run_full_analysis(str(stock_file), str(orders_file), str(output_dir), ";", config)
+    core.run_full_analysis(str(stock_file), str(orders_file), str(output_dir), ";", ",", config)
 
     # Check that history file was updated
-    history_df = pd.read_csv(history_file)
+    history_df = pd.read_csv(history_file, encoding='utf-8-sig')
     assert "1001" in history_df["Order_Number"].astype(str).values
     assert len(history_df) == 2
 

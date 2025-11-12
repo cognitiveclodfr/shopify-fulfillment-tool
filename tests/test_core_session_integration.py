@@ -114,6 +114,7 @@ def test_run_full_analysis_with_session(
         orders_file_path=orders_file,
         output_dir_path=None,  # Not used in session mode
         stock_delimiter=";",
+        orders_delimiter=",",
         config=config,
         client_id=test_client,
         session_manager=session_manager,
@@ -193,6 +194,7 @@ def test_create_packing_list_with_session(
         orders_file_path=orders_file,
         output_dir_path=None,
         stock_delimiter=";",
+        orders_delimiter=",",
         config=config,
         client_id=test_client,
         session_manager=session_manager,
@@ -245,6 +247,7 @@ def test_create_stock_export_with_session(
         orders_file_path=orders_file,
         output_dir_path=None,
         stock_delimiter=";",
+        orders_delimiter=",",
         config=config,
         client_id=test_client,
         session_manager=session_manager,
@@ -346,6 +349,7 @@ def test_packing_list_error_does_not_update_session_info(
         orders_file_path=orders_file,
         output_dir_path=None,
         stock_delimiter=";",
+        orders_delimiter=",",
         config=config,
         client_id=test_client,
         session_manager=session_manager,
@@ -409,6 +413,7 @@ def test_backwards_compatibility_without_session():
         orders_file_path=None,
         output_dir_path=None,
         stock_delimiter=";",
+        orders_delimiter=",",
         config=config
     )
 

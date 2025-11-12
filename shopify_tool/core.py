@@ -182,7 +182,7 @@ def validate_csv_headers(file_path, required_columns, delimiter=","):
         return True, []
 
     try:
-        headers = pd.read_csv(file_path, nrows=0, delimiter=delimiter).columns.tolist()
+        headers = pd.read_csv(file_path, nrows=0, delimiter=delimiter, encoding='utf-8-sig').columns.tolist()
         missing_columns = [col for col in required_columns if col not in headers]
 
         if not missing_columns:
@@ -205,6 +205,7 @@ def run_full_analysis(
     orders_file_path,
     output_dir_path,
     stock_delimiter,
+    orders_delimiter,
     config,
     client_id: Optional[str] = None,
     session_manager: Optional[Any] = None,
@@ -240,6 +241,7 @@ def run_full_analysis(
         output_dir_path (str): Path to the directory where the output report
             will be saved (legacy mode). Ignored in session mode.
         stock_delimiter (str): The delimiter used in the stock CSV file.
+        orders_delimiter (str): The delimiter used in the orders CSV file.
         config (dict): The application configuration dictionary. It can also
             contain test DataFrames under 'test_stock_df' and
             'test_orders_df' keys.
@@ -325,10 +327,57 @@ def run_full_analysis(
         if not os.path.exists(stock_file_path) or not os.path.exists(orders_file_path):
             return False, "One or both input files were not found.", None, None
 
-        logger.info(f"Reading stock file from normalized path: {stock_file_path}")
-        stock_df = pd.read_csv(stock_file_path, delimiter=stock_delimiter)
-        logger.info(f"Reading orders file from normalized path: {orders_file_path}")
-        orders_df = pd.read_csv(orders_file_path)
+        # Load stock file with error handling
+        try:
+            logger.info(f"Reading stock file from normalized path: {stock_file_path}")
+            stock_df = pd.read_csv(stock_file_path, delimiter=stock_delimiter, encoding='utf-8-sig')
+            logger.info(f"Stock data loaded: {len(stock_df)} rows, {len(stock_df.columns)} columns")
+        except pd.errors.ParserError as e:
+            error_msg = (
+                f"Failed to parse stock file. The file may have incorrect delimiter.\n"
+                f"Current delimiter: '{stock_delimiter}'\n"
+                f"Error: {str(e)}"
+            )
+            logger.error(error_msg)
+            return False, error_msg, None, None
+        except UnicodeDecodeError as e:
+            error_msg = (
+                f"Failed to read stock file due to encoding issue.\n"
+                f"Please ensure file is UTF-8 encoded.\n"
+                f"Error: {str(e)}"
+            )
+            logger.error(error_msg)
+            return False, error_msg, None, None
+        except Exception as e:
+            error_msg = f"Failed to load stock file: {str(e)}"
+            logger.error(error_msg)
+            return False, error_msg, None, None
+
+        # Load orders file with error handling
+        try:
+            logger.info(f"Reading orders file from normalized path: {orders_file_path}")
+            orders_df = pd.read_csv(orders_file_path, delimiter=orders_delimiter, encoding='utf-8-sig')
+            logger.info(f"Orders data loaded: {len(orders_df)} rows, {len(orders_df.columns)} columns")
+        except pd.errors.ParserError as e:
+            error_msg = (
+                f"Failed to parse orders file. The file may have incorrect delimiter.\n"
+                f"Current delimiter: '{orders_delimiter}'\n"
+                f"Error: {str(e)}"
+            )
+            logger.error(error_msg)
+            return False, error_msg, None, None
+        except UnicodeDecodeError as e:
+            error_msg = (
+                f"Failed to read orders file due to encoding issue.\n"
+                f"Please ensure file is UTF-8 encoded.\n"
+                f"Error: {str(e)}"
+            )
+            logger.error(error_msg)
+            return False, error_msg, None, None
+        except Exception as e:
+            error_msg = f"Failed to load orders file: {str(e)}"
+            logger.error(error_msg)
+            return False, error_msg, None, None
     else:
         # For testing: allow passing DataFrames directly
         stock_df = config.get("test_stock_df")
@@ -363,13 +412,19 @@ def run_full_analysis(
             else:
                 history_path_str = history_path
 
-            history_df = pd.read_csv(history_path_str)
+            history_df = pd.read_csv(history_path_str, encoding='utf-8-sig')
             logger.info(f"Loaded {len(history_df)} records from fulfillment history: {history_path}")
         except FileNotFoundError:
             history_df = pd.DataFrame(columns=["Order_Number", "Execution_Date"])
             logger.info("No history file found. Starting with empty history.")
+        except pd.errors.ParserError as e:
+            logger.warning(f"Failed to parse history file: {e}")
+            history_df = pd.DataFrame(columns=["Order_Number", "Execution_Date"])
+        except UnicodeDecodeError as e:
+            logger.warning(f"Encoding error in history file: {e}")
+            history_df = pd.DataFrame(columns=["Order_Number", "Execution_Date"])
         except Exception as e:
-            logger.error(f"Error loading history: {e}")
+            logger.warning(f"Could not load history file: {e}")
             history_df = pd.DataFrame(columns=["Order_Number", "Execution_Date"])
 
     # 2. Run analysis (computation only)

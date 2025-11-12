@@ -196,6 +196,27 @@ class SettingsWindow(QDialog):
 
         settings_layout.addRow(delimiter_label, self.stock_delimiter_edit)
 
+        # Orders CSV Delimiter
+        orders_delimiter_label = QLabel("Orders CSV Delimiter:")
+        self.orders_delimiter_edit = QLineEdit(
+            self.config_data.get("settings", {}).get("orders_csv_delimiter", ",")
+        )
+        self.orders_delimiter_edit.setMaximumWidth(100)
+        self.orders_delimiter_edit.setPlaceholderText(",")
+
+        # Add informative tooltip
+        self.orders_delimiter_edit.setToolTip(
+            "Character used to separate columns in orders CSV file.\n\n"
+            "Common values:\n"
+            "  • Comma (,) - standard Shopify exports\n"
+            "  • Semicolon (;) - European Excel exports\n"
+            "  • Tab (\\t) - tab-separated files\n\n"
+            "The tool will auto-detect delimiter when you select a file,\n"
+            "but you can override it here if needed."
+        )
+
+        settings_layout.addRow(orders_delimiter_label, self.orders_delimiter_edit)
+
         # Low stock threshold with improved tooltip
         threshold_label = QLabel("Low Stock Threshold:")
         self.low_stock_edit = QLineEdit(
@@ -967,6 +988,7 @@ class SettingsWindow(QDialog):
             # General Tab - Settings ONLY
             # ========================================
             self.config_data["settings"]["stock_csv_delimiter"] = self.stock_delimiter_edit.text()
+            self.config_data["settings"]["orders_csv_delimiter"] = self.orders_delimiter_edit.text()
             self.config_data["settings"]["low_stock_threshold"] = int(self.low_stock_edit.text())
 
             # ========================================

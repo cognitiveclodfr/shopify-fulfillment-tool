@@ -1,0 +1,152 @@
+"""
+CSV utility functions for delimiter detection and validation.
+"""
+import csv
+import logging
+from typing import Tuple
+import pandas as pd
+
+logger = logging.getLogger(__name__)
+
+
+def detect_csv_delimiter(file_path: str, encoding: str = 'utf-8-sig') -> Tuple[str, str]:
+    """
+    Automatically detect CSV delimiter.
+
+    Uses multiple methods with fallback:
+    1. csv.Sniffer (standard library)
+    2. Manual counting (most reliable)
+    3. pandas sep=None (optional)
+
+    Args:
+        file_path: Path to CSV file
+        encoding: File encoding (default: utf-8-sig)
+
+    Returns:
+        tuple: (delimiter, detection_method)
+            delimiter: Detected delimiter character
+            detection_method: String describing how it was detected
+
+    Example:
+        >>> delimiter, method = detect_csv_delimiter("orders.csv")
+        >>> print(f"Detected: {delimiter} using {method}")
+        Detected: , using sniffer
+    """
+    # Method 1: csv.Sniffer (fast and reliable for standard formats)
+    try:
+        with open(file_path, 'r', encoding=encoding) as f:
+            sample = f.read(2048)  # Read first 2KB
+            sniffer = csv.Sniffer()
+            delimiter = sniffer.sniff(sample).delimiter
+
+            # Validate: delimiter should appear multiple times
+            if sample.count(delimiter) > 0:
+                logger.info(f"Delimiter detected using csv.Sniffer: '{delimiter}'")
+                return delimiter, 'sniffer'
+    except Exception as e:
+        logger.debug(f"csv.Sniffer failed: {e}")
+
+    # Method 2: Manual counting (most reliable fallback)
+    try:
+        with open(file_path, 'r', encoding=encoding) as f:
+            # Read first 5 lines to get better sample
+            lines = [f.readline() for _ in range(5)]
+            first_line = lines[0]
+
+            # Count common delimiters
+            delimiters = {
+                ',': first_line.count(','),
+                ';': first_line.count(';'),
+                '\t': first_line.count('\t'),
+                '|': first_line.count('|')
+            }
+
+            # Check consistency across multiple lines
+            for line in lines[1:]:
+                for delim in delimiters:
+                    if line.count(delim) != delimiters[delim]:
+                        # Not consistent - reduce confidence
+                        delimiters[delim] = 0
+
+            # Find delimiter with highest consistent count
+            if max(delimiters.values()) > 0:
+                detected = max(delimiters, key=delimiters.get)
+                logger.info(f"Delimiter detected by counting: '{detected}' ({delimiters[detected]} occurrences)")
+                return detected, 'counting'
+    except Exception as e:
+        logger.debug(f"Manual counting failed: {e}")
+
+    # Method 3: pandas auto-detection (can be slow for large files)
+    try:
+        df = pd.read_csv(file_path, sep=None, engine='python',
+                        encoding=encoding, nrows=2)
+
+        if len(df.columns) > 1:
+            # Try to infer delimiter from loaded data
+            with open(file_path, 'r', encoding=encoding) as f:
+                first_line = f.readline()
+                for delim in [',', ';', '\t', '|']:
+                    if first_line.count(delim) >= len(df.columns) - 1:
+                        logger.info(f"Delimiter detected using pandas: '{delim}'")
+                        return delim, 'pandas'
+    except Exception as e:
+        logger.debug(f"Pandas auto-detection failed: {e}")
+
+    # Fallback: return comma (most common)
+    logger.warning(f"Could not detect delimiter for {file_path}, using default comma")
+    return ',', 'default'
+
+
+def validate_delimiter(file_path: str, delimiter: str, encoding: str = 'utf-8-sig') -> bool:
+    """
+    Validate that a delimiter works for a CSV file.
+
+    Args:
+        file_path: Path to CSV file
+        delimiter: Delimiter to test
+        encoding: File encoding
+
+    Returns:
+        bool: True if delimiter is valid, False otherwise
+    """
+    try:
+        df = pd.read_csv(file_path, delimiter=delimiter,
+                        encoding=encoding, nrows=2)
+
+        # Valid if:
+        # 1. More than 1 column
+        # 2. Headers don't contain the delimiter (would indicate wrong delimiter)
+        if len(df.columns) > 1:
+            for col in df.columns:
+                if delimiter in str(col):
+                    return False
+            return True
+        return False
+    except Exception:
+        return False
+
+
+def suggest_delimiter_fix(file_path: str, failed_delimiter: str,
+                         encoding: str = 'utf-8-sig') -> Tuple[str, str]:
+    """
+    Suggest alternative delimiter when current one fails.
+
+    Args:
+        file_path: Path to CSV file
+        failed_delimiter: Delimiter that didn't work
+        encoding: File encoding
+
+    Returns:
+        tuple: (suggested_delimiter, confidence)
+            confidence: 'high', 'medium', 'low'
+    """
+    detected, method = detect_csv_delimiter(file_path, encoding)
+
+    if method in ['sniffer', 'counting']:
+        confidence = 'high'
+    elif method == 'pandas':
+        confidence = 'medium'
+    else:
+        confidence = 'low'
+
+    return detected, confidence

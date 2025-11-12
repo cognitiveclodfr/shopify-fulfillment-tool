@@ -274,6 +274,7 @@ class TestInputFileCopying:
             orders_file_path=orders_file,
             output_dir_path=None,
             stock_delimiter=";",
+            orders_delimiter=",",
             config=config,
             client_id=client_id,
             session_manager=session_manager,
@@ -295,10 +296,10 @@ class TestInputFileCopying:
         assert (input_dir / "inventory.csv").stat().st_size > 0
 
         # Verify content is correct
-        copied_orders = pd.read_csv(input_dir / "orders_export.csv")
+        copied_orders = pd.read_csv(input_dir / "orders_export.csv", encoding='utf-8-sig')
         assert len(copied_orders) > 0
 
-        copied_stock = pd.read_csv(input_dir / "inventory.csv", sep=";")
+        copied_stock = pd.read_csv(input_dir / "inventory.csv", sep=";", encoding='utf-8-sig')
         assert len(copied_stock) > 0
 
 
@@ -325,6 +326,7 @@ class TestAnalysisExecution:
             orders_file_path=orders_file,
             output_dir_path=None,
             stock_delimiter=";",
+            orders_delimiter=",",
             config=config,
             client_id=client_id,
             session_manager=session_manager,
@@ -367,6 +369,7 @@ class TestResultSaving:
             orders_file_path=orders_file,
             output_dir_path=None,
             stock_delimiter=";",
+            orders_delimiter=",",
             config=config,
             client_id=client_id,
             session_manager=session_manager,
@@ -410,6 +413,7 @@ class TestPackingListGeneration:
             orders_file_path=orders_file,
             output_dir_path=None,
             stock_delimiter=";",
+            orders_delimiter=",",
             config=config,
             client_id=client_id,
             session_manager=session_manager,
@@ -470,6 +474,7 @@ class TestStockExportGeneration:
             orders_file_path=orders_file,
             output_dir_path=None,
             stock_delimiter=";",
+            orders_delimiter=",",
             config=config,
             client_id=client_id,
             session_manager=session_manager,
@@ -531,6 +536,7 @@ class TestAnalysisDataExport:
             orders_file_path=orders_file,
             output_dir_path=None,
             stock_delimiter=";",
+            orders_delimiter=",",
             config=config,
             client_id=client_id,
             session_manager=session_manager,
@@ -605,6 +611,7 @@ class TestStatisticsUpdate:
             orders_file_path=orders_file,
             output_dir_path=None,
             stock_delimiter=";",
+            orders_delimiter=",",
             config=config,
             client_id=client_id,
             session_manager=session_manager,
@@ -681,6 +688,7 @@ class TestFullMigrationWorkflow:
             orders_file_path=orders_file,
             output_dir_path=None,
             stock_delimiter=";",
+            orders_delimiter=",",
             config=config,
             client_id=client_id,
             session_manager=session_manager,
@@ -773,6 +781,7 @@ class TestMultipleClients:
                 orders_file_path=orders_file,
                 output_dir_path=None,
                 stock_delimiter=";",
+            orders_delimiter=",",
                 config=config,
                 client_id=client_id,
                 session_manager=session_manager,
