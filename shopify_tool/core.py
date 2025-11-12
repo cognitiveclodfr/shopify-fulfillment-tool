@@ -95,15 +95,15 @@ def _create_analysis_data_for_packing(final_df: pd.DataFrame) -> Dict[str, Any]:
 def _validate_dataframes(orders_df, stock_df, config):
     """Validates that the required columns are present in the dataframes.
 
-    Checks the orders and stock DataFrames against the required columns
-    specified in the application configuration.
+    Checks the orders and stock DataFrames against the required CSV column names
+    from the column mappings configuration.
 
     Args:
         orders_df (pd.DataFrame): The DataFrame containing order data.
         stock_df (pd.DataFrame): The DataFrame containing stock data.
         config (dict): The application configuration dictionary, which contains
-            the 'column_mappings' with 'orders_required' and
-            'stock_required' lists.
+            the 'column_mappings' with 'orders' and 'stock' dictionaries
+            mapping CSV column names to internal names.
 
     Returns:
         list[str]: A list of error messages. If the list is empty,
@@ -111,16 +111,49 @@ def _validate_dataframes(orders_df, stock_df, config):
     """
     errors = []
     column_mappings = config.get("column_mappings", {})
-    required_orders_cols = column_mappings.get("orders_required", [])
-    required_stock_cols = column_mappings.get("stock_required", [])
 
-    for col in required_orders_cols:
-        if col not in orders_df.columns:
-            errors.append(f"Missing required column in Orders file: '{col}'")
+    # Define which internal names are required
+    REQUIRED_INTERNAL_ORDERS = ["Order_Number", "SKU", "Quantity", "Shipping_Method"]
+    REQUIRED_INTERNAL_STOCK = ["SKU", "Stock"]
 
-    for col in required_stock_cols:
-        if col not in stock_df.columns:
-            errors.append(f"Missing required column in Stock file: '{col}'")
+    # Get mappings (v2 format)
+    orders_mappings = column_mappings.get("orders", {})
+    stock_mappings = column_mappings.get("stock", {})
+
+    # For backward compatibility: check if v1 format and migrate
+    if not orders_mappings and "orders_required" in column_mappings:
+        # V1 format detected - use default Shopify mappings
+        logger.warning("V1 column_mappings detected in validation, using default Shopify mappings")
+        orders_mappings = {
+            "Name": "Order_Number",
+            "Lineitem sku": "SKU",
+            "Lineitem quantity": "Quantity",
+            "Shipping Method": "Shipping_Method"
+        }
+        stock_mappings = {
+            "Артикул": "SKU",
+            "Наличност": "Stock"
+        }
+
+    # Build reverse mapping (internal_name -> csv_column_name)
+    internal_to_csv_orders = {v: k for k, v in orders_mappings.items()}
+    internal_to_csv_stock = {v: k for k, v in stock_mappings.items()}
+
+    # Check orders DataFrame for required columns
+    for internal_name in REQUIRED_INTERNAL_ORDERS:
+        csv_column = internal_to_csv_orders.get(internal_name)
+        if csv_column is None:
+            errors.append(f"Missing mapping for required field '{internal_name}' in orders configuration")
+        elif csv_column not in orders_df.columns:
+            errors.append(f"Missing required column in Orders file: '{csv_column}' (needed for {internal_name})")
+
+    # Check stock DataFrame for required columns
+    for internal_name in REQUIRED_INTERNAL_STOCK:
+        csv_column = internal_to_csv_stock.get(internal_name)
+        if csv_column is None:
+            errors.append(f"Missing mapping for required field '{internal_name}' in stock configuration")
+        elif csv_column not in stock_df.columns:
+            errors.append(f"Missing required column in Stock file: '{csv_column}' (needed for {internal_name})")
 
     return errors
 
@@ -133,7 +166,8 @@ def validate_csv_headers(file_path, required_columns, delimiter=","):
 
     Args:
         file_path (str): The path to the CSV file.
-        required_columns (list[str]): A list of column names that must be present.
+        required_columns (list[str]): A list of CSV column names that must be present.
+            These should be the actual column names from the CSV file, not internal names.
         delimiter (str, optional): The delimiter used in the CSV file.
             Defaults to ",".
 
@@ -340,7 +374,12 @@ def run_full_analysis(
 
     # 2. Run analysis (computation only)
     logger.info("Step 2: Running fulfillment simulation...")
-    final_df, summary_present_df, summary_missing_df, stats = analysis.run_analysis(stock_df, orders_df, history_df)
+    # Get column mappings from config and pass to analysis
+    column_mappings = config.get("column_mappings", {})
+    logger.debug(f"Using column mappings: {column_mappings}")
+    final_df, summary_present_df, summary_missing_df, stats = analysis.run_analysis(
+        stock_df, orders_df, history_df, column_mappings
+    )
     logger.info("Analysis computation complete.")
 
     # Debug logging: Verify DataFrame structure

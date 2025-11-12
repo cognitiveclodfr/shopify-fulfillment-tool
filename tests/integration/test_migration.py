@@ -30,6 +30,33 @@ from shopify_tool.profile_manager import ProfileManager
 from shopify_tool.session_manager import SessionManager
 
 
+def make_test_config(low_stock_threshold=5):
+    """Create test config with v2 column mappings for integration tests."""
+    return {
+        "settings": {"low_stock_threshold": low_stock_threshold, "stock_csv_delimiter": ";"},
+        "column_mappings": {
+            "version": 2,
+            "orders": {
+                "Name": "Order_Number",
+                "Lineitem sku": "SKU",
+                "Lineitem quantity": "Quantity",
+                "Shipping Method": "Shipping_Method",
+                "Shipping Country": "Shipping_Country",
+                "Tags": "Tags",
+                "Notes": "Notes"
+            },
+            "stock": {
+                "Артикул": "SKU",
+                "Име": "Product_Name",
+                "Наличност": "Stock"
+            }
+        },
+        "rules": [],
+        "packing_list_configs": [],
+        "stock_export_configs": []
+    }
+
+
 @pytest.fixture
 def temp_file_server():
     """Create a temporary file server structure for testing."""
@@ -239,14 +266,7 @@ class TestInputFileCopying:
 
         stock_file, orders_file = test_data_files
 
-        config = {
-            "settings": {"low_stock_threshold": 5},
-            "column_mappings": {
-                "orders_required": ["Name", "Lineitem sku"],
-                "stock_required": ["Артикул", "Наличност"]
-            },
-            "rules": []
-        }
+        config = make_test_config(low_stock_threshold=5)
 
         # Run analysis (which should copy files)
         success, session_path, final_df, stats = core.run_full_analysis(
@@ -297,14 +317,7 @@ class TestAnalysisExecution:
 
         stock_file, orders_file = test_data_files
 
-        config = {
-            "settings": {"low_stock_threshold": 5},
-            "column_mappings": {
-                "orders_required": ["Name", "Lineitem sku"],
-                "stock_required": ["Артикул", "Наличност"]
-            },
-            "rules": []
-        }
+        config = make_test_config(low_stock_threshold=5)
 
         # Run analysis
         success, session_path, final_df, stats = core.run_full_analysis(
@@ -346,14 +359,7 @@ class TestResultSaving:
 
         stock_file, orders_file = test_data_files
 
-        config = {
-            "settings": {"low_stock_threshold": 5},
-            "column_mappings": {
-                "orders_required": ["Name", "Lineitem sku"],
-                "stock_required": ["Артикул", "Наличност"]
-            },
-            "rules": []
-        }
+        config = make_test_config(low_stock_threshold=5)
 
         # Run analysis
         success, session_path, final_df, stats = core.run_full_analysis(
@@ -396,14 +402,7 @@ class TestPackingListGeneration:
 
         stock_file, orders_file = test_data_files
 
-        config = {
-            "settings": {"low_stock_threshold": 5},
-            "column_mappings": {
-                "orders_required": ["Name", "Lineitem sku"],
-                "stock_required": ["Артикул", "Наличност"]
-            },
-            "rules": []
-        }
+        config = make_test_config(low_stock_threshold=5)
 
         # Run analysis first
         success, session_path, final_df, stats = core.run_full_analysis(
@@ -463,14 +462,7 @@ class TestStockExportGeneration:
 
         stock_file, orders_file = test_data_files
 
-        config = {
-            "settings": {"low_stock_threshold": 5},
-            "column_mappings": {
-                "orders_required": ["Name", "Lineitem sku"],
-                "stock_required": ["Артикул", "Наличност"]
-            },
-            "rules": []
-        }
+        config = make_test_config(low_stock_threshold=5)
 
         # Run analysis first
         success, session_path, final_df, stats = core.run_full_analysis(
@@ -531,14 +523,7 @@ class TestAnalysisDataExport:
 
         stock_file, orders_file = test_data_files
 
-        config = {
-            "settings": {"low_stock_threshold": 5},
-            "column_mappings": {
-                "orders_required": ["Name", "Lineitem sku"],
-                "stock_required": ["Артикул", "Наличност"]
-            },
-            "rules": []
-        }
+        config = make_test_config(low_stock_threshold=5)
 
         # Run analysis
         success, session_path, final_df, stats = core.run_full_analysis(
@@ -608,14 +593,7 @@ class TestStatisticsUpdate:
 
         stock_file, orders_file = test_data_files
 
-        config = {
-            "settings": {"low_stock_threshold": 5},
-            "column_mappings": {
-                "orders_required": ["Name", "Lineitem sku"],
-                "stock_required": ["Артикул", "Наличност"]
-            },
-            "rules": []
-        }
+        config = make_test_config(low_stock_threshold=5)
 
         # Get initial stats
         initial_stats = stats_manager.get_global_stats()
@@ -696,14 +674,7 @@ class TestFullMigrationWorkflow:
         stock_file, orders_file = test_data_files
 
         # Use simple config for testing
-        config = {
-            "settings": {"low_stock_threshold": 10},
-            "column_mappings": {
-                "orders_required": ["Name", "Lineitem sku"],
-                "stock_required": ["Артикул", "Наличност"]
-            },
-            "rules": []
-        }
+        config = make_test_config(low_stock_threshold=10)
 
         success, session_path, final_df, stats = core.run_full_analysis(
             stock_file_path=stock_file,
@@ -794,14 +765,7 @@ class TestMultipleClients:
         sessions = {}
 
         # Use simple config for testing
-        config = {
-            "settings": {"low_stock_threshold": 5},
-            "column_mappings": {
-                "orders_required": ["Name", "Lineitem sku"],
-                "stock_required": ["Артикул", "Наличност"]
-            },
-            "rules": []
-        }
+        config = make_test_config(low_stock_threshold=5)
 
         for client_id, _ in clients:
             success, session_path, final_df, stats = core.run_full_analysis(

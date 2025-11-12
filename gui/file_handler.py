@@ -106,18 +106,45 @@ class FileHandler:
             return
 
         client_config = self.mw.current_client_config
+        column_mappings = client_config.get("column_mappings", {})
+
+        # Define which internal names are required
+        REQUIRED_INTERNAL_ORDERS = ["Order_Number", "SKU", "Quantity", "Shipping_Method"]
+        REQUIRED_INTERNAL_STOCK = ["SKU", "Stock"]
 
         if file_type == "orders":
             path = self.mw.orders_file_path
             label = self.mw.orders_file_status_label
-            # Get from client-specific config
-            required_cols = client_config.get("column_mappings", {}).get("orders_required", [])
             delimiter = ","
+
+            # Get CSV column names from v2 mappings
+            orders_mappings = column_mappings.get("orders", {})
+
+            # Backward compatibility: check for v1 format
+            if not orders_mappings and "orders_required" in column_mappings:
+                # V1 format - use default Shopify column names
+                required_cols = ["Name", "Lineitem sku", "Lineitem quantity", "Shipping Method"]
+            else:
+                # V2 format - extract CSV column names that map to required internal names
+                required_cols = [csv_col for csv_col, internal in orders_mappings.items()
+                                if internal in REQUIRED_INTERNAL_ORDERS]
+
         else:  # stock
             path = self.mw.stock_file_path
             label = self.mw.stock_file_status_label
-            required_cols = client_config.get("column_mappings", {}).get("stock_required", [])
             delimiter = client_config.get("settings", {}).get("stock_csv_delimiter", ";")
+
+            # Get CSV column names from v2 mappings
+            stock_mappings = column_mappings.get("stock", {})
+
+            # Backward compatibility: check for v1 format
+            if not stock_mappings and "stock_required" in column_mappings:
+                # V1 format - use default Bulgarian column names
+                required_cols = ["Артикул", "Наличност"]
+            else:
+                # V2 format - extract CSV column names that map to required internal names
+                required_cols = [csv_col for csv_col, internal in stock_mappings.items()
+                                if internal in REQUIRED_INTERNAL_STOCK]
 
         if not path:
             self.log.warning(f"Validation skipped for '{file_type}': path is missing.")

@@ -357,18 +357,30 @@ class TestDefaultConfiguration:
             assert section in config, f"Missing section: {section}"
 
     def test_default_column_mappings(self, profile_manager):
-        """Test default column mappings."""
+        """Test default column mappings (v2 format)."""
         profile_manager.create_client_profile("M", "M Cosmetics")
 
         config = profile_manager.load_shopify_config("M")
         mappings = config["column_mappings"]
 
-        assert "orders_required" in mappings
-        assert "stock_required" in mappings
+        # Check v2 format
+        assert "version" in mappings
+        assert mappings["version"] == 2
+        assert "orders" in mappings
+        assert "stock" in mappings
 
-        # Check required columns are present
-        assert "Order_Number" in mappings["orders_required"]
-        assert "SKU" in mappings["stock_required"]
+        # Check mappings structure (CSV name -> Internal name)
+        orders_mappings = mappings["orders"]
+        assert "Name" in orders_mappings
+        assert orders_mappings["Name"] == "Order_Number"
+        assert "Lineitem sku" in orders_mappings
+        assert orders_mappings["Lineitem sku"] == "SKU"
+
+        stock_mappings = mappings["stock"]
+        assert "Артикул" in stock_mappings
+        assert stock_mappings["Артикул"] == "SKU"
+        assert "Наличност" in stock_mappings
+        assert stock_mappings["Наличност"] == "Stock"
 
     def test_default_courier_mappings(self, profile_manager):
         """Test default courier mappings."""
