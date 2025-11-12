@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 
 from shopify_tool.core import get_unique_column_values
+from gui.column_mapping_widget import ColumnMappingWidget
 
 
 class SettingsWindow(QDialog):
@@ -802,7 +803,7 @@ class SettingsWindow(QDialog):
             self.add_filter_row(widget_refs, self.FILTERABLE_COLUMNS, self.FILTER_OPERATORS, f_config)
 
     def create_mappings_tab(self):
-        """Creates the 'Mappings' tab for required columns and courier mappings."""
+        """Creates the 'Mappings' tab for column mappings and courier mappings."""
         tab = QWidget()
         main_layout = QVBoxLayout(tab)
 
@@ -813,58 +814,53 @@ class SettingsWindow(QDialog):
         scroll_layout = QVBoxLayout(scroll_widget)
 
         # ========================================
-        # COLUMN MAPPINGS - Required Columns
+        # COLUMN MAPPINGS - Orders
         # ========================================
-        column_mappings_box = QGroupBox("Required Columns")
-        column_mappings_layout = QVBoxLayout(column_mappings_box)
-
-        instructions = QLabel(
-            "Specify which columns are required in the CSV files.\n"
-            "These columns will be validated when loading files."
-        )
-        instructions.setWordWrap(True)
-        instructions.setStyleSheet("color: gray; font-style: italic; font-size: 10pt;")
-        column_mappings_layout.addWidget(instructions)
-
-        # Orders Required Columns
-        orders_box = QGroupBox("Orders CSV - Required Columns")
+        orders_box = QGroupBox("📋 Orders CSV Column Mapping")
         orders_layout = QVBoxLayout(orders_box)
 
-        orders_label = QLabel("Enter column names (one per line):")
-        orders_layout.addWidget(orders_label)
+        # Define required and optional fields for orders
+        orders_required = ["Order_Number", "SKU", "Quantity", "Shipping_Method"]
+        orders_optional = ["Product_Name", "Shipping_Country", "Tags", "Notes", "Total_Price"]
 
-        self.orders_required_text = QTextEdit()
-        self.orders_required_text.setPlaceholderText("Name\nLineitem sku\nLineitem quantity\nShipping Method")
-        self.orders_required_text.setMaximumHeight(120)
+        # Get current mappings (v2 format)
+        column_mappings = self.config_data.get("column_mappings", {})
+        orders_mappings = column_mappings.get("orders", {})
 
-        # Load existing values
-        orders_required = self.config_data.get("column_mappings", {}).get("orders_required", [])
-        if orders_required:
-            self.orders_required_text.setPlainText("\n".join(orders_required))
+        # Create widget
+        self.orders_mapping_widget = ColumnMappingWidget(
+            mapping_type="orders",
+            current_mappings=orders_mappings,
+            required_fields=orders_required,
+            optional_fields=orders_optional
+        )
 
-        orders_layout.addWidget(self.orders_required_text)
-        column_mappings_layout.addWidget(orders_box)
+        orders_layout.addWidget(self.orders_mapping_widget)
+        scroll_layout.addWidget(orders_box)
 
-        # Stock Required Columns
-        stock_box = QGroupBox("Stock CSV - Required Columns")
+        # ========================================
+        # COLUMN MAPPINGS - Stock
+        # ========================================
+        stock_box = QGroupBox("📦 Stock CSV Column Mapping")
         stock_layout = QVBoxLayout(stock_box)
 
-        stock_label = QLabel("Enter column names (one per line):")
-        stock_layout.addWidget(stock_label)
+        # Define required and optional fields for stock
+        stock_required = ["SKU", "Stock"]
+        stock_optional = ["Product_Name"]
 
-        self.stock_required_text = QTextEdit()
-        self.stock_required_text.setPlaceholderText("Артикул\nНаличност")
-        self.stock_required_text.setMaximumHeight(120)
+        # Get current mappings (v2 format)
+        stock_mappings = column_mappings.get("stock", {})
 
-        # Load existing values
-        stock_required = self.config_data.get("column_mappings", {}).get("stock_required", [])
-        if stock_required:
-            self.stock_required_text.setPlainText("\n".join(stock_required))
+        # Create widget
+        self.stock_mapping_widget = ColumnMappingWidget(
+            mapping_type="stock",
+            current_mappings=stock_mappings,
+            required_fields=stock_required,
+            optional_fields=stock_optional
+        )
 
-        stock_layout.addWidget(self.stock_required_text)
-        column_mappings_layout.addWidget(stock_box)
-
-        scroll_layout.addWidget(column_mappings_box)
+        stock_layout.addWidget(self.stock_mapping_widget)
+        scroll_layout.addWidget(stock_box)
 
         # ========================================
         # COURIER MAPPINGS
@@ -1115,32 +1111,37 @@ class SettingsWindow(QDialog):
             self.config_data["stock_export_configs"] = new_stock_exports
 
             # ========================================
-            # Mappings Tab - Column Mappings
+            # Mappings Tab - Column Mappings (v2 format)
             # ========================================
+            # Validate mappings before saving
+            orders_valid, orders_error = self.orders_mapping_widget.validate_mappings()
+            if not orders_valid:
+                QMessageBox.warning(
+                    self,
+                    "Invalid Orders Mapping",
+                    f"Orders column mapping is invalid:\n{orders_error}"
+                )
+                return
+
+            stock_valid, stock_error = self.stock_mapping_widget.validate_mappings()
+            if not stock_valid:
+                QMessageBox.warning(
+                    self,
+                    "Invalid Stock Mapping",
+                    f"Stock column mapping is invalid:\n{stock_error}"
+                )
+                return
+
+            # Get mappings from widgets
+            orders_mappings = self.orders_mapping_widget.get_mappings()
+            stock_mappings = self.stock_mapping_widget.get_mappings()
+
+            # Save in v2 format
             self.config_data["column_mappings"] = {
-                "orders_required": [],
-                "stock_required": []
+                "version": 2,
+                "orders": orders_mappings,
+                "stock": stock_mappings
             }
-
-            # Parse orders required columns
-            orders_text = self.orders_required_text.toPlainText().strip()
-            if orders_text:
-                orders_columns = [
-                    line.strip()
-                    for line in orders_text.split('\n')
-                    if line.strip()
-                ]
-                self.config_data["column_mappings"]["orders_required"] = orders_columns
-
-            # Parse stock required columns
-            stock_text = self.stock_required_text.toPlainText().strip()
-            if stock_text:
-                stock_columns = [
-                    line.strip()
-                    for line in stock_text.split('\n')
-                    if line.strip()
-                ]
-                self.config_data["column_mappings"]["stock_required"] = stock_columns
 
             # ========================================
             # Mappings Tab - Courier Mappings
