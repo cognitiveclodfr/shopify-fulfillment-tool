@@ -345,11 +345,33 @@ def merge_csv_files(
         original_count = len(merged_df)
 
         if duplicate_keys:
-            # Check duplicates based on specific columns
-            merged_df = merged_df.drop_duplicates(
-                subset=duplicate_keys,
-                keep='first'
-            )
+            # Ensure duplicate_keys is a list of strings, not pandas Index or other type
+            if hasattr(duplicate_keys, 'tolist'):
+                # Convert pandas Index/Series to list
+                duplicate_keys = duplicate_keys.tolist()
+            elif not isinstance(duplicate_keys, list):
+                # Convert any other iterable to list
+                duplicate_keys = list(duplicate_keys)
+
+            # Validate that all keys exist in merged_df columns
+            missing_keys = [key for key in duplicate_keys if key not in merged_df.columns]
+            if missing_keys:
+                logger.warning(f"Duplicate keys not found in data: {missing_keys}")
+                # Filter to only existing columns
+                duplicate_keys = [key for key in duplicate_keys if key in merged_df.columns]
+
+            if duplicate_keys:
+                logger.info(f"Checking duplicates on columns: {duplicate_keys}")
+                try:
+                    merged_df = merged_df.drop_duplicates(
+                        subset=duplicate_keys,
+                        keep='first'
+                    )
+                except Exception as e:
+                    logger.error(f"Error removing duplicates with keys {duplicate_keys}: {e}")
+                    raise
+            else:
+                logger.warning("No valid duplicate keys found, skipping duplicate removal")
         else:
             # Check duplicates across all columns (excluding _source_file if present)
             # We exclude _source_file because it's just for tracking and shouldn't affect duplicate detection

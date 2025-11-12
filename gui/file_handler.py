@@ -758,7 +758,13 @@ class FileHandler:
                           if internal_name == "SKU"]
             dtype_dict = {col: str for col in sku_columns}
 
-            duplicate_keys = ["Name", "Lineitem sku"]  # CSV column names
+            # Dynamically find duplicate key columns from mappings
+            # For orders: check duplicates on Order_Number + SKU
+            duplicate_keys = []
+            for csv_col, internal_name in orders_mappings.items():
+                if internal_name in ["Order_Number", "SKU"]:
+                    duplicate_keys.append(csv_col)
+
             remove_dups_checkbox = self.mw.orders_remove_duplicates_checkbox
         else:  # stock
             delimiter = config.get("settings", {}).get("stock_csv_delimiter", ";")
@@ -781,6 +787,8 @@ class FileHandler:
 
         # Merge files
         self.log.info(f"Merging {len(file_paths)} {file_type} files...")
+        self.log.info(f"Duplicate keys for {file_type}: {duplicate_keys}")
+        self.log.info(f"Remove duplicates: {remove_dups_checkbox.isChecked()}")
 
         merged_df = merge_csv_files(
             file_paths,
@@ -788,7 +796,7 @@ class FileHandler:
             dtype_dict=dtype_dict,
             add_source_column=True,
             remove_duplicates=remove_dups_checkbox.isChecked(),
-            duplicate_keys=duplicate_keys if remove_dups_checkbox.isChecked() else None
+            duplicate_keys=duplicate_keys if (remove_dups_checkbox.isChecked() and duplicate_keys) else None
         )
 
         self.log.info(f"Merge complete: {len(merged_df)} rows")
