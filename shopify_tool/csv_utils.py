@@ -3,7 +3,7 @@ CSV utility functions for delimiter detection and validation.
 """
 import csv
 import logging
-from typing import Tuple
+from typing import Tuple, Any
 import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -150,3 +150,120 @@ def suggest_delimiter_fix(file_path: str, failed_delimiter: str,
         confidence = 'low'
 
     return detected, confidence
+
+
+def normalize_sku(sku: Any) -> str:
+    """
+    Normalize SKU to standard string format.
+
+    Handles common SKU data type issues:
+    - Float conversion artifacts (5170.0 → "5170")
+    - Whitespace (strips leading/trailing spaces)
+    - Alphanumeric SKUs (preserved as-is)
+    - None/NaN values (returns empty string)
+    - **PRESERVES leading zeros** (e.g., "07" stays "07", not "7")
+
+    This function is critical for ensuring SKU matching works correctly
+    when pandas auto-detects numeric SKUs as float64 during CSV loading.
+
+    IMPORTANT: Leading zeros are preserved to maintain compatibility with
+    warehouse management systems that use them (e.g., "07", "0042").
+
+    Args:
+        sku: SKU value to normalize (can be str, int, float, or NaN)
+
+    Returns:
+        str: Normalized SKU string
+
+    Examples:
+        >>> normalize_sku(5170.0)
+        "5170"
+        >>> normalize_sku("5170.0")
+        "5170"
+        >>> normalize_sku("5170")
+        "5170"
+        >>> normalize_sku(" 5170 ")
+        "5170"
+        >>> normalize_sku("ABC-123")
+        "ABC-123"
+        >>> normalize_sku("07")
+        "07"
+        >>> normalize_sku("07.0")
+        "07"
+        >>> normalize_sku(None)
+        ""
+        >>> normalize_sku(pd.NA)
+        ""
+
+    Note:
+        This function only removes the .0 suffix from float conversion.
+        Leading zeros are preserved. To ensure proper handling, always
+        use dtype=str when loading CSV files with SKU columns.
+    """
+    if pd.isna(sku):
+        return ""
+
+    sku_str = str(sku).strip()
+
+    if not sku_str:
+        return ""
+
+    # Remove .0 suffix from float conversion (e.g., "5170.0" → "5170")
+    # This preserves leading zeros (e.g., "07.0" → "07", not "7")
+    if sku_str.endswith('.0'):
+        return sku_str[:-2]
+
+    return sku_str
+
+
+def normalize_sku_for_matching(sku: Any) -> str:
+    """
+    Normalize SKU for fuzzy matching (e.g., exclude SKU comparisons).
+
+    This is more aggressive than normalize_sku():
+    - Removes leading zeros for NUMERIC SKUs (e.g., "07" → "7")
+    - Preserves alphanumeric SKUs as-is
+    - Handles float artifacts
+
+    Use this function when you want "07" to match with 7, "7", or "07".
+
+    Args:
+        sku: SKU value to normalize for matching
+
+    Returns:
+        str: Normalized SKU string
+
+    Examples:
+        >>> normalize_sku_for_matching(7)
+        "7"
+        >>> normalize_sku_for_matching("07")
+        "7"
+        >>> normalize_sku_for_matching("07.0")
+        "7"
+        >>> normalize_sku_for_matching("0042")
+        "42"
+        >>> normalize_sku_for_matching("ABC-123")
+        "ABC-123"
+        >>> normalize_sku_for_matching("01-DM-0379")
+        "01-DM-0379"
+
+    Note:
+        Use this for exclude_skus filtering, not for main data!
+        Main data should use normalize_sku() to preserve leading zeros.
+    """
+    # First apply standard normalization (handles .0 suffix, whitespace, NaN)
+    normalized = normalize_sku(sku)
+
+    if not normalized:
+        return normalized
+
+    try:
+        # Try to parse as pure number and remove leading zeros
+        # "07" → 7 → "7"
+        # "0042" → 42 → "42"
+        return str(int(float(normalized)))
+    except (ValueError, TypeError):
+        # Not a pure number (alphanumeric), return as-is
+        # "ABC-123" stays "ABC-123"
+        # "01-DM-0379" stays "01-DM-0379" (contains non-numeric)
+        return normalized

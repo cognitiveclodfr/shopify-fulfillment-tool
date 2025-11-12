@@ -174,8 +174,15 @@ class FileHandler:
                 self.log.info(f"Using configured delimiter: '{delimiter}'")
 
         # Try to load CSV with determined delimiter to verify it's readable
+        # Force SKU columns to string type to prevent float conversion
         try:
-            stock_df = pd.read_csv(filepath, delimiter=delimiter, encoding='utf-8-sig')
+            # Get SKU columns from config to force as string
+            column_mappings = self.mw.active_profile_config.get("column_mappings", {})
+            stock_mappings = column_mappings.get("stock", {})
+            sku_columns = [csv_col for csv_col, internal_name in stock_mappings.items() if internal_name == "SKU"]
+            dtype_dict = {col: str for col in sku_columns}
+
+            stock_df = pd.read_csv(filepath, delimiter=delimiter, encoding='utf-8-sig', dtype=dtype_dict)
             self.log.info(f"Loaded stock CSV with delimiter '{delimiter}': {len(stock_df)} rows")
 
         except Exception as e:
