@@ -185,16 +185,35 @@ def test_create_stock_export_report_exception(mocker):
 
 
 def test_validate_dataframes_with_missing_columns():
-    """Tests the internal _validate_dataframes helper function."""
-    orders_df = pd.DataFrame({"Name": [1]})
-    stock_df = pd.DataFrame({"Артикул": ["A"]})
+    """Tests the internal _validate_dataframes helper function with v2 format."""
+    # DataFrames with some columns missing
+    orders_df = pd.DataFrame({"Name": [1]})  # Missing Lineitem sku, Lineitem quantity, Shipping Method
+    stock_df = pd.DataFrame({"Артикул": ["A"]})  # Missing Наличност
+
+    # v2 config format
     config = {
-        "column_mappings": {"orders_required": ["Name", "Lineitem sku"], "stock_required": ["Артикул", "Наличност"]}
+        "column_mappings": {
+            "version": 2,
+            "orders": {
+                "Name": "Order_Number",
+                "Lineitem sku": "SKU",
+                "Lineitem quantity": "Quantity",
+                "Shipping Method": "Shipping_Method"
+            },
+            "stock": {
+                "Артикул": "SKU",
+                "Наличност": "Stock"
+            }
+        }
     }
+
     errors = core._validate_dataframes(orders_df, stock_df, config)
-    assert len(errors) == 2
-    assert "Missing required column in Orders file: 'Lineitem sku'" in errors
-    assert "Missing required column in Stock file: 'Наличност'" in errors
+    # Should have 4 errors: missing Lineitem sku, Lineitem quantity, Shipping Method, and Наличност
+    assert len(errors) == 4
+    assert any("Lineitem sku" in err for err in errors)
+    assert any("Lineitem quantity" in err for err in errors)
+    assert any("Shipping Method" in err for err in errors)
+    assert any("Наличност" in err for err in errors)
 
 
 def test_run_full_analysis_with_rules(mocker):

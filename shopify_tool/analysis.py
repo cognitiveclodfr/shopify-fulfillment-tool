@@ -80,41 +80,57 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None):
               fulfillment analysis (e.g., total orders completed).
     """
     # --- Step 0: Apply Column Mappings ---
-    # Default mappings for backward compatibility (Shopify + Bulgarian warehouse)
-    if column_mappings is None:
-        column_mappings = {
-            "orders": {
-                "Name": "Order_Number",
-                "Lineitem sku": "SKU",
-                "Lineitem quantity": "Quantity",
-                "Lineitem name": "Product_Name",
-                "Shipping Method": "Shipping_Method",
-                "Shipping Country": "Shipping_Country",
-                "Tags": "Tags",
-                "Notes": "Notes",
-                "Total": "Total_Price"
-            },
-            "stock": {
-                "Артикул": "SKU",
-                "Име": "Product_Name",
-                "Наличност": "Stock"
+    # Check if DataFrames already have internal names (backward compatibility for tests)
+    orders_has_internal_names = all(
+        col in orders_df.columns for col in ["Order_Number", "SKU", "Quantity"]
+    )
+    stock_has_internal_names = all(
+        col in stock_df.columns for col in ["SKU", "Stock"]
+    )
+
+    # If DataFrames already have internal names, skip mapping
+    if orders_has_internal_names and stock_has_internal_names and column_mappings is None:
+        # Already using internal names (e.g., in tests), no mapping needed
+        pass
+    else:
+        # Apply column mappings
+        # Default mappings for backward compatibility (Shopify + Bulgarian warehouse)
+        if column_mappings is None:
+            column_mappings = {
+                "orders": {
+                    "Name": "Order_Number",
+                    "Lineitem sku": "SKU",
+                    "Lineitem quantity": "Quantity",
+                    "Lineitem name": "Product_Name",
+                    "Shipping Method": "Shipping_Method",
+                    "Shipping Country": "Shipping_Country",
+                    "Tags": "Tags",
+                    "Notes": "Notes",
+                    "Total": "Total_Price"
+                },
+                "stock": {
+                    "Артикул": "SKU",
+                    "Име": "Product_Name",
+                    "Наличност": "Stock"
+                }
             }
-        }
 
-    # Get mappings for orders and stock
-    orders_mappings = column_mappings.get("orders", {})
-    stock_mappings = column_mappings.get("stock", {})
+        # Get mappings for orders and stock
+        orders_mappings = column_mappings.get("orders", {})
+        stock_mappings = column_mappings.get("stock", {})
 
-    # Apply mappings to orders DataFrame
-    # Only rename columns that exist in the DataFrame
-    orders_rename_map = {csv_col: internal_col for csv_col, internal_col in orders_mappings.items()
-                         if csv_col in orders_df.columns}
-    orders_df = orders_df.rename(columns=orders_rename_map)
+        # Apply mappings to orders DataFrame
+        # Only rename columns that exist in the DataFrame AND are different from internal names
+        orders_rename_map = {csv_col: internal_col for csv_col, internal_col in orders_mappings.items()
+                             if csv_col in orders_df.columns and csv_col != internal_col}
+        if orders_rename_map:
+            orders_df = orders_df.rename(columns=orders_rename_map)
 
-    # Apply mappings to stock DataFrame
-    stock_rename_map = {csv_col: internal_col for csv_col, internal_col in stock_mappings.items()
-                        if csv_col in stock_df.columns}
-    stock_df = stock_df.rename(columns=stock_rename_map)
+        # Apply mappings to stock DataFrame
+        stock_rename_map = {csv_col: internal_col for csv_col, internal_col in stock_mappings.items()
+                            if csv_col in stock_df.columns and csv_col != internal_col}
+        if stock_rename_map:
+            stock_df = stock_df.rename(columns=stock_rename_map)
 
     # --- Step 1: Data Cleaning (now using internal standard names) ---
     # Forward-fill order-level columns
@@ -243,9 +259,17 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None):
 
     # --- Summary Reports Generation ---
     present_df = final_df[final_df["Order_Fulfillment_Status"] == "Fulfillable"].copy()
-    summary_present_df = present_df.groupby(["SKU", "Product_Name"], as_index=False)["Quantity"].sum()
-    summary_present_df = summary_present_df.rename(columns={"Product_Name": "Name", "Quantity": "Total Quantity"})
-    summary_present_df = summary_present_df[["Name", "SKU", "Total Quantity"]]
+
+    # Group by SKU and Product_Name if available, otherwise just SKU
+    if "Product_Name" in present_df.columns:
+        summary_present_df = present_df.groupby(["SKU", "Product_Name"], as_index=False)["Quantity"].sum()
+        summary_present_df = summary_present_df.rename(columns={"Product_Name": "Name", "Quantity": "Total Quantity"})
+        summary_present_df = summary_present_df[["Name", "SKU", "Total Quantity"]]
+    else:
+        summary_present_df = present_df.groupby(["SKU"], as_index=False)["Quantity"].sum()
+        summary_present_df["Name"] = "N/A"
+        summary_present_df = summary_present_df.rename(columns={"Quantity": "Total Quantity"})
+        summary_present_df = summary_present_df[["Name", "SKU", "Total Quantity"]]
 
     # --- New logic for Summary_Missing ---
     # 1. Get all items from orders that could not be fulfilled.
@@ -253,14 +277,20 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None):
 
     # 2. Identify items that are "truly missing" by comparing required quantity vs initial stock.
     truly_missing_df = not_fulfilled_df[not_fulfilled_df["Quantity"] > not_fulfilled_df["Stock"]].copy()
-    # Ensure missing product names are handled before grouping
-    truly_missing_df["Product_Name"] = truly_missing_df["Product_Name"].fillna("N/A")
 
     # 3. Create the summary report from this filtered data.
     if not truly_missing_df.empty:
-        summary_missing_df = truly_missing_df.groupby(["SKU", "Product_Name"], as_index=False)["Quantity"].sum()
-        summary_missing_df = summary_missing_df.rename(columns={"Product_Name": "Name", "Quantity": "Total Quantity"})
-        summary_missing_df = summary_missing_df[["Name", "SKU", "Total Quantity"]]
+        # Handle Product_Name if available, otherwise use N/A
+        if "Product_Name" in truly_missing_df.columns:
+            truly_missing_df["Product_Name"] = truly_missing_df["Product_Name"].fillna("N/A")
+            summary_missing_df = truly_missing_df.groupby(["SKU", "Product_Name"], as_index=False)["Quantity"].sum()
+            summary_missing_df = summary_missing_df.rename(columns={"Product_Name": "Name", "Quantity": "Total Quantity"})
+            summary_missing_df = summary_missing_df[["Name", "SKU", "Total Quantity"]]
+        else:
+            summary_missing_df = truly_missing_df.groupby(["SKU"], as_index=False)["Quantity"].sum()
+            summary_missing_df["Name"] = "N/A"
+            summary_missing_df = summary_missing_df.rename(columns={"Quantity": "Total Quantity"})
+            summary_missing_df = summary_missing_df[["Name", "SKU", "Total Quantity"]]
     else:
         summary_missing_df = pd.DataFrame(columns=["Name", "SKU", "Total Quantity"])
 
