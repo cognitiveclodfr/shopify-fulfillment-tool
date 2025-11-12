@@ -158,14 +158,14 @@ def normalize_sku(sku):
         return sku_str
 ```
 
-**Analysis:**
-- ✓ **GOOD:** Converts `float` → `int` → `string` (removes .0 suffix)
-- ✓ **GOOD:** `"5170.0"` → `int(5170.0)` → `5170` → `"5170"` ✓
+**Analysis (UPDATED after fix):**
+- ✓ **GOOD:** Removes `.0` suffix from float conversion
+- ✓ **GOOD:** `"5170.0"` → `"5170"` ✓
 - ✓ **GOOD:** Handles alphanumeric SKUs (ABC-123 stays ABC-123)
-- ✓ **GOOD:** Removes leading zeros ("07" → "7")
-- ❌ **BAD:** Only used in packing_lists.py, not in main analysis!
-- ❌ **BAD:** Not applied at CSV load time
-- ❌ **BAD:** Not used consistently across codebase
+- ✓ **GOOD:** **PRESERVES leading zeros** ("07" → "07", critical for warehouse systems!)
+- ✓ **FIXED:** Now used centrally in csv_utils.py
+- ✓ **FIXED:** Applied in analysis.py, core.py, packing_lists.py
+- ✓ **FIXED:** Combined with dtype=str on CSV load for complete solution
 
 **Current Usage:**
 - Used in: `packing_lists.py` for exclude SKU filtering

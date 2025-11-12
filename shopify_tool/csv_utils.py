@@ -158,13 +158,16 @@ def normalize_sku(sku: Any) -> str:
 
     Handles common SKU data type issues:
     - Float conversion artifacts (5170.0 → "5170")
-    - Leading zeros for numeric SKUs ("07" → "7")
     - Whitespace (strips leading/trailing spaces)
     - Alphanumeric SKUs (preserved as-is)
     - None/NaN values (returns empty string)
+    - **PRESERVES leading zeros** (e.g., "07" stays "07", not "7")
 
     This function is critical for ensuring SKU matching works correctly
     when pandas auto-detects numeric SKUs as float64 during CSV loading.
+
+    IMPORTANT: Leading zeros are preserved to maintain compatibility with
+    warehouse management systems that use them (e.g., "07", "0042").
 
     Args:
         sku: SKU value to normalize (can be str, int, float, or NaN)
@@ -184,16 +187,18 @@ def normalize_sku(sku: Any) -> str:
         >>> normalize_sku("ABC-123")
         "ABC-123"
         >>> normalize_sku("07")
-        "7"
+        "07"
+        >>> normalize_sku("07.0")
+        "07"
         >>> normalize_sku(None)
         ""
         >>> normalize_sku(pd.NA)
         ""
 
     Note:
-        For numeric SKUs, this function removes leading zeros by converting
-        to int. If you need to preserve leading zeros, consider forcing
-        dtype=str when loading CSV files.
+        This function only removes the .0 suffix from float conversion.
+        Leading zeros are preserved. To ensure proper handling, always
+        use dtype=str when loading CSV files with SKU columns.
     """
     if pd.isna(sku):
         return ""
@@ -203,13 +208,9 @@ def normalize_sku(sku: Any) -> str:
     if not sku_str:
         return ""
 
-    try:
-        # Try to parse as number and convert back to string
-        # This removes:
-        # - Float artifacts: 5170.0 → 5170 → "5170"
-        # - Leading zeros: "07" → 7 → "7"
-        return str(int(float(sku_str)))
-    except (ValueError, TypeError):
-        # Not a number, return cleaned string (handles alphanumeric SKUs)
-        # Examples: "ABC-123", "SKU-001", etc.
-        return sku_str
+    # Remove .0 suffix from float conversion (e.g., "5170.0" → "5170")
+    # This preserves leading zeros (e.g., "07.0" → "07", not "7")
+    if sku_str.endswith('.0'):
+        return sku_str[:-2]
+
+    return sku_str

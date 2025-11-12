@@ -35,11 +35,13 @@ class TestNormalizeSku:
         assert normalize_sku("  ABC-123  ") == "ABC-123"
         assert normalize_sku("\t5170\n") == "5170"
 
-    def test_leading_zeros_removed(self):
-        """Test that leading zeros are removed for numeric SKUs."""
-        assert normalize_sku("07") == "7"
-        assert normalize_sku("0042") == "42"
-        assert normalize_sku("00100") == "100"
+    def test_leading_zeros_preserved(self):
+        """Test that leading zeros are PRESERVED (critical for warehouse systems)."""
+        assert normalize_sku("07") == "07"
+        assert normalize_sku("0042") == "0042"
+        assert normalize_sku("00100") == "00100"
+        # But .0 suffix is still removed
+        assert normalize_sku("07.0") == "07"
 
     def test_alphanumeric_preserved(self):
         """Test that alphanumeric SKUs are preserved as-is."""
@@ -75,10 +77,13 @@ class TestSkuDtypeForcing:
         """Test that numeric SKUs stay as strings when dtype is forced."""
         csv_content = "SKU,Stock\n5170,100\n5010,50\n5140,75"
 
-        # Without dtype (broken)
+        # Without dtype (broken) - pandas may use int64 or float64 depending on version
         df_broken = pd.read_csv(io.StringIO(csv_content))
-        assert df_broken["SKU"].dtype == np.float64
-        assert df_broken["SKU"].iloc[0] == 5170.0
+        # SKU detected as numeric type (int64 or float64)
+        assert df_broken["SKU"].dtype in [np.int64, np.float64]
+        # When converted to string, may have .0 suffix if float
+        sku_str = str(df_broken["SKU"].iloc[0])
+        assert sku_str in ["5170", "5170.0"], f"Unexpected SKU format: {sku_str}"
 
         # With dtype=str (fixed)
         df_fixed = pd.read_csv(io.StringIO(csv_content), dtype={"SKU": str})
@@ -132,11 +137,12 @@ class TestSkuMatching:
     def test_mixed_format_comparison(self):
         """Test that mixed format SKUs match after normalization."""
         test_cases = [
-            ("5170", "5170.0", True),
-            ("5170", 5170, True),
-            ("5170", 5170.0, True),
-            (" 5170 ", "5170", True),
-            ("07", "7", True),
+            ("5170", "5170.0", True),   # Float suffix removed
+            ("5170", 5170, True),        # Int to string
+            ("5170", 5170.0, True),      # Float to string
+            (" 5170 ", "5170", True),    # Whitespace trimmed
+            ("07", "07.0", True),        # Leading zero preserved, .0 removed
+            ("07", "7", False),          # Leading zeros NOT removed - these are different SKUs
             ("ABC-123", "ABC-123", True),
             ("5170", "5171", False),
         ]
@@ -145,7 +151,7 @@ class TestSkuMatching:
             norm1 = normalize_sku(sku1)
             norm2 = normalize_sku(sku2)
             assert (norm1 == norm2) == should_match, \
-                f"Failed: normalize_sku({sku1!r}) vs normalize_sku({sku2!r})"
+                f"Failed: normalize_sku({sku1!r})={norm1!r} vs normalize_sku({sku2!r})={norm2!r}"
 
 
 class TestSkuDataFrameOperations:
