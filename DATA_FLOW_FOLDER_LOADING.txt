@@ -1,0 +1,676 @@
+# Data Flow: Folder Loading System
+
+## Current Data Flow (Single File Only)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    USER ACTION                              │
+│         Click "Select Orders File" button                   │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│                 FILE HANDLER                                │
+│         FileHandler.select_orders_file()                    │
+│                                                             │
+│  1. QFileDialog.getOpenFileName()                           │
+│     → User browses and selects ONE file                     │
+│     → Returns: "/path/to/orders.csv"                        │
+│                                                             │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│              DELIMITER DETECTION                            │
+│         csv_utils.detect_csv_delimiter()                    │
+│                                                             │
+│  1. Open file, read first 2KB                               │
+│  2. Use csv.Sniffer to detect delimiter                     │
+│  3. Fallback to manual counting if Sniffer fails            │
+│  4. Returns: delimiter = "," (or ";", "\t", etc.)           │
+│                                                             │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│            USER CONFIRMATION                                │
+│         (if detected ≠ configured)                          │
+│                                                             │
+│  QMessageBox:                                               │
+│  "Detected: ','  Configured: ';'"                           │
+│  "Which to use?"                                            │
+│  [Use Detected] [Use Configured]                            │
+│                                                             │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  VALIDATION                                 │
+│         FileHandler.validate_file("orders")                 │
+│                                                             │
+│  1. Get required columns from client config:                │
+│     ["Name", "Lineitem sku", "Lineitem quantity", ...]      │
+│                                                             │
+│  2. Call core.validate_csv_headers(filepath, required_cols) │
+│     • Read only headers (nrows=0)                           │
+│     • Check if all required columns exist                   │
+│     • Returns: (True, []) or (False, [missing_cols])        │
+│                                                             │
+│  3. Update UI status:                                       │
+│     • If valid: status_label.setText("✓"), color = green    │
+│     • If invalid: status_label.setText("✗"), color = red    │
+│     • Tooltip shows missing columns                         │
+│                                                             │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│                 STORE PATH                                  │
+│         self.mw.orders_file_path = filepath                 │
+│                                                             │
+│  1. Store as string: "/path/to/orders.csv"                  │
+│  2. Update UI label: "orders.csv"                           │
+│  3. Update status indicator: "✓"                            │
+│                                                             │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│               CHECK FILES READY                             │
+│         FileHandler.check_files_ready()                     │
+│                                                             │
+│  orders_ok = orders_file_path exists AND status = "✓"       │
+│  stock_ok = stock_file_path exists AND status = "✓"         │
+│                                                             │
+│  if orders_ok AND stock_ok:                                 │
+│      run_analysis_button.setEnabled(True)                   │
+│                                                             │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+              [User clicks "Run Analysis"]
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│              ACTIONS HANDLER                                │
+│         ActionsHandler.run_analysis()                       │
+│                                                             │
+│  1. Create Worker thread                                    │
+│  2. Pass parameters:                                        │
+│     • stock_file_path (str) = "/path/to/stock.csv"          │
+│     • orders_file_path (str) = "/path/to/orders.csv"        │
+│     • stock_delimiter = ";"                                 │
+│     • orders_delimiter = ","                                │
+│     • config (dict)                                         │
+│                                                             │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   CORE ANALYSIS                             │
+│         core.run_full_analysis()                            │
+│                                                             │
+│  Step 1: Load CSV files                                     │
+│  ────────────────────────────────────────                   │
+│  orders_df = pd.read_csv(                                   │
+│      orders_file_path,                                      │
+│      delimiter=orders_delimiter,                            │
+│      encoding='utf-8-sig',                                  │
+│      dtype={"Lineitem sku": str}  # Force SKU as string     │
+│  )                                                          │
+│  → Result: 150 rows                                         │
+│                                                             │
+│  stock_df = pd.read_csv(                                    │
+│      stock_file_path,                                       │
+│      delimiter=stock_delimiter,                             │
+│      encoding='utf-8-sig',                                  │
+│      dtype={"Артикул": str}                                 │
+│  )                                                          │
+│  → Result: 500 rows                                         │
+│                                                             │
+│  Step 2: Process and analyze                                │
+│  ────────────────────────────────────────                   │
+│  • Normalize SKUs                                           │
+│  • Match orders with stock                                  │
+│  • Apply business rules                                     │
+│  • Generate reports                                         │
+│                                                             │
+│  Returns: (True, report_path, final_df, stats)              │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## New Data Flow: Folder Loading (Proposed)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    USER ACTION                              │
+│  1. Select mode: "Folder (Multiple Files)"                  │
+│  2. Click "Select Folder" button                            │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│                 FILE HANDLER                                │
+│         FileHandler.select_orders_folder()                  │
+│                                                             │
+│  1. QFileDialog.getExistingDirectory()                      │
+│     → User browses and selects FOLDER                       │
+│     → Returns: "/path/to/Orders_2025-11-12/"                │
+│                                                             │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│                SCAN FOLDER FOR CSV FILES                    │
+│         FileHandler.scan_folder_for_csv()                   │
+│                                                             │
+│  1. Get recursive option from checkbox                      │
+│  2. Use Path.glob() or Path.rglob() to find *.csv files:    │
+│                                                             │
+│     if recursive:                                           │
+│         files = Path(folder).rglob("*.csv")                 │
+│     else:                                                   │
+│         files = Path(folder).glob("*.csv")                  │
+│                                                             │
+│  3. Sort by filename                                        │
+│  4. Returns: List[str] =                                    │
+│     [                                                       │
+│       "/path/to/Orders_2025-11-12/shop1_orders.csv",        │
+│       "/path/to/Orders_2025-11-12/shop2_orders.csv",        │
+│       "/path/to/Orders_2025-11-12/shop3_orders.csv"         │
+│     ]                                                       │
+│                                                             │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│            VALIDATE MULTIPLE FILES                          │
+│      FileHandler.validate_multiple_files()                  │
+│                                                             │
+│  For each file in csv_files:                                │
+│  ────────────────────────────────────────                   │
+│    1. Auto-detect delimiter                                 │
+│       delimiter = detect_csv_delimiter(filepath)            │
+│                                                             │
+│    2. Validate headers                                      │
+│       is_valid, missing = core.validate_csv_headers(        │
+│           filepath,                                         │
+│           required_columns,                                 │
+│           delimiter                                         │
+│       )                                                     │
+│                                                             │
+│    3. If valid:                                             │
+│       • Add to valid_files list                             │
+│       • Count rows: df = pd.read_csv(...); rows += len(df)  │
+│                                                             │
+│    4. If invalid:                                           │
+│       • Add to invalid_files list with missing columns      │
+│                                                             │
+│  Returns:                                                   │
+│    valid_files = [file1, file2, file3]                      │
+│    invalid_files = [(file4, ["SKU", "Quantity"])]           │
+│    total_rows = 475                                         │
+│                                                             │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│             SHOW FILE PREVIEW DIALOG                        │
+│      FileHandler.show_file_preview()                        │
+│                                                             │
+│  QMessageBox or Custom Dialog:                              │
+│  ┌───────────────────────────────────────────────┐         │
+│  │ Files Found: 4                                │         │
+│  │                                               │         │
+│  │ Valid:                                        │         │
+│  │  ✓ shop1_orders.csv (150 rows)               │         │
+│  │  ✓ shop2_orders.csv (230 rows)               │         │
+│  │  ✓ shop3_orders.csv (95 rows)                │         │
+│  │                                               │         │
+│  │ Invalid:                                      │         │
+│  │  ✗ bad.csv (missing: SKU, Quantity)          │         │
+│  │                                               │         │
+│  │ Total valid: 3 files, 475 rows               │         │
+│  │                                               │         │
+│  │ [Continue]  [Cancel]                          │         │
+│  └───────────────────────────────────────────────┘         │
+│                                                             │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                 [User clicks Continue]
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│              MERGE CSV FILES                                │
+│         csv_utils.merge_csv_files()                         │
+│                                                             │
+│  Input: List of valid file paths                            │
+│                                                             │
+│  Step 1: Load each file                                     │
+│  ────────────────────────────────────────                   │
+│  dataframes = []                                            │
+│  for filepath in valid_files:                               │
+│      df = pd.read_csv(                                      │
+│          filepath,                                          │
+│          delimiter=delimiter,                               │
+│          encoding='utf-8-sig',                              │
+│          dtype={"Lineitem sku": str}                        │
+│      )                                                      │
+│                                                             │
+│      # Add source tracking                                  │
+│      df['_source_file'] = os.path.basename(filepath)        │
+│                                                             │
+│      dataframes.append(df)                                  │
+│      log(f"Loaded {len(df)} rows from {filepath}")          │
+│                                                             │
+│  Step 2: Concatenate                                        │
+│  ────────────────────────────────────────                   │
+│  merged_df = pd.concat(dataframes, ignore_index=True)       │
+│  log(f"Merged {len(dataframes)} files → {len(merged_df)} rows") │
+│                                                             │
+│  Step 3: Remove duplicates (if enabled)                     │
+│  ────────────────────────────────────────                   │
+│  if remove_duplicates:                                      │
+│      duplicate_keys = ["Name", "Lineitem sku"]              │
+│      merged_df = merged_df.drop_duplicates(                 │
+│          subset=duplicate_keys,                             │
+│          keep='first'                                       │
+│      )                                                      │
+│      log(f"Removed {duplicates_count} duplicates")          │
+│                                                             │
+│  Returns: merged_df (475 rows after deduplication)          │
+│                                                             │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│            SAVE MERGED FILE TO TEMP                         │
+│                                                             │
+│  # Create temp file in session directory                    │
+│  temp_dir = session_path or tempfile.gettempdir()           │
+│  merged_path = os.path.join(temp_dir, "merged_orders.csv")  │
+│                                                             │
+│  merged_df.to_csv(                                          │
+│      merged_path,                                           │
+│      index=False,                                           │
+│      encoding='utf-8-sig'                                   │
+│  )                                                          │
+│                                                             │
+│  log(f"Merged file saved: {merged_path}")                   │
+│                                                             │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│             STORE PATH AS SINGLE FILE                       │
+│                                                             │
+│  # Store merged file path (single string, not list)         │
+│  self.mw.orders_file_path = merged_path                     │
+│                                                             │
+│  # Update UI                                                │
+│  self.mw.orders_file_path_label.setText(                    │
+│      f"3 files merged (475 rows)"                           │
+│  )                                                          │
+│                                                             │
+│  # Also store list for reference                            │
+│  self.mw.orders_source_files = valid_files                  │
+│                                                             │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  VALIDATION                                 │
+│         FileHandler.validate_file("orders")                 │
+│                                                             │
+│  Validate the merged file (same as single file validation)  │
+│  • Should pass since we pre-validated all source files      │
+│  • Status: ✓                                                │
+│                                                             │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│               CHECK FILES READY                             │
+│         FileHandler.check_files_ready()                     │
+│                                                             │
+│  Same logic as before - checks if both files ready          │
+│  run_analysis_button.setEnabled(True)                       │
+│                                                             │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+              [User clicks "Run Analysis"]
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│              ACTIONS HANDLER                                │
+│         ActionsHandler.run_analysis()                       │
+│                                                             │
+│  Same as before! Passes SINGLE file path:                   │
+│  • orders_file_path = "/tmp/session_xyz/merged_orders.csv"  │
+│                                                             │
+│  No changes needed to this layer!                           │
+│                                                             │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   CORE ANALYSIS                             │
+│         core.run_full_analysis()                            │
+│                                                             │
+│  Receives SINGLE file path (the merged file)                │
+│  No changes needed to core.py!                              │
+│                                                             │
+│  orders_df = pd.read_csv(merged_path, ...)                  │
+│  → Loads 475 rows from merged file                          │
+│                                                             │
+│  Continues with normal analysis...                          │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Key Differences: Single File vs Folder Loading
+
+### Single File Mode
+
+```
+User selects file
+    ↓
+Validate file
+    ↓
+Store path (str)
+    ↓
+Pass to core
+    ↓
+Core loads CSV
+```
+
+### Folder Mode
+
+```
+User selects folder
+    ↓
+Scan for CSV files (List[str])
+    ↓
+Validate ALL files
+    ↓
+MERGE files → temp CSV
+    ↓
+Store merged path (str)
+    ↓
+Pass to core (single file)
+    ↓
+Core loads CSV (merged)
+```
+
+**Key Insight:** By merging files early, we avoid changing core.py!
+
+---
+
+## Data Transformation: Folder to Single File
+
+### Input: Multiple Files in Folder
+
+```
+Orders_2025-11-12/
+├── shop1_orders.csv (150 rows)
+│   Name,Lineitem sku,Lineitem quantity,Shipping Method
+│   1001,SKU-A,2,Express
+│   1002,SKU-B,1,Standard
+│   ...
+│
+├── shop2_orders.csv (230 rows)
+│   Name,Lineitem sku,Lineitem quantity,Shipping Method
+│   2001,SKU-C,3,Express
+│   2002,SKU-D,1,Standard
+│   ...
+│
+└── shop3_orders.csv (95 rows)
+    Name,Lineitem sku,Lineitem quantity,Shipping Method
+    3001,SKU-E,1,Express
+    3002,SKU-F,2,Standard
+    ...
+```
+
+### Transformation: Merge
+
+```python
+# Pseudo-code
+df1 = pd.read_csv("shop1_orders.csv")  # 150 rows
+df1['_source_file'] = 'shop1_orders.csv'
+
+df2 = pd.read_csv("shop2_orders.csv")  # 230 rows
+df2['_source_file'] = 'shop2_orders.csv'
+
+df3 = pd.read_csv("shop3_orders.csv")  # 95 rows
+df3['_source_file'] = 'shop3_orders.csv'
+
+merged = pd.concat([df1, df2, df3], ignore_index=True)
+# Result: 475 rows (or 470 if 5 duplicates removed)
+```
+
+### Output: Single Merged File
+
+```
+/tmp/session_xyz/merged_orders.csv
+Name,Lineitem sku,Lineitem quantity,Shipping Method,_source_file
+1001,SKU-A,2,Express,shop1_orders.csv
+1002,SKU-B,1,Standard,shop1_orders.csv
+...
+2001,SKU-C,3,Express,shop2_orders.csv
+2002,SKU-D,1,Standard,shop2_orders.csv
+...
+3001,SKU-E,1,Express,shop3_orders.csv
+3002,SKU-F,2,Standard,shop3_orders.csv
+...
+
+Total: 470 rows (after removing 5 duplicates)
+```
+
+This merged file is then treated as a regular single file by the rest of the system!
+
+---
+
+## Error Handling Flow
+
+### Scenario 1: No CSV Files in Folder
+
+```
+User selects folder
+    ↓
+Scan folder → 0 CSV files found
+    ↓
+QMessageBox.warning("No CSV files found in folder")
+    ↓
+Return (don't proceed)
+```
+
+### Scenario 2: All Files Invalid
+
+```
+User selects folder
+    ↓
+Scan folder → 3 CSV files found
+    ↓
+Validate all → 0 valid, 3 invalid
+    ↓
+QMessageBox.critical(
+    "All files are invalid\n\n"
+    "file1.csv: missing SKU\n"
+    "file2.csv: missing Quantity\n"
+    "file3.csv: missing Shipping Method"
+)
+    ↓
+Return (don't proceed)
+```
+
+### Scenario 3: Some Files Invalid
+
+```
+User selects folder
+    ↓
+Scan folder → 4 CSV files found
+    ↓
+Validate all → 3 valid, 1 invalid
+    ↓
+QMessageBox.question(
+    "3 valid files, 1 invalid\n"
+    "Continue with 3 valid files?"
+    [Yes] [No]
+)
+    ↓
+If Yes: merge 3 valid files
+If No: return
+```
+
+### Scenario 4: Merge Failed
+
+```
+Start merge
+    ↓
+Load file 1 → OK
+Load file 2 → OK
+Load file 3 → FAILED (encoding error)
+    ↓
+Catch exception
+    ↓
+QMessageBox.critical(
+    "Failed to merge files:\n"
+    "file3.csv: UnicodeDecodeError"
+)
+    ↓
+Return (don't proceed)
+```
+
+---
+
+## Performance Considerations
+
+### Single File (Current)
+
+```
+Time to load 1 file (500 rows):
+  File dialog:     ~1-2 seconds (user interaction)
+  Delimiter detect: ~0.01 seconds
+  Validation:      ~0.02 seconds
+  ─────────────────────────────────
+  Total:           ~0.03 seconds + user time
+```
+
+### Folder Mode (10 files)
+
+```
+Time to load 10 files (500 rows each):
+  Folder dialog:   ~1-2 seconds (user interaction)
+  Scan folder:     ~0.01 seconds
+  Validate 10:     ~0.2 seconds (0.02 × 10)
+  Merge 10:        ~0.3 seconds
+  Save merged:     ~0.1 seconds
+  ─────────────────────────────────
+  Total:           ~0.61 seconds + user time
+```
+
+**Acceptable!** Even with 50 files, should be <2 seconds.
+
+### Large Dataset (100 files, 100k rows)
+
+```
+Time estimate:
+  Scan:            ~0.05 seconds
+  Validate:        ~2 seconds
+  Merge:           ~5-10 seconds
+  Save:            ~2 seconds
+  ─────────────────────────────────
+  Total:           ~10-15 seconds
+```
+
+**Mitigation:** Add progress bar, run in background thread.
+
+---
+
+## Memory Usage
+
+### Single File
+
+```
+500 rows × 10 columns × 50 bytes/cell = ~250 KB
+Negligible memory impact.
+```
+
+### Folder Mode (10 files)
+
+```
+10 × 500 rows = 5000 rows
+5000 × 10 × 50 = ~2.5 MB
+Still negligible.
+```
+
+### Large Dataset (100 files, 100k rows)
+
+```
+100k rows × 15 columns × 50 bytes = ~75 MB
+Plus intermediate DataFrames during concat: ~150 MB total
+Acceptable on modern systems (8+ GB RAM).
+```
+
+**Conclusion:** Memory is not a concern for typical use cases (<50k rows).
+
+---
+
+## Testing Data Flow
+
+### Test Case 1: Basic Merge (2 files)
+
+```
+Input:
+  file1.csv: 100 rows
+  file2.csv: 150 rows
+
+Expected Output:
+  merged.csv: 250 rows
+  All columns preserved
+  No data loss
+```
+
+### Test Case 2: Duplicates
+
+```
+Input:
+  file1.csv: Order #1001, SKU-A (row 1)
+  file2.csv: Order #1001, SKU-A (row 1)
+
+Expected Output:
+  merged.csv: 1 row (duplicate removed)
+  _source_file: file1.csv (kept first)
+```
+
+### Test Case 3: Different Column Order
+
+```
+Input:
+  file1.csv: [Name, SKU, Quantity, Method]
+  file2.csv: [SKU, Name, Method, Quantity]
+
+Expected Output:
+  merged.csv: All columns present, order unified
+  No data loss
+```
+
+### Test Case 4: Extra Columns
+
+```
+Input:
+  file1.csv: [Name, SKU, Quantity, Method]
+  file2.csv: [Name, SKU, Quantity, Method, Tags]
+
+Expected Output:
+  merged.csv: All 5 columns
+  file1 rows have NaN in Tags column
+```
+
+---
+
+**End of Data Flow Document**
