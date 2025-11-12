@@ -11,7 +11,7 @@ import pytest
 import pandas as pd
 import numpy as np
 import io
-from shopify_tool.csv_utils import normalize_sku
+from shopify_tool.csv_utils import normalize_sku, normalize_sku_for_matching
 
 
 class TestNormalizeSku:
@@ -68,6 +68,50 @@ class TestNormalizeSku:
         inputs = [5170, 5170.0, "5170", "5170.0", " 5170 "]
         results = [normalize_sku(x) for x in inputs]
         assert all(r == "5170" for r in results)
+
+
+class TestNormalizeSkuForMatching:
+    """Test the normalize_sku_for_matching function for exclude_skus feature."""
+
+    def test_removes_leading_zeros_for_numeric(self):
+        """Test that leading zeros are removed for pure numeric SKUs."""
+        assert normalize_sku_for_matching("07") == "7"
+        assert normalize_sku_for_matching("0042") == "42"
+        assert normalize_sku_for_matching("00100") == "100"
+        assert normalize_sku_for_matching(7) == "7"
+        assert normalize_sku_for_matching("07.0") == "7"
+
+    def test_preserves_alphanumeric_skus(self):
+        """Test that alphanumeric SKUs are preserved as-is."""
+        assert normalize_sku_for_matching("ABC-123") == "ABC-123"
+        assert normalize_sku_for_matching("01-DM-0379-110-L") == "01-DM-0379-110-L"
+        assert normalize_sku_for_matching("SKU-001-XL") == "SKU-001-XL"
+
+    def test_fuzzy_matching_equivalence(self):
+        """Test that different representations normalize to the same value for matching."""
+        # All these should normalize to "7" for matching
+        variants_7 = [7, "7", "07", "007", 7.0, "7.0", "07.0"]
+        normalized = [normalize_sku_for_matching(v) for v in variants_7]
+        assert all(n == "7" for n in normalized), f"Got: {normalized}"
+
+        # All these should normalize to "5170" for matching
+        variants_5170 = [5170, "5170", 5170.0, "5170.0"]
+        normalized = [normalize_sku_for_matching(v) for v in variants_5170]
+        assert all(n == "5170" for n in normalized), f"Got: {normalized}"
+
+    def test_difference_from_normalize_sku(self):
+        """Test that normalize_sku_for_matching differs from normalize_sku for leading zeros."""
+        # normalize_sku preserves leading zeros
+        assert normalize_sku("07") == "07"
+        assert normalize_sku("0042") == "0042"
+
+        # normalize_sku_for_matching removes leading zeros
+        assert normalize_sku_for_matching("07") == "7"
+        assert normalize_sku_for_matching("0042") == "42"
+
+        # But both handle float artifacts and alphanumeric the same way
+        assert normalize_sku("5170.0") == normalize_sku_for_matching("5170.0") == "5170"
+        assert normalize_sku("ABC-123") == normalize_sku_for_matching("ABC-123") == "ABC-123"
 
 
 class TestSkuDtypeForcing:

@@ -2,7 +2,7 @@ import pandas as pd
 import os
 import logging
 from datetime import datetime
-from .csv_utils import normalize_sku
+from .csv_utils import normalize_sku, normalize_sku_for_matching
 
 logger = logging.getLogger("ShopifyToolLogger")
 
@@ -79,10 +79,11 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
             unique_skus = filtered_orders["SKU"].unique().tolist()
             logger.info(f"[EXCLUDE_SKUS] Unique SKUs in DataFrame: {unique_skus[:20]}...")  # Show first 20
 
-            # Normalize both DataFrame SKU column and exclude_skus
-            # Using centralized normalize_sku from csv_utils (handles float artifacts, leading zeros, etc.)
-            sku_column_normalized = filtered_orders["SKU"].apply(normalize_sku)
-            exclude_skus_normalized = [normalize_sku(s) for s in exclude_skus]
+            # Normalize both DataFrame SKU column and exclude_skus for fuzzy matching
+            # Use normalize_sku_for_matching to allow "07" to match with 7, "7", or "07"
+            # This is different from normalize_sku which preserves leading zeros for main data
+            sku_column_normalized = filtered_orders["SKU"].apply(normalize_sku_for_matching)
+            exclude_skus_normalized = [normalize_sku_for_matching(s) for s in exclude_skus]
 
             logger.info(f"[EXCLUDE_SKUS] Normalized exclude list: {exclude_skus_normalized}")
             logger.info(f"[EXCLUDE_SKUS] Sample normalized DataFrame SKUs: {sku_column_normalized.unique().tolist()[:20]}...")

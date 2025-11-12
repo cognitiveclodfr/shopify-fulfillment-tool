@@ -214,3 +214,56 @@ def normalize_sku(sku: Any) -> str:
         return sku_str[:-2]
 
     return sku_str
+
+
+def normalize_sku_for_matching(sku: Any) -> str:
+    """
+    Normalize SKU for fuzzy matching (e.g., exclude SKU comparisons).
+
+    This is more aggressive than normalize_sku():
+    - Removes leading zeros for NUMERIC SKUs (e.g., "07" → "7")
+    - Preserves alphanumeric SKUs as-is
+    - Handles float artifacts
+
+    Use this function when you want "07" to match with 7, "7", or "07".
+
+    Args:
+        sku: SKU value to normalize for matching
+
+    Returns:
+        str: Normalized SKU string
+
+    Examples:
+        >>> normalize_sku_for_matching(7)
+        "7"
+        >>> normalize_sku_for_matching("07")
+        "7"
+        >>> normalize_sku_for_matching("07.0")
+        "7"
+        >>> normalize_sku_for_matching("0042")
+        "42"
+        >>> normalize_sku_for_matching("ABC-123")
+        "ABC-123"
+        >>> normalize_sku_for_matching("01-DM-0379")
+        "01-DM-0379"
+
+    Note:
+        Use this for exclude_skus filtering, not for main data!
+        Main data should use normalize_sku() to preserve leading zeros.
+    """
+    # First apply standard normalization (handles .0 suffix, whitespace, NaN)
+    normalized = normalize_sku(sku)
+
+    if not normalized:
+        return normalized
+
+    try:
+        # Try to parse as pure number and remove leading zeros
+        # "07" → 7 → "7"
+        # "0042" → 42 → "42"
+        return str(int(float(normalized)))
+    except (ValueError, TypeError):
+        # Not a pure number (alphanumeric), return as-is
+        # "ABC-123" stays "ABC-123"
+        # "01-DM-0379" stays "01-DM-0379" (contains non-numeric)
+        return normalized
