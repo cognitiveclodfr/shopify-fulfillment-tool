@@ -2,8 +2,9 @@
 CSV utility functions for delimiter detection and validation.
 """
 import csv
+import os
 import logging
-from typing import Tuple, Any
+from typing import Tuple, Any, List, Optional, Dict
 import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -267,3 +268,94 @@ def normalize_sku_for_matching(sku: Any) -> str:
         # "ABC-123" stays "ABC-123"
         # "01-DM-0379" stays "01-DM-0379" (contains non-numeric)
         return normalized
+
+
+def merge_csv_files(
+    file_paths: List[str],
+    delimiter: str,
+    encoding: str = 'utf-8-sig',
+    dtype_dict: Optional[Dict] = None,
+    add_source_column: bool = True,
+    remove_duplicates: bool = False,
+    duplicate_keys: Optional[List[str]] = None
+) -> pd.DataFrame:
+    """
+    Merge multiple CSV files into single DataFrame.
+
+    Args:
+        file_paths: List of CSV file paths to merge
+        delimiter: CSV delimiter (e.g., "," or ";")
+        encoding: File encoding (default: utf-8-sig)
+        dtype_dict: Column dtype specs (e.g., {"Lineitem sku": str})
+        add_source_column: Add _source_file column for tracking
+        remove_duplicates: Remove duplicate rows after merge
+        duplicate_keys: Columns to check for duplicates (CSV column names)
+
+    Returns:
+        pd.DataFrame: Merged DataFrame
+
+    Raises:
+        ValueError: If file_paths is empty
+        Exception: If any file fails to load
+
+    Example:
+        >>> files = ["shop1.csv", "shop2.csv", "shop3.csv"]
+        >>> merged = merge_csv_files(
+        ...     files,
+        ...     delimiter=",",
+        ...     dtype_dict={"Lineitem sku": str},
+        ...     remove_duplicates=True,
+        ...     duplicate_keys=["Name", "Lineitem sku"]
+        ... )
+        >>> print(len(merged))
+        470  # After removing 5 duplicates
+    """
+    if not file_paths:
+        raise ValueError("No files provided for merging")
+
+    logger.info(f"Starting merge of {len(file_paths)} files")
+    dataframes = []
+
+    for filepath in file_paths:
+        try:
+            df = pd.read_csv(
+                filepath,
+                delimiter=delimiter,
+                encoding=encoding,
+                dtype=dtype_dict
+            )
+
+            # Add source tracking column
+            if add_source_column:
+                df['_source_file'] = os.path.basename(filepath)
+
+            dataframes.append(df)
+            logger.info(f"✓ Loaded {len(df)} rows from {os.path.basename(filepath)}")
+
+        except Exception as e:
+            logger.error(f"✗ Failed to load {os.path.basename(filepath)}: {e}")
+            raise Exception(f"Failed to load {os.path.basename(filepath)}: {e}")
+
+    # Concatenate all DataFrames
+    merged_df = pd.concat(dataframes, ignore_index=True)
+    logger.info(f"Merged {len(dataframes)} files → {len(merged_df)} total rows")
+
+    # Remove duplicates if requested
+    if remove_duplicates:
+        original_count = len(merged_df)
+
+        if duplicate_keys:
+            # Check duplicates based on specific columns
+            merged_df = merged_df.drop_duplicates(
+                subset=duplicate_keys,
+                keep='first'
+            )
+        else:
+            # Check duplicates across all columns
+            merged_df = merged_df.drop_duplicates(keep='first')
+
+        removed = original_count - len(merged_df)
+        if removed > 0:
+            logger.info(f"Removed {removed} duplicate rows")
+
+    return merged_df

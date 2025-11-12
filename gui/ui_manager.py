@@ -2,9 +2,10 @@ import logging
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, QLabel,
     QTabWidget, QGroupBox, QTableView, QPlainTextEdit, QTableWidget, QLineEdit,
-    QComboBox, QCheckBox
+    QComboBox, QCheckBox, QRadioButton, QListWidget, QListWidgetItem
 )
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 from .pandas_model import PandasModel
 
 
@@ -107,31 +108,198 @@ class UIManager:
         return group
 
     def _create_files_group(self):
-        """Creates the 'Load Data' QGroupBox."""
+        """Creates the 'Load Data' QGroupBox with folder support."""
         group = QGroupBox("Load Data")
-        layout = QGridLayout()
+        layout = QHBoxLayout()
         group.setLayout(layout)
 
+        # Orders section
+        layout.addWidget(self._create_orders_file_section())
+
+        # Stock section
+        layout.addWidget(self._create_stock_file_section())
+
+        return group
+
+    def _create_orders_file_section(self):
+        """Creates Orders file selection with folder support."""
+        group_box = QGroupBox("📦 Orders File")
+        layout = QVBoxLayout()
+
+        # Mode selector (Radio buttons)
+        mode_layout = QHBoxLayout()
+        mode_label = QLabel("Load Mode:")
+
+        self.mw.orders_single_radio = QRadioButton("Single File")
+        self.mw.orders_folder_radio = QRadioButton("Folder (Multiple Files)")
+        self.mw.orders_single_radio.setChecked(True)  # Default
+
+        mode_layout.addWidget(mode_label)
+        mode_layout.addWidget(self.mw.orders_single_radio)
+        mode_layout.addWidget(self.mw.orders_folder_radio)
+        mode_layout.addStretch()
+
+        layout.addLayout(mode_layout)
+
+        # Select button (text changes based on mode)
         self.mw.load_orders_btn = QPushButton("Load Orders File (.csv)")
         self.mw.load_orders_btn.setToolTip("Select the orders_export.csv file from Shopify.")
+        self.mw.load_orders_btn.setEnabled(False)
+        layout.addWidget(self.mw.load_orders_btn)
+
+        # File path label (shows filename or "X files merged")
+        path_layout = QHBoxLayout()
+        path_layout.addWidget(QLabel("Selected:"))
         self.mw.orders_file_path_label = QLabel("Orders file not selected")
         self.mw.orders_file_status_label = QLabel("")
-        self.mw.load_orders_btn.setEnabled(False)
+        path_layout.addWidget(self.mw.orders_file_path_label)
+        path_layout.addWidget(self.mw.orders_file_status_label)
+        path_layout.addStretch()
 
+        layout.addLayout(path_layout)
+
+        # File list preview (only visible in folder mode)
+        self.mw.orders_file_list_widget = QListWidget()
+        self.mw.orders_file_list_widget.setMaximumHeight(120)
+        self.mw.orders_file_list_widget.setVisible(False)
+        layout.addWidget(self.mw.orders_file_list_widget)
+
+        # File count label
+        self.mw.orders_file_count_label = QLabel("")
+        self.mw.orders_file_count_label.setVisible(False)
+        layout.addWidget(self.mw.orders_file_count_label)
+
+        # Options (only visible in folder mode)
+        self.mw.orders_options_widget = QWidget()
+        options_layout = QVBoxLayout()
+
+        self.mw.orders_recursive_checkbox = QCheckBox("Include subfolders")
+        self.mw.orders_remove_duplicates_checkbox = QCheckBox("Remove duplicate orders")
+        self.mw.orders_remove_duplicates_checkbox.setChecked(True)
+        self.mw.orders_remove_duplicates_checkbox.setToolTip(
+            "Remove orders with same Order Number + SKU (keeps first occurrence)"
+        )
+
+        options_layout.addWidget(self.mw.orders_recursive_checkbox)
+        options_layout.addWidget(self.mw.orders_remove_duplicates_checkbox)
+        self.mw.orders_options_widget.setLayout(options_layout)
+        self.mw.orders_options_widget.setVisible(False)
+
+        layout.addWidget(self.mw.orders_options_widget)
+
+        group_box.setLayout(layout)
+        return group_box
+
+    def _create_stock_file_section(self):
+        """Creates Stock file selection with folder support."""
+        group_box = QGroupBox("📊 Stock File")
+        layout = QVBoxLayout()
+
+        # Mode selector (Radio buttons)
+        mode_layout = QHBoxLayout()
+        mode_label = QLabel("Load Mode:")
+
+        self.mw.stock_single_radio = QRadioButton("Single File")
+        self.mw.stock_folder_radio = QRadioButton("Folder (Multiple Files)")
+        self.mw.stock_single_radio.setChecked(True)  # Default
+
+        mode_layout.addWidget(mode_label)
+        mode_layout.addWidget(self.mw.stock_single_radio)
+        mode_layout.addWidget(self.mw.stock_folder_radio)
+        mode_layout.addStretch()
+
+        layout.addLayout(mode_layout)
+
+        # Select button (text changes based on mode)
         self.mw.load_stock_btn = QPushButton("Load Stock File (.csv)")
         self.mw.load_stock_btn.setToolTip("Select the inventory/stock CSV file.")
+        self.mw.load_stock_btn.setEnabled(False)
+        layout.addWidget(self.mw.load_stock_btn)
+
+        # File path label (shows filename or "X files merged")
+        path_layout = QHBoxLayout()
+        path_layout.addWidget(QLabel("Selected:"))
         self.mw.stock_file_path_label = QLabel("Stock file not selected")
         self.mw.stock_file_status_label = QLabel("")
-        self.mw.load_stock_btn.setEnabled(False)
+        path_layout.addWidget(self.mw.stock_file_path_label)
+        path_layout.addWidget(self.mw.stock_file_status_label)
+        path_layout.addStretch()
 
-        layout.addWidget(self.mw.load_orders_btn, 0, 0)
-        layout.addWidget(self.mw.orders_file_path_label, 0, 1)
-        layout.addWidget(self.mw.orders_file_status_label, 0, 2)
-        layout.addWidget(self.mw.load_stock_btn, 1, 0)
-        layout.addWidget(self.mw.stock_file_path_label, 1, 1)
-        layout.addWidget(self.mw.stock_file_status_label, 1, 2)
-        layout.setColumnStretch(1, 1)
-        return group
+        layout.addLayout(path_layout)
+
+        # File list preview (only visible in folder mode)
+        self.mw.stock_file_list_widget = QListWidget()
+        self.mw.stock_file_list_widget.setMaximumHeight(120)
+        self.mw.stock_file_list_widget.setVisible(False)
+        layout.addWidget(self.mw.stock_file_list_widget)
+
+        # File count label
+        self.mw.stock_file_count_label = QLabel("")
+        self.mw.stock_file_count_label.setVisible(False)
+        layout.addWidget(self.mw.stock_file_count_label)
+
+        # Options (only visible in folder mode)
+        self.mw.stock_options_widget = QWidget()
+        options_layout = QVBoxLayout()
+
+        self.mw.stock_recursive_checkbox = QCheckBox("Include subfolders")
+        self.mw.stock_remove_duplicates_checkbox = QCheckBox("Remove duplicate items")
+        self.mw.stock_remove_duplicates_checkbox.setChecked(True)
+        self.mw.stock_remove_duplicates_checkbox.setToolTip(
+            "Remove items with same SKU (keeps first occurrence)"
+        )
+
+        options_layout.addWidget(self.mw.stock_recursive_checkbox)
+        options_layout.addWidget(self.mw.stock_remove_duplicates_checkbox)
+        self.mw.stock_options_widget.setLayout(options_layout)
+        self.mw.stock_options_widget.setVisible(False)
+
+        layout.addWidget(self.mw.stock_options_widget)
+
+        group_box.setLayout(layout)
+        return group_box
+
+    def on_orders_mode_changed(self, checked):
+        """Handle mode change between Single and Folder for Orders."""
+        is_folder_mode = self.mw.orders_folder_radio.isChecked()
+
+        # Update button text
+        if is_folder_mode:
+            self.mw.load_orders_btn.setText("Select Orders Folder...")
+        else:
+            self.mw.load_orders_btn.setText("Load Orders File (.csv)")
+
+        # Show/hide folder-specific widgets
+        self.mw.orders_file_list_widget.setVisible(is_folder_mode)
+        self.mw.orders_file_count_label.setVisible(is_folder_mode)
+        self.mw.orders_options_widget.setVisible(is_folder_mode)
+
+        # Clear selection when switching modes
+        self.mw.orders_file_path = None
+        self.mw.orders_file_path_label.setText("Orders file not selected")
+        self.mw.orders_file_status_label.setText("")
+        self.mw.orders_file_list_widget.clear()
+
+    def on_stock_mode_changed(self, checked):
+        """Handle mode change between Single and Folder for Stock."""
+        is_folder_mode = self.mw.stock_folder_radio.isChecked()
+
+        # Update button text
+        if is_folder_mode:
+            self.mw.load_stock_btn.setText("Select Stock Folder...")
+        else:
+            self.mw.load_stock_btn.setText("Load Stock File (.csv)")
+
+        # Show/hide folder-specific widgets
+        self.mw.stock_file_list_widget.setVisible(is_folder_mode)
+        self.mw.stock_file_count_label.setVisible(is_folder_mode)
+        self.mw.stock_options_widget.setVisible(is_folder_mode)
+
+        # Clear selection when switching modes
+        self.mw.stock_file_path = None
+        self.mw.stock_file_path_label.setText("Stock file not selected")
+        self.mw.stock_file_status_label.setText("")
+        self.mw.stock_file_list_widget.clear()
 
     def _create_actions_layout(self):
         """Creates the QHBoxLayout containing the 'Reports' and 'Actions' groups."""
