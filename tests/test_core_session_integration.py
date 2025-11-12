@@ -185,14 +185,7 @@ def test_create_packing_list_with_session(
     """Test create_packing_list_report with session mode."""
     stock_file, orders_file = test_data_files
 
-    config = {
-        "settings": {},
-        "column_mappings": {
-            "orders_required": ["Name", "Lineitem sku"],
-            "stock_required": ["Артикул", "Наличност"]
-        },
-        "rules": []
-    }
+    config = make_test_config()
 
     # First run analysis to create session
     success, session_path, final_df, stats = core.run_full_analysis(
@@ -244,14 +237,7 @@ def test_create_stock_export_with_session(
     """Test create_stock_export_report with session mode."""
     stock_file, orders_file = test_data_files
 
-    config = {
-        "settings": {},
-        "column_mappings": {
-            "orders_required": ["Name", "Lineitem sku"],
-            "stock_required": ["Артикул", "Наличност"]
-        },
-        "rules": []
-    }
+    config = make_test_config()
 
     # First run analysis to create session
     success, session_path, final_df, stats = core.run_full_analysis(
@@ -352,14 +338,7 @@ def test_packing_list_error_does_not_update_session_info(
     """Test that session_info is not updated when packing list creation fails."""
     stock_file, orders_file = test_data_files
 
-    config = {
-        "settings": {},
-        "column_mappings": {
-            "orders_required": ["Name", "Lineitem sku"],
-            "stock_required": ["Артикул", "Наличност"]
-        },
-        "rules": []
-    }
+    config = make_test_config()
 
     # First run analysis to create session
     success, session_path, final_df, stats = core.run_full_analysis(
@@ -418,17 +397,11 @@ def test_backwards_compatibility_without_session():
         "Notes": [""]
     })
 
-    config = {
-        "settings": {},
-        "column_mappings": {
-            "orders_required": ["Name", "Lineitem sku"],
-            "stock_required": ["Артикул", "Наличност"]
-        },
-        "rules": [],
-        "test_stock_df": stock_df,
-        "test_orders_df": orders_df,
-        "test_history_df": pd.DataFrame({"Order_Number": []})
-    }
+    config = make_test_config()
+    # Add test dataframes to config
+    config["test_stock_df"] = stock_df
+    config["test_orders_df"] = orders_df
+    config["test_history_df"] = pd.DataFrame({"Order_Number": []})
 
     # Run analysis WITHOUT session parameters (legacy mode)
     success, output_path, final_df, stats = core.run_full_analysis(

@@ -674,14 +674,7 @@ class TestFullMigrationWorkflow:
         stock_file, orders_file = test_data_files
 
         # Use simple config for testing
-        config = {
-            "settings": {"low_stock_threshold": 10},
-            "column_mappings": {
-                "orders_required": ["Name", "Lineitem sku"],
-                "stock_required": ["Артикул", "Наличност"]
-            },
-            "rules": []
-        }
+        config = make_test_config(low_stock_threshold=10)
 
         success, session_path, final_df, stats = core.run_full_analysis(
             stock_file_path=stock_file,
