@@ -372,6 +372,16 @@ def run_full_analysis(
             logger.info(f"Reading stock file from normalized path: {stock_file_path}")
             stock_df = pd.read_csv(stock_file_path, delimiter=stock_delimiter, encoding='utf-8-sig', dtype=stock_dtype)
             logger.info(f"Stock data loaded: {len(stock_df)} rows, {len(stock_df.columns)} columns")
+
+            # Apply column mappings to stock_df immediately after loading
+            # This ensures stock_df has internal column names (SKU, Product_Name, Stock)
+            # which is needed for manual additions loading later
+            stock_mappings = column_mappings.get("stock", {})
+            stock_rename_map = {csv_col: internal_col for csv_col, internal_col in stock_mappings.items()
+                                if csv_col in stock_df.columns and csv_col != internal_col}
+            if stock_rename_map:
+                stock_df = stock_df.rename(columns=stock_rename_map)
+                logger.debug(f"Applied column mappings to stock_df: {stock_rename_map}")
         except pd.errors.ParserError as e:
             error_msg = (
                 f"Failed to parse stock file. The file may have incorrect delimiter.\n"
