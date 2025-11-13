@@ -128,10 +128,16 @@ class UIManager:
         session_icon_label.setPixmap(folder_icon.pixmap(16, 16))
         session_row.addWidget(session_icon_label)
 
-        session_row.addWidget(QLabel("Session:"))
+        session_label = QLabel("Session:")
+        session_label.setStyleSheet("color: palette(mid);")
+        session_row.addWidget(session_label)
 
         self.session_info_label = QLabel("No session")
-        self.session_info_label.setStyleSheet("font-weight: bold;")
+        self.session_info_label.setStyleSheet("""
+            font-weight: bold;
+            color: palette(highlight);
+            padding: 2px 6px;
+        """)
         session_row.addWidget(self.session_info_label)
 
         session_row.addStretch()
@@ -405,16 +411,19 @@ class UIManager:
         # Column selector
         self.mw.filter_column_selector = QComboBox()
         self.mw.filter_column_selector.addItem("All Columns")
+        self.mw.filter_column_selector.setToolTip("Select which column to filter by")
         layout.addWidget(self.mw.filter_column_selector)
 
         # Filter input with clear button
         self.mw.filter_input = QLineEdit()
         self.mw.filter_input.setPlaceholderText("Enter filter text...")
         self.mw.filter_input.setClearButtonEnabled(True)  # Built-in clear button!
+        self.mw.filter_input.setToolTip("Filter table by text (Ctrl+F to focus)")
         layout.addWidget(self.mw.filter_input, 1)
 
         # Case sensitive checkbox
         self.mw.case_sensitive_checkbox = QCheckBox("Case Sensitive")
+        self.mw.case_sensitive_checkbox.setToolTip("Make filter case-sensitive")
         layout.addWidget(self.mw.case_sensitive_checkbox)
 
         # Clear button
@@ -422,6 +431,7 @@ class UIManager:
         self.mw.clear_filter_button.setIcon(
             self.mw.style().standardIcon(QStyle.SP_DialogResetButton)
         )
+        self.mw.clear_filter_button.setToolTip("Clear all filters")
         layout.addWidget(self.mw.clear_filter_button)
 
         # Keyboard shortcut for filter focus
@@ -447,12 +457,14 @@ class UIManager:
         # Packing List button (duplicate for convenience)
         packing_btn = QPushButton("📄 Packing List")
         packing_btn.setEnabled(False)
+        packing_btn.setToolTip("Generate packing lists based on pre-defined filters")
         layout.addWidget(packing_btn)
         self.mw.packing_list_button_tab2 = packing_btn
 
         # Stock Export button
         stock_btn = QPushButton("📊 Stock Export")
         stock_btn.setEnabled(False)
+        stock_btn.setToolTip("Generate stock export files for couriers")
         layout.addWidget(stock_btn)
         self.mw.stock_export_button_tab2 = stock_btn
 
@@ -462,6 +474,7 @@ class UIManager:
             self.mw.style().standardIcon(QStyle.SP_DirOpenIcon)
         )
         folder_btn.setEnabled(False)
+        folder_btn.setToolTip("Open session folder in file explorer")
         layout.addWidget(folder_btn)
         self.mw.open_folder_button_tab2 = folder_btn
 
@@ -489,11 +502,21 @@ class UIManager:
         """Create summary bar at bottom of Tab 2."""
         widget = QWidget()
         widget.setMaximumHeight(30)
+        widget.setStyleSheet("""
+            QWidget {
+                background-color: palette(alternate-base);
+                border-top: 1px solid palette(mid);
+            }
+        """)
         layout = QHBoxLayout(widget)
-        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setContentsMargins(10, 5, 10, 5)
 
         self.mw.summary_label = QLabel("No analysis data")
-        self.mw.summary_label.setStyleSheet("font-weight: bold;")
+        self.mw.summary_label.setStyleSheet("""
+            font-weight: bold;
+            color: palette(text);
+            padding: 2px;
+        """)
         layout.addWidget(self.mw.summary_label)
 
         layout.addStretch()

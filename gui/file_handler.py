@@ -49,6 +49,9 @@ class FileHandler:
         self.mw.orders_file_path_label.setText(os.path.basename(filepath))
         self.log.info(f"Orders file selected: {filepath}")
 
+        # Update status bar
+        self.mw.statusBar().showMessage(f"Orders file loaded: {os.path.basename(filepath)}", 3000)
+
         # Get delimiter from config (default to comma for Shopify exports)
         config = self.mw.active_profile_config
         config_delimiter = config.get("settings", {}).get("orders_csv_delimiter", ",")
@@ -124,6 +127,9 @@ class FileHandler:
         self.mw.stock_file_path = filepath
         self.mw.stock_file_path_label.setText(os.path.basename(filepath))
         self.log.info(f"Stock file selected: {filepath}")
+
+        # Update status bar
+        self.mw.statusBar().showMessage(f"Stock file loaded: {os.path.basename(filepath)}", 3000)
 
         # Get delimiter from config
         config = self.mw.active_profile_config

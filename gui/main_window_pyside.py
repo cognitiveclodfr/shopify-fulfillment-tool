@@ -58,6 +58,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Shopify Fulfillment Tool - New Architecture")
         self.setGeometry(100, 100, 1100, 900)
 
+        # Setup status bar for user feedback
+        self.statusBar().showMessage("Ready")
+
         # Core application attributes
         self.session_path = None
         self.current_client_id = None

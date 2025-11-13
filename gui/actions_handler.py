@@ -92,6 +92,9 @@ class ActionsHandler(QObject):
             self.mw.log_activity("Session", f"New session created: {session_name}")
             self.log.info(f"New session created: {session_path}")
 
+            # Update status bar
+            self.mw.statusBar().showMessage(f"Session created: {session_name}", 5000)
+
             QMessageBox.information(
                 self.mw,
                 "Session Created",
@@ -123,6 +126,10 @@ class ActionsHandler(QObject):
 
         self.mw.ui_manager.set_ui_busy(True)
         self.log.info("Starting analysis thread.")
+
+        # Update status bar
+        self.mw.statusBar().showMessage("Running analysis...")
+
         stock_delimiter = self.mw.active_profile_config.get("settings", {}).get("stock_csv_delimiter", ";")
         orders_delimiter = self.mw.active_profile_config.get("settings", {}).get("orders_csv_delimiter", ",")
 
@@ -161,6 +168,11 @@ class ActionsHandler(QObject):
             self.mw.analysis_stats = stats
             self.data_changed.emit()
             self.mw.log_activity("Analysis", f"Analysis complete. Report saved to: {result_msg}")
+
+            # Update status bar
+            orders_count = len(df['Order_Number'].unique()) if 'Order_Number' in df.columns else 0
+            items_count = len(df)
+            self.mw.statusBar().showMessage(f"Analysis complete: {orders_count} orders, {items_count} items", 5000)
 
             # ========================================
             # NEW: RECORD STATISTICS TO SERVER
