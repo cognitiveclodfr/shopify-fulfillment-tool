@@ -4,7 +4,7 @@ from datetime import datetime
 import pandas as pd
 
 from PySide6.QtCore import QObject, Signal
-from PySide6.QtWidgets import QMessageBox, QInputDialog
+from PySide6.QtWidgets import QMessageBox, QInputDialog, QDialog
 
 from gui.worker import Worker
 from shopify_tool import core
@@ -711,3 +711,152 @@ class ActionsHandler(QObject):
             ].reset_index(drop=True)
             self.data_changed.emit()
             self.mw.log_activity("Data Edit", f"Removed order {order_number}.")
+
+    def show_add_product_dialog(self):
+        """Show dialog to add product to order."""
+        from gui.add_product_dialog import AddProductDialog
+
+        # Validate prerequisites
+        if not hasattr(self.mw, 'analysis_results_df') or self.mw.analysis_results_df is None or self.mw.analysis_results_df.empty:
+            QMessageBox.warning(
+                self.mw,
+                "No Analysis",
+                "Please run analysis first before adding products."
+            )
+            return
+
+        if not hasattr(self.mw, 'stock_df') or self.mw.stock_df is None or self.mw.stock_df.empty:
+            QMessageBox.warning(
+                self.mw,
+                "No Stock Data",
+                "Stock file must be loaded to add products."
+            )
+            return
+
+        # Show dialog
+        dialog = AddProductDialog(
+            parent=self.mw,
+            orders_df=self.mw.analysis_results_df,
+            stock_df=self.mw.stock_df
+        )
+
+        if dialog.exec() == QDialog.Accepted:
+            result = dialog.get_result()
+            self._add_product_to_dataframe(result)
+
+    def _add_product_to_dataframe(self, product_data):
+        """
+        Add manually added product to analysis DataFrame.
+
+        Args:
+            product_data: dict {
+                "order_number": str,
+                "sku": str,
+                "product_name": str,
+                "quantity": int
+            }
+        """
+        import pandas as pd
+
+        # Get existing row as template
+        existing_rows = self.mw.analysis_results_df[
+            self.mw.analysis_results_df["Order_Number"] == product_data["order_number"]
+        ]
+
+        if existing_rows.empty:
+            logger.error(f"Order {product_data['order_number']} not found")
+            QMessageBox.warning(
+                self.mw,
+                "Order Not Found",
+                f"Order {product_data['order_number']} not found in analysis data."
+            )
+            return
+
+        template_row = existing_rows.iloc[0].copy()
+
+        # Create new row
+        new_row = template_row.copy()
+        new_row["SKU"] = product_data["sku"]
+        new_row["Product_Name"] = product_data["product_name"]
+        new_row["Warehouse_Name"] = product_data["product_name"]  # Same as Product_Name for manual additions
+        new_row["Quantity"] = product_data["quantity"]
+        new_row["Source"] = "Manual"  # Mark as manual addition
+        new_row["Order_Fulfillment_Status"] = "Pending"  # Mark as pending
+
+        # Lookup stock value
+        stock_row = self.mw.stock_df[self.mw.stock_df["SKU"] == product_data["sku"]]
+        if not stock_row.empty:
+            new_row["Stock"] = stock_row.iloc[0]["Stock"]
+            new_row["Final_Stock"] = stock_row.iloc[0]["Stock"]  # Will be updated on re-run
+        else:
+            new_row["Stock"] = 0
+            new_row["Final_Stock"] = 0
+
+        # Append to DataFrame
+        self.mw.analysis_results_df = pd.concat(
+            [self.mw.analysis_results_df, pd.DataFrame([new_row])],
+            ignore_index=True
+        )
+
+        logger.info(f"Added product {product_data['sku']} to order {product_data['order_number']}")
+
+        # Save to session
+        self._save_manual_addition(product_data)
+
+        # Emit data changed signal to refresh UI
+        self.data_changed.emit()
+
+        # Log activity
+        self.mw.log_activity(
+            "Manual Addition",
+            f"Added {product_data['sku']} ({product_data['quantity']}x) to order {product_data['order_number']}"
+        )
+
+        # Show success message
+        QMessageBox.information(
+            self.mw,
+            "Product Added",
+            f"Product {product_data['sku']} added to order {product_data['order_number']}.\n\n"
+            "Note: You may want to re-run analysis to update fulfillment status."
+        )
+
+    def _save_manual_addition(self, product_data):
+        """Save manual addition to session file."""
+        import json
+        import os
+        from datetime import datetime
+
+        if not hasattr(self.mw, 'session_path') or not self.mw.session_path:
+            logger.warning("No active session, manual addition not saved")
+            return
+
+        # Path to manual_additions.json
+        additions_file = os.path.join(self.mw.session_path, "manual_additions.json")
+
+        # Load existing additions
+        if os.path.exists(additions_file):
+            try:
+                with open(additions_file, 'r', encoding='utf-8') as f:
+                    additions = json.load(f)
+            except Exception as e:
+                logger.error(f"Error loading manual additions: {e}")
+                additions = []
+        else:
+            additions = []
+
+        # Add new entry
+        additions.append({
+            "order_number": product_data["order_number"],
+            "sku": product_data["sku"],
+            "product_name": product_data["product_name"],
+            "quantity": product_data["quantity"],
+            "timestamp": datetime.now().isoformat()
+        })
+
+        # Save back
+        try:
+            with open(additions_file, 'w', encoding='utf-8') as f:
+                json.dump(additions, f, indent=2, ensure_ascii=False)
+            logger.info(f"Saved manual addition to {additions_file}")
+        except Exception as e:
+            logger.error(f"Error saving manual additions: {e}")

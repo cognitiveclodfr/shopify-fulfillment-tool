@@ -221,6 +221,7 @@ class MainWindow(QMainWindow):
 
         # Main actions
         self.run_analysis_button.clicked.connect(self.actions_handler.run_analysis)
+        self.add_product_button.clicked.connect(self.actions_handler.show_add_product_dialog)
         self.settings_button.clicked.connect(self.actions_handler.open_settings_window)
 
         # Reports
@@ -394,6 +395,8 @@ class MainWindow(QMainWindow):
                         self.packing_list_button.setEnabled(True)
                     if hasattr(self, 'stock_export_button'):
                         self.stock_export_button.setEnabled(True)
+                    if hasattr(self, 'add_product_button'):
+                        self.add_product_button.setEnabled(True)
 
                     self.log_activity("Session", f"Loaded session: {session_name}")
                     QMessageBox.information(
@@ -457,6 +460,14 @@ class MainWindow(QMainWindow):
                 self.analysis_stats = recalculate_statistics(self.analysis_results_df)
                 self.ui_manager.update_results_table(self.analysis_results_df)
                 self.update_statistics_tab()
+
+                # Enable action buttons that require analysis data
+                if hasattr(self, 'packing_list_button'):
+                    self.packing_list_button.setEnabled(True)
+                if hasattr(self, 'stock_export_button'):
+                    self.stock_export_button.setEnabled(True)
+                if hasattr(self, 'add_product_button'):
+                    self.add_product_button.setEnabled(True)
             except Exception as e:
                 logging.error(f"Failed to recalculate statistics: {e}", exc_info=True)
                 self.analysis_stats = None
@@ -466,6 +477,14 @@ class MainWindow(QMainWindow):
             self.analysis_stats = None
             self._clear_statistics_view()
             self.ui_manager.update_results_table(pd.DataFrame())
+
+            # Disable action buttons that require analysis data
+            if hasattr(self, 'packing_list_button'):
+                self.packing_list_button.setEnabled(False)
+            if hasattr(self, 'stock_export_button'):
+                self.stock_export_button.setEnabled(False)
+            if hasattr(self, 'add_product_button'):
+                self.add_product_button.setEnabled(False)
 
         # Populate filter dropdown
         self.filter_column_selector.clear()

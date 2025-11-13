@@ -339,11 +339,17 @@ class UIManager:
         self.mw.run_analysis_button.setEnabled(False)
         self.mw.run_analysis_button.setToolTip("Start the fulfillment analysis based on the loaded files.")
 
+        self.mw.add_product_button = QPushButton("➕ Add Product to Order")
+        self.mw.add_product_button.setMinimumHeight(60)
+        self.mw.add_product_button.setEnabled(False)  # Enabled after successful analysis
+        self.mw.add_product_button.setToolTip("Manually add a product to an existing order")
+
         self.mw.settings_button = QPushButton("Open Client Settings")
         self.mw.settings_button.setToolTip("Open the settings window for the active client.")
         self.mw.settings_button.setEnabled(False)  # Enabled when client is selected
 
         actions_layout.addWidget(self.mw.run_analysis_button, 1)
+        actions_layout.addWidget(self.mw.add_product_button, 1)
         actions_layout.addWidget(self.mw.settings_button)
         main_layout.addLayout(actions_layout)
 

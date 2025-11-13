@@ -253,6 +253,35 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None):
     final_df["Final_Stock"] = final_df["Final_Stock"].fillna(
         final_df["Stock"]
     )  # If an item was not fulfilled, its final stock is its initial stock
+
+    # --- Add Warehouse_Name column from stock file ---
+    # This preserves the original product names from the stock/warehouse file
+    # while Product_Name contains names from orders/Shopify
+    if "Product_Name" in stock_clean_df.columns:
+        # Create lookup dictionary for O(1) mapping
+        stock_lookup = dict(zip(
+            stock_clean_df["SKU"],
+            stock_clean_df["Product_Name"]
+        ))
+        logger.info(f"Creating Warehouse_Name lookup: {len(stock_lookup)} SKUs from stock file")
+
+        # Map SKU to warehouse product name
+        final_df["Warehouse_Name"] = final_df["SKU"].map(stock_lookup)
+
+        # Fill N/A for SKUs not found in stock
+        final_df["Warehouse_Name"] = final_df["Warehouse_Name"].fillna("N/A")
+
+        # Log statistics
+        matched = (final_df["Warehouse_Name"] != "N/A").sum()
+        total = len(final_df)
+        logger.info(f"Warehouse_Name mapping: {matched}/{total} SKUs matched with stock names")
+    else:
+        # Stock file has no Product_Name column
+        logger.warning("Stock file has no Product_Name column, setting Warehouse_Name to N/A")
+        final_df["Warehouse_Name"] = "N/A"
+    # Initialize Source column (all orders start as "Order", manual additions will have "Manual")
+    final_df["Source"] = "Order"
+
     final_df["Order_Type"] = np.where(final_df["item_count"] > 1, "Multi", "Single")
     final_df["Stock"] = final_df["Stock"].fillna(0)
     # Use Shipping_Method with underscore (internal name)
@@ -274,6 +303,7 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None):
         "Order_Type",
         "SKU",
         "Product_Name",
+        "Warehouse_Name",  # Product name from stock/warehouse file
         "Quantity",
         "Stock",
         "Final_Stock",
@@ -286,6 +316,7 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None):
         "Notes",
         "System_note",
         "Status_Note",
+        "Source",  # "Order" or "Manual"
     ]
     if "Total_Price" in final_df.columns:
         # Insert 'Total_Price' into the list at a specific position for consistent column order.
