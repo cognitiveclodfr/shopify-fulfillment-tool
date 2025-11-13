@@ -117,12 +117,15 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
         )
 
         # Define the columns for the final print list
-        # Use Warehouse_Name (from stock file) for warehouse picking instead of Product_Name (from Shopify)
+        # Use Warehouse_Name if available (from stock file for warehouse picking),
+        # otherwise fall back to Product_Name (for backward compatibility with tests/old data)
+        product_name_column = "Warehouse_Name" if "Warehouse_Name" in sorted_list.columns else "Product_Name"
+
         columns_for_print = [
             "Destination_Country",
             "Order_Number",
             "SKU",
-            "Warehouse_Name",  # Changed from Product_Name - shows stock/warehouse product names
+            product_name_column,  # Warehouse_Name (preferred) or Product_Name (fallback)
             "Quantity",
             "Shipping_Provider",
         ]
@@ -132,7 +135,8 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
         output_filename = os.path.basename(output_file)
 
         # Rename columns to embed metadata into the header
-        rename_map = {"Shipping_Provider": generation_timestamp, "Warehouse_Name": output_filename}
+        # Use the actual column name that was selected above
+        rename_map = {"Shipping_Provider": generation_timestamp, product_name_column: output_filename}
         print_list = print_list.rename(columns=rename_map)
 
         logger.info("Creating Excel file...")
@@ -195,7 +199,7 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
                 original_col_name = columns_for_print[i]
                 if original_col_name == "Destination_Country":
                     max_len = 5
-                elif original_col_name == "Warehouse_Name":
+                elif original_col_name in ["Warehouse_Name", "Product_Name"]:
                     max_len = min(max_len, 45)
                 elif original_col_name == "SKU":
                     max_len = min(max_len, 25)

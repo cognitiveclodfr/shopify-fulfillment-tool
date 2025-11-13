@@ -360,6 +360,29 @@ class MainWindow(QMainWindow):
             # Recalculate statistics
             self.analysis_stats = recalculate_statistics(self.analysis_results_df)
 
+            # Load stock file from session input directory
+            # This is needed for the manual product addition dialog
+            stock_file = session_path / "input" / "inventory.csv"
+            if stock_file.exists():
+                try:
+                    # Get delimiter from config
+                    stock_delimiter = self.active_profile_config.get("settings", {}).get("stock_csv_delimiter", ";")
+
+                    # Get column mappings for SKU columns (to force string type)
+                    column_mappings = self.active_profile_config.get("column_mappings", {})
+                    stock_mappings = column_mappings.get("stock", {})
+                    sku_columns = [csv_col for csv_col, internal_name in stock_mappings.items() if internal_name == "SKU"]
+                    dtype_dict = {col: str for col in sku_columns}
+
+                    self.stock_df = pd.read_csv(stock_file, delimiter=stock_delimiter, encoding='utf-8-sig', dtype=dtype_dict)
+                    logging.info(f"Loaded stock file from session: {len(self.stock_df)} rows")
+                except Exception as e:
+                    logging.warning(f"Failed to load stock file from session: {e}")
+                    self.stock_df = None
+            else:
+                logging.warning(f"Stock file not found in session: {stock_file}")
+                self.stock_df = None
+
             logging.info(f"Loaded {len(self.analysis_results_df)} rows from session")
             return True
 

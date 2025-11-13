@@ -189,6 +189,9 @@ class FileHandler:
             stock_df = pd.read_csv(filepath, delimiter=delimiter, encoding='utf-8-sig', dtype=dtype_dict)
             self.log.info(f"Loaded stock CSV with delimiter '{delimiter}': {len(stock_df)} rows")
 
+            # Store stock_df in MainWindow for later use (e.g., manual product addition dialog)
+            self.mw.stock_df = stock_df
+
         except Exception as e:
             self.log.error(f"Failed to load stock CSV: {e}")
             QMessageBox.critical(
