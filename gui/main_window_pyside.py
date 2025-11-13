@@ -376,6 +376,15 @@ class MainWindow(QMainWindow):
 
                     self.stock_df = pd.read_csv(stock_file, delimiter=stock_delimiter, encoding='utf-8-sig', dtype=dtype_dict)
                     logging.info(f"Loaded stock file from session: {len(self.stock_df)} rows")
+
+                    # Apply column mappings to stock_df before storing
+                    # This ensures that the stored stock_df has internal column names (SKU, Product_Name, Stock)
+                    # which is what AddProductDialog expects
+                    stock_rename_map = {csv_col: internal_col for csv_col, internal_col in stock_mappings.items()
+                                        if csv_col in self.stock_df.columns and csv_col != internal_col}
+                    if stock_rename_map:
+                        self.stock_df = self.stock_df.rename(columns=stock_rename_map)
+                        logging.info(f"Applied column mappings to stock_df from session: {stock_rename_map}")
                 except Exception as e:
                     logging.warning(f"Failed to load stock file from session: {e}")
                     self.stock_df = None

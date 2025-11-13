@@ -189,7 +189,16 @@ class FileHandler:
             stock_df = pd.read_csv(filepath, delimiter=delimiter, encoding='utf-8-sig', dtype=dtype_dict)
             self.log.info(f"Loaded stock CSV with delimiter '{delimiter}': {len(stock_df)} rows")
 
-            # Store stock_df in MainWindow for later use (e.g., manual product addition dialog)
+            # Apply column mappings to stock_df before storing
+            # This ensures that the stored stock_df has internal column names (SKU, Product_Name, Stock)
+            # which is what AddProductDialog expects
+            stock_rename_map = {csv_col: internal_col for csv_col, internal_col in stock_mappings.items()
+                                if csv_col in stock_df.columns and csv_col != internal_col}
+            if stock_rename_map:
+                stock_df = stock_df.rename(columns=stock_rename_map)
+                self.log.info(f"Applied column mappings to stock_df: {stock_rename_map}")
+
+            # Store mapped stock_df in MainWindow for later use (e.g., manual product addition dialog)
             self.mw.stock_df = stock_df
 
         except Exception as e:
