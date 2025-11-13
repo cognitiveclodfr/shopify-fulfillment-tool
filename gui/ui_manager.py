@@ -165,22 +165,37 @@ class UIManager:
         self.main_tabs.setTabToolTip(3, "Statistics and logs (Ctrl+4)")
 
     def _create_tab1_session_setup(self):
-        """Create Tab 1: Session Setup (PLACEHOLDER for Phase 1).
+        """Create Tab 1: Session Setup.
 
-        Will contain:
-        - Session management
-        - File loading (orders + stock)
-        - Run analysis button
-        - Settings button
-        - Report buttons
+        Contains:
+        - Session management (Create New Session button + session label)
+        - File loading (orders + stock with single/folder modes)
+        - Actions (Run Analysis + Settings buttons)
+        - Reports (Packing List + Stock Export + Open Folder buttons)
         """
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.setAlignment(Qt.AlignCenter)
+        layout.setSpacing(10)
+        layout.setContentsMargins(10, 10, 10, 10)
 
-        placeholder = QLabel("Tab 1: Session Setup\n(Will be implemented in Phase 2)")
-        placeholder.setStyleSheet("font-size: 14pt; color: gray;")
-        layout.addWidget(placeholder)
+        # Section 1: Session Management
+        session_group = self._create_session_management_section()
+        layout.addWidget(session_group)
+
+        # Section 2: File Loading (2 columns: Orders | Stock)
+        files_group = self._create_files_loading_section()
+        layout.addWidget(files_group)
+
+        # Section 3: Actions (Run Analysis, Settings)
+        actions_group = self._create_actions_section()
+        layout.addWidget(actions_group)
+
+        # Section 4: Reports (enabled after analysis)
+        reports_group = self._create_reports_section()
+        layout.addWidget(reports_group)
+
+        # Stretch at bottom to push everything up
+        layout.addStretch()
 
         return tab
 
@@ -237,6 +252,118 @@ class UIManager:
         layout.addWidget(placeholder)
 
         return tab
+
+    # ========== TAB 1 CONTENT METHODS (Phase 2) ==========
+
+    def _create_session_management_section(self):
+        """Create session management UI for Tab 1."""
+        group = QGroupBox("📂 Session Management")
+        layout = QHBoxLayout(group)
+
+        # Create new session button
+        self.mw.new_session_btn = QPushButton("Create New Session")
+        self.mw.new_session_btn.setIcon(
+            self.mw.style().standardIcon(QStyle.SP_FileDialogNewFolder)
+        )
+        self.mw.new_session_btn.setEnabled(False)  # Enabled when client is selected
+        self.mw.new_session_btn.setToolTip(
+            "Create a new analysis session for the selected client"
+        )
+        layout.addWidget(self.mw.new_session_btn)
+
+        # Session path label
+        layout.addWidget(QLabel("Current:"))
+        self.mw.session_path_label = QLabel("No session")
+        layout.addWidget(self.mw.session_path_label)
+
+        layout.addStretch()
+
+        return group
+
+    def _create_files_loading_section(self):
+        """Create file loading section for Tab 1.
+
+        REUSE existing _create_files_group() logic but adapt layout.
+        """
+        group = QGroupBox("📁 Load Data")
+        layout = QHBoxLayout(group)
+        layout.setSpacing(10)
+
+        # Orders section (left) - REUSE existing method!
+        orders_section = self._create_orders_file_section()
+        layout.addWidget(orders_section, 1)
+
+        # Stock section (right) - REUSE existing method!
+        stock_section = self._create_stock_file_section()
+        layout.addWidget(stock_section, 1)
+
+        return group
+
+    def _create_actions_section(self):
+        """Create main actions section for Tab 1 (Run Analysis, Settings)."""
+        group = QGroupBox("⚙️ Actions")
+        layout = QHBoxLayout(group)
+
+        # Run Analysis button (prominent)
+        self.mw.run_analysis_button = QPushButton("▶️ Run Analysis")
+        self.mw.run_analysis_button.setMinimumHeight(50)
+        self.mw.run_analysis_button.setStyleSheet("""
+            QPushButton {
+                font-size: 14pt;
+                font-weight: bold;
+            }
+        """)
+        self.mw.run_analysis_button.setEnabled(False)  # Disabled until files loaded
+        self.mw.run_analysis_button.setToolTip(
+            "Run fulfillment analysis (Ctrl+R)"
+        )
+        layout.addWidget(self.mw.run_analysis_button, 3)  # 3x width
+
+        # Settings button
+        self.mw.settings_button = QPushButton("⚙️ Client Settings")
+        self.mw.settings_button.setMinimumHeight(50)
+        self.mw.settings_button.setEnabled(False)  # Disabled until client selected
+        self.mw.settings_button.setToolTip(
+            "Open client configuration settings"
+        )
+        layout.addWidget(self.mw.settings_button, 1)  # 1x width
+
+        # Keyboard shortcut for Run Analysis
+        QShortcut(QKeySequence("Ctrl+R"), self.mw,
+                  lambda: self.mw.run_analysis_button.click()
+                          if self.mw.run_analysis_button.isEnabled() else None)
+
+        return group
+
+    def _create_reports_section(self):
+        """Create reports section for Tab 1 (enabled after analysis)."""
+        group = QGroupBox("📤 Reports")
+        layout = QHBoxLayout(group)
+
+        # Packing List button
+        self.mw.packing_list_button = QPushButton("📄 Create Packing List")
+        self.mw.packing_list_button.setEnabled(False)
+        self.mw.packing_list_button.setToolTip("Generate packing lists based on pre-defined filters.")
+        layout.addWidget(self.mw.packing_list_button)
+
+        # Stock Export button
+        self.mw.stock_export_button = QPushButton("📊 Create Stock Export")
+        self.mw.stock_export_button.setEnabled(False)
+        self.mw.stock_export_button.setToolTip("Generate stock export files for couriers.")
+        layout.addWidget(self.mw.stock_export_button)
+
+        # Open session folder button (NEW!)
+        self.mw.open_folder_button = QPushButton("📁 Open Session Folder")
+        self.mw.open_folder_button.setIcon(
+            self.mw.style().standardIcon(QStyle.SP_DirOpenIcon)
+        )
+        self.mw.open_folder_button.setEnabled(False)
+        self.mw.open_folder_button.setToolTip("Open session folder in file explorer")
+        layout.addWidget(self.mw.open_folder_button)
+
+        layout.addStretch()
+
+        return group
 
     # ========== OLD METHODS (kept for reference, will be reused in phases 2-5) ==========
 
@@ -685,3 +812,36 @@ class UIManager:
         self.mw.tableView.setModel(self.mw.proxy_model)
 
         self.mw.tableView.resizeColumnsToContents()
+
+    def open_session_folder(self):
+        """Open session folder in OS file explorer.
+
+        Opens the current session directory in the system's default file manager.
+        Works on Windows, macOS, and Linux.
+        """
+        import subprocess
+        import platform
+
+        if not self.mw.session_path:
+            self.log.warning("No session path available to open")
+            return
+
+        try:
+            system = platform.system()
+            if system == "Windows":
+                subprocess.Popen(f'explorer "{self.mw.session_path}"')
+            elif system == "Darwin":  # macOS
+                subprocess.Popen(["open", self.mw.session_path])
+            else:  # Linux and others
+                subprocess.Popen(["xdg-open", self.mw.session_path])
+
+            self.log.info(f"Opened session folder: {self.mw.session_path}")
+            self.mw.statusBar().showMessage(f"Opened session folder", 3000)
+        except Exception as e:
+            self.log.error(f"Failed to open session folder: {e}", exc_info=True)
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self.mw,
+                "Error",
+                f"Failed to open session folder:\n{str(e)}"
+            )

@@ -234,6 +234,9 @@ class MainWindow(QMainWindow):
             lambda: self.actions_handler.open_report_selection_dialog("stock_exports")
         )
 
+        # Open session folder button (NEW)
+        self.open_folder_button.clicked.connect(self.ui_manager.open_session_folder)
+
         # Table interactions
         self.tableView.customContextMenuRequested.connect(self.show_context_menu)
         self.tableView.doubleClicked.connect(self.on_table_double_clicked)
