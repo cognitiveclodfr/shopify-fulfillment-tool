@@ -347,6 +347,17 @@ class UIManager:
         actions_layout.addWidget(self.mw.settings_button)
         main_layout.addLayout(actions_layout)
 
+        # Manual operations
+        manual_layout = QHBoxLayout()
+        self.mw.add_product_button = QPushButton("➕ Add Product to Order")
+        self.mw.add_product_button.setEnabled(False)  # Disabled until analysis run
+        self.mw.add_product_button.setToolTip(
+            "Manually add a product to an existing order"
+        )
+        manual_layout.addWidget(self.mw.add_product_button)
+        manual_layout.addStretch()
+        main_layout.addLayout(manual_layout)
+
         return group
 
     def _create_tab_view(self):
@@ -460,6 +471,10 @@ class UIManager:
 
         self.mw.packing_list_button.setEnabled(not is_busy and is_data_loaded)
         self.mw.stock_export_button.setEnabled(not is_busy and is_data_loaded)
+
+        # Enable "Add Product" button after analysis
+        if hasattr(self.mw, 'add_product_button'):
+            self.mw.add_product_button.setEnabled(not is_busy and is_data_loaded)
 
         self.log.debug(f"UI busy state set to: {is_busy}, data_loaded: {is_data_loaded}")
 
