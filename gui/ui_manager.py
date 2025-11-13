@@ -2,10 +2,10 @@ import logging
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, QLabel,
     QTabWidget, QGroupBox, QTableView, QPlainTextEdit, QTableWidget, QLineEdit,
-    QComboBox, QCheckBox, QRadioButton, QListWidget, QListWidgetItem
+    QComboBox, QCheckBox, QRadioButton, QListWidget, QListWidgetItem, QFrame, QStyle
 )
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QShortcut, QKeySequence, QFont
 from .pandas_model import PandasModel
 
 
@@ -39,26 +39,206 @@ class UIManager:
         """Creates and lays out all widgets in the main window.
 
         This is the main entry point for building the UI. It constructs the
-        entire widget hierarchy for the `MainWindow`.
+        entire widget hierarchy for the `MainWindow` with a new tab-based layout.
+
+        NEW STRUCTURE:
+        - Global Header (client selector + session info) - always visible
+        - 4 Main Tabs:
+          1. Session Setup (file loading, actions)
+          2. Analysis Results (table, filters, actions)
+          3. Session Browser (session management)
+          4. Information (statistics, logs)
         """
-        self.log.info("Creating UI widgets.")
+        self.log.info("Creating UI widgets with new tab-based structure.")
+
+        # Create central widget
         central_widget = QWidget()
         self.mw.setCentralWidget(central_widget)
+
+        # Main layout
         main_layout = QVBoxLayout(central_widget)
+        main_layout.setSpacing(5)
+        main_layout.setContentsMargins(5, 5, 5, 5)
 
-        # Add client selector (new architecture)
-        main_layout.addWidget(self._create_client_selector_group())
+        # Step 1: Create global header (always visible)
+        header_widget = self._create_global_header()
+        main_layout.addWidget(header_widget)
 
-        # Add session browser and session management
-        main_layout.addWidget(self._create_session_management_group())
+        # Step 2: Create main tab widget
+        self.main_tabs = QTabWidget()
+        self.main_tabs.setDocumentMode(True)  # Cleaner appearance
+        self.main_tabs.setTabPosition(QTabWidget.North)
+        self.main_tabs.setMovable(False)  # Prevent accidental tab reordering
 
-        main_layout.addWidget(self._create_files_group())
-        main_layout.addLayout(self._create_actions_layout())
+        # Create tabs (empty for now - will populate in later phases)
+        tab1 = self._create_tab1_session_setup()
+        tab2 = self._create_tab2_analysis_results()
+        tab3 = self._create_tab3_session_browser()
+        tab4 = self._create_tab4_information()
 
-        self.mw.tab_view = self._create_tab_view()
-        main_layout.addWidget(self.mw.tab_view)
-        main_layout.setStretchFactor(self.mw.tab_view, 1)
-        self.log.info("UI widgets created successfully.")
+        # Add tabs with icons (using QStyle standard icons)
+        file_icon = self.mw.style().standardIcon(QStyle.SP_FileIcon)
+        table_icon = self.mw.style().standardIcon(QStyle.SP_FileDialogDetailedView)
+        folder_icon = self.mw.style().standardIcon(QStyle.SP_DirIcon)
+        info_icon = self.mw.style().standardIcon(QStyle.SP_MessageBoxInformation)
+
+        self.main_tabs.addTab(tab1, file_icon, "Session Setup")
+        self.main_tabs.addTab(tab2, table_icon, "Analysis Results")
+        self.main_tabs.addTab(tab3, folder_icon, "Session Browser")
+        self.main_tabs.addTab(tab4, info_icon, "Information")
+
+        # Setup keyboard shortcuts
+        self._setup_tab_shortcuts()
+
+        # Add tabs to main layout with stretch
+        main_layout.addWidget(self.main_tabs, 1)  # Stretch factor: 1
+
+        # Setup status bar
+        self.mw.statusBar().showMessage("Ready")
+
+        self.log.info("UI widgets created successfully with tab structure.")
+
+    def _create_global_header(self):
+        """Create global header with client selector and session info.
+
+        Always visible above tabs. Contains:
+        - Client selector (ClientSelectorWidget)
+        - Session info label
+        """
+        header = QWidget()
+        header.setMaximumHeight(80)
+        layout = QVBoxLayout(header)
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(5)
+
+        # Row 1: Client selector (reuse existing widget)
+        from gui.client_selector_widget import ClientSelectorWidget
+
+        self.mw.client_selector = ClientSelectorWidget(
+            self.mw.profile_manager,
+            self.mw
+        )
+        layout.addWidget(self.mw.client_selector)
+
+        # Row 2: Session info
+        session_row = QHBoxLayout()
+
+        folder_icon = self.mw.style().standardIcon(QStyle.SP_DirIcon)
+        session_icon_label = QLabel()
+        session_icon_label.setPixmap(folder_icon.pixmap(16, 16))
+        session_row.addWidget(session_icon_label)
+
+        session_row.addWidget(QLabel("Session:"))
+
+        self.session_info_label = QLabel("No session")
+        self.session_info_label.setStyleSheet("font-weight: bold;")
+        session_row.addWidget(self.session_info_label)
+
+        session_row.addStretch()
+
+        layout.addLayout(session_row)
+
+        # Separator line
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        line.setFrameShadow(QFrame.Sunken)
+        layout.addWidget(line)
+
+        return header
+
+    def _setup_tab_shortcuts(self):
+        """Setup keyboard shortcuts for tab switching."""
+        # Tab switching shortcuts
+        QShortcut(QKeySequence("Ctrl+1"), self.mw,
+                  lambda: self.main_tabs.setCurrentIndex(0))
+        QShortcut(QKeySequence("Ctrl+2"), self.mw,
+                  lambda: self.main_tabs.setCurrentIndex(1))
+        QShortcut(QKeySequence("Ctrl+3"), self.mw,
+                  lambda: self.main_tabs.setCurrentIndex(2))
+        QShortcut(QKeySequence("Ctrl+4"), self.mw,
+                  lambda: self.main_tabs.setCurrentIndex(3))
+
+        # Set tooltips for tabs
+        self.main_tabs.setTabToolTip(0, "Session setup and file loading (Ctrl+1)")
+        self.main_tabs.setTabToolTip(1, "View and edit analysis results (Ctrl+2)")
+        self.main_tabs.setTabToolTip(2, "Browse past sessions (Ctrl+3)")
+        self.main_tabs.setTabToolTip(3, "Statistics and logs (Ctrl+4)")
+
+    def _create_tab1_session_setup(self):
+        """Create Tab 1: Session Setup (PLACEHOLDER for Phase 1).
+
+        Will contain:
+        - Session management
+        - File loading (orders + stock)
+        - Run analysis button
+        - Settings button
+        - Report buttons
+        """
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setAlignment(Qt.AlignCenter)
+
+        placeholder = QLabel("Tab 1: Session Setup\n(Will be implemented in Phase 2)")
+        placeholder.setStyleSheet("font-size: 14pt; color: gray;")
+        layout.addWidget(placeholder)
+
+        return tab
+
+    def _create_tab2_analysis_results(self):
+        """Create Tab 2: Analysis Results (PLACEHOLDER for Phase 1).
+
+        Will contain:
+        - Filter controls
+        - Action buttons (Add Product, Export)
+        - Results table
+        - Summary bar
+        """
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setAlignment(Qt.AlignCenter)
+
+        placeholder = QLabel("Tab 2: Analysis Results\n(Will be implemented in Phase 3)")
+        placeholder.setStyleSheet("font-size: 14pt; color: gray;")
+        layout.addWidget(placeholder)
+
+        return tab
+
+    def _create_tab3_session_browser(self):
+        """Create Tab 3: Session Browser (PLACEHOLDER for Phase 1).
+
+        Will contain:
+        - SessionBrowserWidget (full tab space)
+        - Session actions (delete, export)
+        """
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setAlignment(Qt.AlignCenter)
+
+        placeholder = QLabel("Tab 3: Session Browser\n(Will be implemented in Phase 4)")
+        placeholder.setStyleSheet("font-size: 14pt; color: gray;")
+        layout.addWidget(placeholder)
+
+        return tab
+
+    def _create_tab4_information(self):
+        """Create Tab 4: Information (PLACEHOLDER for Phase 1).
+
+        Will contain sub-tabs:
+        - Statistics
+        - Activity Log
+        - Execution Log
+        """
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setAlignment(Qt.AlignCenter)
+
+        placeholder = QLabel("Tab 4: Information\n(Will be implemented in Phase 5)")
+        placeholder.setStyleSheet("font-size: 14pt; color: gray;")
+        layout.addWidget(placeholder)
+
+        return tab
+
+    # ========== OLD METHODS (kept for reference, will be reused in phases 2-5) ==========
 
     def _create_client_selector_group(self):
         """Creates the 'Client Selection' QGroupBox with ClientSelectorWidget."""
