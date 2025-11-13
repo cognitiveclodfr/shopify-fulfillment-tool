@@ -200,58 +200,85 @@ class UIManager:
         return tab
 
     def _create_tab2_analysis_results(self):
-        """Create Tab 2: Analysis Results (PLACEHOLDER for Phase 1).
+        """Create Tab 2: Analysis Results.
 
-        Will contain:
-        - Filter controls
-        - Action buttons (Add Product, Export)
-        - Results table
-        - Summary bar
+        Contains:
+        - Filter controls (column selector, text input, case sensitive, clear)
+        - Action buttons (Add Product, Export buttons, Open Folder)
+        - Results table (QTableView with proxy model)
+        - Summary bar (order/item counts)
         """
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.setAlignment(Qt.AlignCenter)
+        layout.setSpacing(5)
+        layout.setContentsMargins(5, 5, 5, 5)
 
-        placeholder = QLabel("Tab 2: Analysis Results\n(Will be implemented in Phase 3)")
-        placeholder.setStyleSheet("font-size: 14pt; color: gray;")
-        layout.addWidget(placeholder)
+        # Section 1: Filter controls
+        filter_widget = self._create_filter_controls()
+        layout.addWidget(filter_widget)
+
+        # Section 2: Action buttons
+        actions_widget = self._create_results_actions()
+        layout.addWidget(actions_widget)
+
+        # Section 3: Results table (MAIN content)
+        table_widget = self._create_results_table()
+        layout.addWidget(table_widget, 1)  # Stretch factor: 1
+
+        # Section 4: Summary bar
+        summary_widget = self._create_summary_bar()
+        layout.addWidget(summary_widget)
 
         return tab
 
     def _create_tab3_session_browser(self):
-        """Create Tab 3: Session Browser (PLACEHOLDER for Phase 1).
+        """Create Tab 3: Session Browser.
 
-        Will contain:
+        Contains:
         - SessionBrowserWidget (full tab space)
-        - Session actions (delete, export)
         """
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.setAlignment(Qt.AlignCenter)
+        layout.setSpacing(5)
+        layout.setContentsMargins(5, 5, 5, 5)
 
-        placeholder = QLabel("Tab 3: Session Browser\n(Will be implemented in Phase 4)")
-        placeholder.setStyleSheet("font-size: 14pt; color: gray;")
-        layout.addWidget(placeholder)
+        # REUSE existing SessionBrowserWidget (full height)
+        from gui.session_browser_widget import SessionBrowserWidget
+
+        self.mw.session_browser = SessionBrowserWidget(
+            self.mw.session_manager,
+            self.mw
+        )
+
+        layout.addWidget(self.mw.session_browser, 1)  # Full stretch
 
         return tab
 
     def _create_tab4_information(self):
-        """Create Tab 4: Information (PLACEHOLDER for Phase 1).
+        """Create Tab 4: Information.
 
-        Will contain sub-tabs:
+        Contains sub-tabs:
         - Statistics
         - Activity Log
         - Execution Log
         """
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        layout.setAlignment(Qt.AlignCenter)
+        # Create sub-tab widget
+        sub_tabs = QTabWidget()
+        sub_tabs.setTabPosition(QTabWidget.North)
 
-        placeholder = QLabel("Tab 4: Information\n(Will be implemented in Phase 5)")
-        placeholder.setStyleSheet("font-size: 14pt; color: gray;")
-        layout.addWidget(placeholder)
+        # Sub-tab 1: Statistics
+        stats_tab = self._create_statistics_subtab()
+        sub_tabs.addTab(stats_tab, "📊 Statistics")
 
-        return tab
+        # Sub-tab 2: Activity Log
+        activity_tab = self._create_activity_log_subtab()
+        sub_tabs.addTab(activity_tab, "📋 Activity Log")
+
+        # Sub-tab 3: Execution Log
+        execution_tab = self._create_execution_log_subtab()
+        sub_tabs.addTab(execution_tab, "🔧 Execution Log")
+
+        return sub_tabs
 
     # ========== TAB 1 CONTENT METHODS (Phase 2) ==========
 
@@ -364,6 +391,179 @@ class UIManager:
         layout.addStretch()
 
         return group
+
+    # ========== TAB 2 CONTENT METHODS (Phase 3) ==========
+
+    def _create_filter_controls(self):
+        """Create filter controls row for Tab 2."""
+        widget = QWidget()
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        layout.addWidget(QLabel("Filter by:"))
+
+        # Column selector
+        self.mw.filter_column_selector = QComboBox()
+        self.mw.filter_column_selector.addItem("All Columns")
+        layout.addWidget(self.mw.filter_column_selector)
+
+        # Filter input with clear button
+        self.mw.filter_input = QLineEdit()
+        self.mw.filter_input.setPlaceholderText("Enter filter text...")
+        self.mw.filter_input.setClearButtonEnabled(True)  # Built-in clear button!
+        layout.addWidget(self.mw.filter_input, 1)
+
+        # Case sensitive checkbox
+        self.mw.case_sensitive_checkbox = QCheckBox("Case Sensitive")
+        layout.addWidget(self.mw.case_sensitive_checkbox)
+
+        # Clear button
+        self.mw.clear_filter_button = QPushButton("Clear")
+        self.mw.clear_filter_button.setIcon(
+            self.mw.style().standardIcon(QStyle.SP_DialogResetButton)
+        )
+        layout.addWidget(self.mw.clear_filter_button)
+
+        # Keyboard shortcut for filter focus
+        QShortcut(QKeySequence("Ctrl+F"), self.mw,
+                  lambda: self.mw.filter_input.setFocus())
+
+        return widget
+
+    def _create_results_actions(self):
+        """Create action buttons for Tab 2 (results tab)."""
+        widget = QWidget()
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        # Add Product button
+        self.mw.add_product_button = QPushButton("➕ Add Product to Order")
+        self.mw.add_product_button.setEnabled(False)
+        self.mw.add_product_button.setToolTip(
+            "Manually add a product to an existing order"
+        )
+        layout.addWidget(self.mw.add_product_button)
+
+        # Packing List button (duplicate for convenience)
+        packing_btn = QPushButton("📄 Packing List")
+        packing_btn.setEnabled(False)
+        layout.addWidget(packing_btn)
+        self.mw.packing_list_button_tab2 = packing_btn
+
+        # Stock Export button
+        stock_btn = QPushButton("📊 Stock Export")
+        stock_btn.setEnabled(False)
+        layout.addWidget(stock_btn)
+        self.mw.stock_export_button_tab2 = stock_btn
+
+        # Open folder button
+        folder_btn = QPushButton("📁 Open Folder")
+        folder_btn.setIcon(
+            self.mw.style().standardIcon(QStyle.SP_DirOpenIcon)
+        )
+        folder_btn.setEnabled(False)
+        layout.addWidget(folder_btn)
+        self.mw.open_folder_button_tab2 = folder_btn
+
+        layout.addStretch()
+
+        return widget
+
+    def _create_results_table(self):
+        """Create results table with proxy model for Tab 2."""
+        # Table view
+        self.mw.tableView = QTableView()
+        self.mw.tableView.setSelectionBehavior(QTableView.SelectRows)
+        self.mw.tableView.setSelectionMode(QTableView.ExtendedSelection)
+        self.mw.tableView.setAlternatingRowColors(True)
+        self.mw.tableView.setSortingEnabled(True)
+        self.mw.tableView.setContextMenuPolicy(Qt.CustomContextMenu)
+
+        # Proxy model for filtering/sorting (already created in MainWindow __init__)
+        # Just set it to the table view
+        self.mw.tableView.setModel(self.mw.proxy_model)
+
+        return self.mw.tableView
+
+    def _create_summary_bar(self):
+        """Create summary bar at bottom of Tab 2."""
+        widget = QWidget()
+        widget.setMaximumHeight(30)
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(5, 5, 5, 5)
+
+        self.mw.summary_label = QLabel("No analysis data")
+        self.mw.summary_label.setStyleSheet("font-weight: bold;")
+        layout.addWidget(self.mw.summary_label)
+
+        layout.addStretch()
+
+        return widget
+
+    def update_summary_bar(self):
+        """Update summary bar with current analysis stats."""
+        if not hasattr(self.mw, 'analysis_results_df') or self.mw.analysis_results_df is None:
+            self.mw.summary_label.setText("No analysis data")
+            return
+
+        df = self.mw.analysis_results_df
+
+        total_orders = df['Order_Number'].nunique() if 'Order_Number' in df.columns else 0
+        total_items = len(df)
+        fulfillable = 0
+        if 'Order_Fulfillment_Status' in df.columns:
+            fulfillable = (df['Order_Fulfillment_Status'] == 'Fulfillable').sum()
+
+        self.mw.summary_label.setText(
+            f"📊 {total_orders} orders │ {total_items} items │ "
+            f"{fulfillable} fulfillable"
+        )
+
+    # ========== TAB 4 SUB-TABS METHODS (Phase 5) ==========
+
+    def _create_statistics_subtab(self):
+        """Create statistics sub-tab for Tab 4."""
+        tab = QWidget()
+        self.create_statistics_tab(tab)  # REUSE existing method!
+        return tab
+
+    def _create_activity_log_subtab(self):
+        """Create activity log sub-tab for Tab 4."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        # Activity table
+        self.mw.activity_log_table = QTableWidget()
+        self.mw.activity_log_table.setColumnCount(3)
+        self.mw.activity_log_table.setHorizontalHeaderLabels(["Time", "Operation", "Description"])
+        self.mw.activity_log_table.horizontalHeader().setStretchLastSection(True)
+        self.mw.activity_log_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.mw.activity_log_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.mw.activity_log_table.setAlternatingRowColors(True)
+
+        layout.addWidget(self.mw.activity_log_table)
+
+        return tab
+
+    def _create_execution_log_subtab(self):
+        """Create execution log sub-tab for Tab 4."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        # Log text widget
+        self.mw.execution_log_edit = QPlainTextEdit()
+        self.mw.execution_log_edit.setReadOnly(True)
+        self.mw.execution_log_edit.setLineWrapMode(QPlainTextEdit.NoWrap)
+
+        # Monospace font for logs
+        font = QFont("Courier New", 9)
+        self.mw.execution_log_edit.setFont(font)
+
+        layout.addWidget(self.mw.execution_log_edit)
+
+        return tab
 
     # ========== OLD METHODS (kept for reference, will be reused in phases 2-5) ==========
 

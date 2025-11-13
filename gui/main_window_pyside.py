@@ -207,8 +207,9 @@ class MainWindow(QMainWindow):
         # Client selection (new architecture)
         self.client_selector.client_changed.connect(self.on_client_changed)
 
-        # Session browser (new architecture)
-        self.session_browser.session_selected.connect(self.on_session_selected)
+        # Session browser (new architecture - Phase 4)
+        if hasattr(self, 'session_browser'):
+            self.session_browser.session_selected.connect(self.on_session_selected)
 
         # Session and file loading
         self.new_session_btn.clicked.connect(self.actions_handler.create_new_session)
@@ -224,7 +225,8 @@ class MainWindow(QMainWindow):
         # Main actions
         self.run_analysis_button.clicked.connect(self.actions_handler.run_analysis)
         self.settings_button.clicked.connect(self.actions_handler.open_settings_window)
-        self.add_product_button.clicked.connect(self.actions_handler.show_add_product_dialog)
+        if hasattr(self, 'add_product_button'):
+            self.add_product_button.clicked.connect(self.actions_handler.show_add_product_dialog)
 
         # Reports
         self.packing_list_button.clicked.connect(
@@ -237,18 +239,32 @@ class MainWindow(QMainWindow):
         # Open session folder button (NEW)
         self.open_folder_button.clicked.connect(self.ui_manager.open_session_folder)
 
-        # Table interactions
-        self.tableView.customContextMenuRequested.connect(self.show_context_menu)
-        self.tableView.doubleClicked.connect(self.on_table_double_clicked)
+        # Tab 2 action buttons (duplicates for convenience)
+        if hasattr(self, 'packing_list_button_tab2'):
+            self.packing_list_button_tab2.clicked.connect(
+                lambda: self.actions_handler.open_report_selection_dialog("packing_lists")
+            )
+        if hasattr(self, 'stock_export_button_tab2'):
+            self.stock_export_button_tab2.clicked.connect(
+                lambda: self.actions_handler.open_report_selection_dialog("stock_exports")
+            )
+        if hasattr(self, 'open_folder_button_tab2'):
+            self.open_folder_button_tab2.clicked.connect(self.ui_manager.open_session_folder)
+
+        # Table interactions (Phase 3)
+        if hasattr(self, 'tableView'):
+            self.tableView.customContextMenuRequested.connect(self.show_context_menu)
+            self.tableView.doubleClicked.connect(self.on_table_double_clicked)
 
         # Custom signals
         self.actions_handler.data_changed.connect(self._update_all_views)
 
-        # Filter input
-        self.filter_input.textChanged.connect(self.filter_table)
-        self.filter_column_selector.currentIndexChanged.connect(self.filter_table)
-        self.case_sensitive_checkbox.stateChanged.connect(self.filter_table)
-        self.clear_filter_button.clicked.connect(self.clear_filter)
+        # Filter input (Phase 3)
+        if hasattr(self, 'filter_input'):
+            self.filter_input.textChanged.connect(self.filter_table)
+            self.filter_column_selector.currentIndexChanged.connect(self.filter_table)
+            self.case_sensitive_checkbox.stateChanged.connect(self.filter_table)
+            self.clear_filter_button.clicked.connect(self.clear_filter)
 
     def clear_filter(self):
         """Clears the filter input text box."""
@@ -465,6 +481,10 @@ class MainWindow(QMainWindow):
                 self.analysis_stats = recalculate_statistics(self.analysis_results_df)
                 self.ui_manager.update_results_table(self.analysis_results_df)
                 self.update_statistics_tab()
+
+                # Update summary bar (NEW - Phase 3)
+                if hasattr(self.ui_manager, 'update_summary_bar'):
+                    self.ui_manager.update_summary_bar()
             except Exception as e:
                 logging.error(f"Failed to recalculate statistics: {e}", exc_info=True)
                 self.analysis_stats = None
@@ -476,10 +496,11 @@ class MainWindow(QMainWindow):
             self.ui_manager.update_results_table(pd.DataFrame())
 
         # Populate filter dropdown
-        self.filter_column_selector.clear()
-        self.filter_column_selector.addItem("All Columns")
-        if self.analysis_results_df is not None and not self.analysis_results_df.empty:
-            self.filter_column_selector.addItems(self.all_columns)
+        if hasattr(self, 'filter_column_selector'):
+            self.filter_column_selector.clear()
+            self.filter_column_selector.addItem("All Columns")
+            if self.analysis_results_df is not None and not self.analysis_results_df.empty:
+                self.filter_column_selector.addItems(self.all_columns)
         self.ui_manager.set_ui_busy(False)
         # The column manager button is enabled within update_results_table
 
