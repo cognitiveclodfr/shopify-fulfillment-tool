@@ -764,7 +764,7 @@ class ActionsHandler(QObject):
         ]
 
         if existing_rows.empty:
-            logger.error(f"Order {product_data['order_number']} not found")
+            self.log.error(f"Order {product_data['order_number']} not found")
             QMessageBox.warning(
                 self.mw,
                 "Order Not Found",
@@ -798,7 +798,7 @@ class ActionsHandler(QObject):
             ignore_index=True
         )
 
-        logger.info(f"Added product {product_data['sku']} to order {product_data['order_number']}")
+        self.log.info(f"Added product {product_data['sku']} to order {product_data['order_number']}")
 
         # Save to session
         self._save_manual_addition(product_data)
@@ -827,7 +827,7 @@ class ActionsHandler(QObject):
         from datetime import datetime
 
         if not hasattr(self.mw, 'session_path') or not self.mw.session_path:
-            logger.warning("No active session, manual addition not saved")
+            self.log.warning("No active session, manual addition not saved")
             return
 
         # Path to manual_additions.json
@@ -839,7 +839,7 @@ class ActionsHandler(QObject):
                 with open(additions_file, 'r', encoding='utf-8') as f:
                     additions = json.load(f)
             except Exception as e:
-                logger.error(f"Error loading manual additions: {e}")
+                self.log.error(f"Error loading manual additions: {e}")
                 additions = []
         else:
             additions = []
@@ -857,6 +857,6 @@ class ActionsHandler(QObject):
         try:
             with open(additions_file, 'w', encoding='utf-8') as f:
                 json.dump(additions, f, indent=2, ensure_ascii=False)
-            logger.info(f"Saved manual addition to {additions_file}")
+            self.log.info(f"Saved manual addition to {additions_file}")
         except Exception as e:
-            logger.error(f"Error saving manual additions: {e}")
+            self.log.error(f"Error saving manual additions: {e}")
