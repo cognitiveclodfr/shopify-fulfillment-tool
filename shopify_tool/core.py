@@ -372,6 +372,16 @@ def run_full_analysis(
             logger.info(f"Reading stock file from normalized path: {stock_file_path}")
             stock_df = pd.read_csv(stock_file_path, delimiter=stock_delimiter, encoding='utf-8-sig', dtype=stock_dtype)
             logger.info(f"Stock data loaded: {len(stock_df)} rows, {len(stock_df.columns)} columns")
+
+            # Apply column mappings to stock_df immediately after loading
+            # This ensures stock_df has internal column names (SKU, Product_Name, Stock)
+            # which is needed for manual additions loading later
+            stock_mappings = column_mappings.get("stock", {})
+            stock_rename_map = {csv_col: internal_col for csv_col, internal_col in stock_mappings.items()
+                                if csv_col in stock_df.columns and csv_col != internal_col}
+            if stock_rename_map:
+                stock_df = stock_df.rename(columns=stock_rename_map)
+                logger.debug(f"Applied column mappings to stock_df: {stock_rename_map}")
         except pd.errors.ParserError as e:
             error_msg = (
                 f"Failed to parse stock file. The file may have incorrect delimiter.\n"
@@ -512,6 +522,69 @@ def run_full_analysis(
         engine = RuleEngine(rules)
         final_df = engine.apply(final_df)
         logger.info("Rule engine application complete.")
+
+    # 2.7. Load and apply manual product additions from session
+    if use_session_mode and working_path:
+        manual_additions_file = Path(working_path) / "manual_additions.json"
+        if manual_additions_file.exists():
+            try:
+                logger.info(f"Loading manual additions from: {manual_additions_file}")
+                with open(manual_additions_file, 'r', encoding='utf-8') as f:
+                    manual_additions = json.load(f)
+
+                if manual_additions:
+                    logger.info(f"Found {len(manual_additions)} manual additions to apply")
+
+                    # Apply each manual addition
+                    for addition in manual_additions:
+                        order_number = addition.get("order_number")
+                        sku = addition.get("sku")
+                        product_name = addition.get("product_name")
+                        quantity = addition.get("quantity")
+
+                        # Find existing rows for this order to use as template
+                        existing_rows = final_df[final_df["Order_Number"] == order_number]
+
+                        if not existing_rows.empty:
+                            # Use first row as template
+                            template_row = existing_rows.iloc[0].copy()
+
+                            # Create new row with manual addition data
+                            new_row = template_row.copy()
+                            new_row["SKU"] = sku
+                            new_row["Product_Name"] = product_name
+                            new_row["Warehouse_Name"] = product_name  # Same for manual additions
+                            new_row["Quantity"] = quantity
+                            new_row["Source"] = "Manual"
+                            new_row["Order_Fulfillment_Status"] = "Pending"
+
+                            # Lookup stock values
+                            stock_row = stock_df[stock_df["SKU"] == sku]
+                            if not stock_row.empty:
+                                # Apply column mapping if needed
+                                if "Stock" in stock_row.columns:
+                                    new_row["Stock"] = stock_row.iloc[0]["Stock"]
+                                    new_row["Final_Stock"] = stock_row.iloc[0]["Stock"]
+                                else:
+                                    new_row["Stock"] = 0
+                                    new_row["Final_Stock"] = 0
+                            else:
+                                new_row["Stock"] = 0
+                                new_row["Final_Stock"] = 0
+
+                            # Append to DataFrame
+                            final_df = pd.concat(
+                                [final_df, pd.DataFrame([new_row])],
+                                ignore_index=True
+                            )
+                            logger.info(f"Applied manual addition: {sku} to order {order_number}")
+                        else:
+                            logger.warning(f"Order {order_number} not found, skipping manual addition for {sku}")
+
+                    logger.info(f"Applied {len(manual_additions)} manual additions successfully")
+            except Exception as e:
+                logger.error(f"Failed to load manual additions: {e}")
+                # Don't fail the entire analysis if manual additions can't be loaded
 
     # 3. Save Excel report (skip in test mode)
     if stock_file_path is not None and orders_file_path is not None:

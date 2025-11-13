@@ -221,6 +221,7 @@ class MainWindow(QMainWindow):
 
         # Main actions
         self.run_analysis_button.clicked.connect(self.actions_handler.run_analysis)
+        self.add_product_button.clicked.connect(self.actions_handler.show_add_product_dialog)
         self.settings_button.clicked.connect(self.actions_handler.open_settings_window)
 
         # Reports
@@ -359,6 +360,38 @@ class MainWindow(QMainWindow):
             # Recalculate statistics
             self.analysis_stats = recalculate_statistics(self.analysis_results_df)
 
+            # Load stock file from session input directory
+            # This is needed for the manual product addition dialog
+            stock_file = session_path / "input" / "inventory.csv"
+            if stock_file.exists():
+                try:
+                    # Get delimiter from config
+                    stock_delimiter = self.active_profile_config.get("settings", {}).get("stock_csv_delimiter", ";")
+
+                    # Get column mappings for SKU columns (to force string type)
+                    column_mappings = self.active_profile_config.get("column_mappings", {})
+                    stock_mappings = column_mappings.get("stock", {})
+                    sku_columns = [csv_col for csv_col, internal_name in stock_mappings.items() if internal_name == "SKU"]
+                    dtype_dict = {col: str for col in sku_columns}
+
+                    self.stock_df = pd.read_csv(stock_file, delimiter=stock_delimiter, encoding='utf-8-sig', dtype=dtype_dict)
+                    logging.info(f"Loaded stock file from session: {len(self.stock_df)} rows")
+
+                    # Apply column mappings to stock_df before storing
+                    # This ensures that the stored stock_df has internal column names (SKU, Product_Name, Stock)
+                    # which is what AddProductDialog expects
+                    stock_rename_map = {csv_col: internal_col for csv_col, internal_col in stock_mappings.items()
+                                        if csv_col in self.stock_df.columns and csv_col != internal_col}
+                    if stock_rename_map:
+                        self.stock_df = self.stock_df.rename(columns=stock_rename_map)
+                        logging.info(f"Applied column mappings to stock_df from session: {stock_rename_map}")
+                except Exception as e:
+                    logging.warning(f"Failed to load stock file from session: {e}")
+                    self.stock_df = None
+            else:
+                logging.warning(f"Stock file not found in session: {stock_file}")
+                self.stock_df = None
+
             logging.info(f"Loaded {len(self.analysis_results_df)} rows from session")
             return True
 
@@ -394,6 +427,8 @@ class MainWindow(QMainWindow):
                         self.packing_list_button.setEnabled(True)
                     if hasattr(self, 'stock_export_button'):
                         self.stock_export_button.setEnabled(True)
+                    if hasattr(self, 'add_product_button'):
+                        self.add_product_button.setEnabled(True)
 
                     self.log_activity("Session", f"Loaded session: {session_name}")
                     QMessageBox.information(
@@ -457,6 +492,14 @@ class MainWindow(QMainWindow):
                 self.analysis_stats = recalculate_statistics(self.analysis_results_df)
                 self.ui_manager.update_results_table(self.analysis_results_df)
                 self.update_statistics_tab()
+
+                # Enable action buttons that require analysis data
+                if hasattr(self, 'packing_list_button'):
+                    self.packing_list_button.setEnabled(True)
+                if hasattr(self, 'stock_export_button'):
+                    self.stock_export_button.setEnabled(True)
+                if hasattr(self, 'add_product_button'):
+                    self.add_product_button.setEnabled(True)
             except Exception as e:
                 logging.error(f"Failed to recalculate statistics: {e}", exc_info=True)
                 self.analysis_stats = None
@@ -466,6 +509,14 @@ class MainWindow(QMainWindow):
             self.analysis_stats = None
             self._clear_statistics_view()
             self.ui_manager.update_results_table(pd.DataFrame())
+
+            # Disable action buttons that require analysis data
+            if hasattr(self, 'packing_list_button'):
+                self.packing_list_button.setEnabled(False)
+            if hasattr(self, 'stock_export_button'):
+                self.stock_export_button.setEnabled(False)
+            if hasattr(self, 'add_product_button'):
+                self.add_product_button.setEnabled(False)
 
         # Populate filter dropdown
         self.filter_column_selector.clear()
