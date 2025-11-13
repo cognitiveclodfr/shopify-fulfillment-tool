@@ -1116,6 +1116,11 @@ class SettingsWindow(QDialog):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             set_sku, components = dialog.get_set_definition()
 
+            # Debug: print what we got
+            print(f"[DEBUG] Adding set '{set_sku}' with {len(components)} components:")
+            for i, comp in enumerate(components):
+                print(f"  {i+1}. {comp['sku']} x {comp['quantity']}")
+
             # Add to config
             if "set_decoders" not in self.config_data:
                 self.config_data["set_decoders"] = {}
@@ -1125,7 +1130,11 @@ class SettingsWindow(QDialog):
             # Refresh table
             self._populate_sets_table()
 
-            QMessageBox.information(self, "Success", f"Set '{set_sku}' added successfully!")
+            QMessageBox.information(
+                self,
+                "Success",
+                f"Set '{set_sku}' added with {len(components)} components!"
+            )
 
     def _edit_set_dialog(self, set_sku):
         """Show dialog to edit an existing set."""
@@ -1649,6 +1658,8 @@ class SetEditorDialog(QDialog):
         set_sku = self.set_sku_edit.text().strip()
         components = []
 
+        print(f"[DEBUG] get_set_definition: Reading {self.components_table.rowCount()} rows from table")
+
         for row in range(self.components_table.rowCount()):
             sku_widget = self.components_table.cellWidget(row, 0)
             qty_widget = self.components_table.cellWidget(row, 1)
@@ -1657,12 +1668,17 @@ class SetEditorDialog(QDialog):
                 comp_sku = sku_widget.text().strip()
                 comp_qty = qty_widget.value()
 
+                print(f"[DEBUG]   Row {row}: SKU='{comp_sku}', Qty={comp_qty}, Empty={not bool(comp_sku)}")
+
                 if comp_sku:
                     components.append({
                         "sku": comp_sku,
                         "quantity": comp_qty
                     })
+            else:
+                print(f"[DEBUG]   Row {row}: widgets are None (sku_widget={sku_widget}, qty_widget={qty_widget})")
 
+        print(f"[DEBUG] get_set_definition: Collected {len(components)} non-empty components")
         return set_sku, components
 
 
