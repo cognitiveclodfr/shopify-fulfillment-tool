@@ -822,8 +822,9 @@ class ActionsHandler(QObject):
         self.log.info(f"Adding {quantity}x {sku} to order {order_num}")
 
         # Step 1: Get existing row as template
+        # Convert Order_Number to string for comparison (might be int/float)
         existing_rows = self.mw.analysis_results_df[
-            self.mw.analysis_results_df["Order_Number"] == order_num
+            self.mw.analysis_results_df["Order_Number"].astype(str) == str(order_num)
         ]
 
         if existing_rows.empty:
@@ -848,7 +849,8 @@ class ActionsHandler(QObject):
         new_row["Is_Set_Component"] = False
 
         # Set Warehouse_Name from stock if available
-        stock_row = stock_df[stock_df["SKU"] == sku]
+        # Convert SKU to string for comparison (might be int/float)
+        stock_row = stock_df[stock_df["SKU"].astype(str).str.strip() == sku]
         if not stock_row.empty and "Product_Name" in stock_row.columns:
             new_row["Warehouse_Name"] = stock_row.iloc[0]["Product_Name"]
         else:
@@ -906,8 +908,9 @@ class ActionsHandler(QObject):
         self.log.info(f"Recalculating fulfillment for order {order_number}")
 
         # Get all items for this order
+        # Convert Order_Number to string for comparison (might be int/float)
         order_items = self.mw.analysis_results_df[
-            self.mw.analysis_results_df["Order_Number"] == order_number
+            self.mw.analysis_results_df["Order_Number"].astype(str) == str(order_number)
         ]
 
         # Rebuild live stock tracking from Final_Stock
@@ -936,8 +939,9 @@ class ActionsHandler(QObject):
         # Update fulfillment status for ALL items in this order
         new_status = "Fulfillable" if can_fulfill else "Not Fulfillable"
 
+        # Convert Order_Number to string for comparison (might be int/float)
         self.mw.analysis_results_df.loc[
-            self.mw.analysis_results_df["Order_Number"] == order_number,
+            self.mw.analysis_results_df["Order_Number"].astype(str) == str(order_number),
             "Order_Fulfillment_Status"
         ] = new_status
 
