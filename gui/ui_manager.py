@@ -970,20 +970,32 @@ class UIManager:
         """
         self.mw.run_analysis_button.setEnabled(not is_busy)
 
-        # FIX: Check that DataFrame is not None before calling .empty
+        # Check states
         is_data_loaded = (
             self.mw.analysis_results_df is not None
             and not self.mw.analysis_results_df.empty
         )
+        has_session = bool(self.mw.session_path)
 
+        # Tab 1: Report buttons
         self.mw.packing_list_button.setEnabled(not is_busy and is_data_loaded)
         self.mw.stock_export_button.setEnabled(not is_busy and is_data_loaded)
+        self.mw.open_folder_button.setEnabled(not is_busy and has_session)
 
-        # Enable "Add Product" button after analysis
+        # Tab 2: Action buttons (duplicates)
         if hasattr(self.mw, 'add_product_button'):
             self.mw.add_product_button.setEnabled(not is_busy and is_data_loaded)
 
-        self.log.debug(f"UI busy state set to: {is_busy}, data_loaded: {is_data_loaded}")
+        if hasattr(self.mw, 'packing_list_button_tab2'):
+            self.mw.packing_list_button_tab2.setEnabled(not is_busy and is_data_loaded)
+
+        if hasattr(self.mw, 'stock_export_button_tab2'):
+            self.mw.stock_export_button_tab2.setEnabled(not is_busy and is_data_loaded)
+
+        if hasattr(self.mw, 'open_folder_button_tab2'):
+            self.mw.open_folder_button_tab2.setEnabled(not is_busy and has_session)
+
+        self.log.debug(f"UI busy state: {is_busy}, data_loaded: {is_data_loaded}, has_session: {has_session}")
 
     def update_results_table(self, data_df):
         """Populates the main results table with new data from a DataFrame.
@@ -1012,6 +1024,26 @@ class UIManager:
         self.mw.tableView.setModel(self.mw.proxy_model)
 
         self.mw.tableView.resizeColumnsToContents()
+
+    def update_session_info_label(self):
+        """Update global header session info label.
+
+        Shows current session name or "No session" if none active.
+        """
+        if not hasattr(self, 'session_info_label'):
+            return
+
+        if not self.mw.session_path:
+            self.session_info_label.setText("No session")
+            return
+
+        import os
+        session_name = os.path.basename(self.mw.session_path)
+        self.session_info_label.setText(session_name)
+
+        # Also update session_path_label in Tab 1 if it exists
+        if hasattr(self.mw, 'session_path_label'):
+            self.mw.session_path_label.setText(session_name)
 
     def open_session_folder(self):
         """Open session folder in OS file explorer.

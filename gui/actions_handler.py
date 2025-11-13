@@ -69,14 +69,25 @@ class ActionsHandler(QObject):
 
             self.mw.session_path = session_path
             session_name = os.path.basename(session_path)
-            self.mw.session_path_label.setText(f"Session: {session_name}")
+
+            # Update session labels (Tab 1 and global header)
+            if hasattr(self.mw, 'session_path_label'):
+                self.mw.session_path_label.setText(f"Session: {session_name}")
+
+            # Update global header session info (NEW - FIX #1)
+            if hasattr(self.mw.ui_manager, 'update_session_info_label'):
+                self.mw.ui_manager.update_session_info_label()
 
             # Enable file loading buttons
             self.mw.load_orders_btn.setEnabled(True)
             self.mw.load_stock_btn.setEnabled(True)
 
+            # Update UI state for Open Folder button (FIX #2)
+            self.mw.ui_manager.set_ui_busy(False)
+
             # Refresh session browser to show the new session
-            self.mw.session_browser.refresh_sessions()
+            if hasattr(self.mw, 'session_browser'):
+                self.mw.session_browser.refresh_sessions()
 
             self.mw.log_activity("Session", f"New session created: {session_name}")
             self.log.info(f"New session created: {session_path}")
@@ -772,16 +783,28 @@ class ActionsHandler(QObject):
             )
             return
 
-        # Create live_stock tracking dict from Final_Stock column
+        # Create live_stock tracking dict
+        # Step 1: Initialize from full stock_df (all available SKUs)
         live_stock = {}
+        if "Stock" in stock_df.columns and "SKU" in stock_df.columns:
+            for _, row in stock_df.iterrows():
+                sku = row["SKU"]
+                stock_qty = row["Stock"]
+                if pd.notna(sku) and pd.notna(stock_qty):
+                    live_stock[sku] = stock_qty
+            self.log.info(f"Initialized live stock from stock file: {len(live_stock)} SKUs")
+
+        # Step 2: Update with Final_Stock values from analysis (consumed quantities)
         if "Final_Stock" in self.mw.analysis_results_df.columns:
+            updated_count = 0
             for _, row in self.mw.analysis_results_df.iterrows():
                 sku = row["SKU"]
                 final_stock = row["Final_Stock"]
                 if pd.notna(sku) and pd.notna(final_stock):
-                    # Use the latest Final_Stock value for each SKU
+                    # Override with the latest Final_Stock value for analyzed SKUs
                     live_stock[sku] = final_stock
-            self.log.info(f"Created live stock tracking: {len(live_stock)} SKUs")
+                    updated_count += 1
+            self.log.info(f"Updated live stock with analysis results: {updated_count} SKUs")
         else:
             self.log.warning("No Final_Stock column in analysis results")
 

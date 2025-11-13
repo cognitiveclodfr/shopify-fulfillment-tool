@@ -400,7 +400,14 @@ class MainWindow(QMainWindow):
             # Set as current session
             self.session_path = session_path
             session_name = os.path.basename(session_path)
-            self.session_path_label.setText(f"Session: {session_name}")
+
+            # Update session labels (FIX #1)
+            if hasattr(self, 'session_path_label'):
+                self.session_path_label.setText(f"Session: {session_name}")
+
+            # Update global header session info (FIX #1)
+            if hasattr(self.ui_manager, 'update_session_info_label'):
+                self.ui_manager.update_session_info_label()
 
             # Load session info
             session_info = self.session_manager.get_session_info(session_path)
@@ -411,13 +418,16 @@ class MainWindow(QMainWindow):
                     # Analysis loaded successfully
                     self._update_all_views()
 
-                    # Enable report buttons
+                    # Enable report buttons (handled by set_ui_busy now)
                     if hasattr(self, 'packing_list_button'):
                         self.packing_list_button.setEnabled(True)
                     if hasattr(self, 'stock_export_button'):
                         self.stock_export_button.setEnabled(True)
                     if hasattr(self, 'add_product_button'):
                         self.add_product_button.setEnabled(True)
+
+                    # Update Tab 2 buttons too (FIX #3)
+                    self.ui_manager.set_ui_busy(False)
 
                     self.log_activity("Session", f"Loaded session: {session_name}")
                     QMessageBox.information(
@@ -428,6 +438,9 @@ class MainWindow(QMainWindow):
                     )
                 else:
                     # Session exists but no analysis yet
+                    # Update UI state for Open Folder button (FIX #2)
+                    self.ui_manager.set_ui_busy(False)
+
                     self.log_activity("Session", f"Opened session (no analysis): {session_name}")
                     QMessageBox.information(
                         self,
