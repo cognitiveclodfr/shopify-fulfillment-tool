@@ -1,0 +1,197 @@
+{
+  "_description": "Example stock lookup dictionary for Warehouse_Name column",
+  "_use_case": "Map SKU to product name from stock file for warehouse picking",
+  "_format": "Dictionary with SKU as key and product info as value",
+
+  "simple_format": {
+    "_description": "Simple format: SKU -> Product Name string",
+    "SKU-001": "Зимова шапка",
+    "SKU-002": "Рукавички",
+    "SKU-003": "Шарф",
+    "SKU-GIFT": "Gift Box",
+    "SET-WINTER-KIT": "Winter Bundle Gift Set"
+  },
+
+  "extended_format": {
+    "_description": "Extended format: SKU -> Product info dict with additional data",
+    "SKU-001": {
+      "name": "Зимова шапка",
+      "stock": 50,
+      "category": "Winter Accessories",
+      "supplier": "Supplier A",
+      "warehouse_location": "A-12-3"
+    },
+    "SKU-002": {
+      "name": "Рукавички",
+      "stock": 30,
+      "category": "Winter Accessories",
+      "supplier": "Supplier A",
+      "warehouse_location": "A-12-4"
+    },
+    "SKU-003": {
+      "name": "Шарф",
+      "stock": 0,
+      "category": "Winter Accessories",
+      "supplier": "Supplier B",
+      "warehouse_location": "B-05-1"
+    },
+    "SKU-GIFT": {
+      "name": "Gift Box",
+      "stock": 100,
+      "category": "Packaging",
+      "supplier": "Supplier C",
+      "warehouse_location": "C-01-5"
+    },
+    "SET-WINTER-KIT": {
+      "name": "Winter Bundle Gift Set",
+      "stock": 15,
+      "category": "Sets",
+      "supplier": "Internal",
+      "warehouse_location": "D-10-2"
+    }
+  },
+
+  "real_world_example": {
+    "_description": "Real-world example with actual product data",
+    "_note": "This shows a typical stock lookup for a cosmetics/beauty shop",
+
+    "5170": {
+      "name": "Hydrating Face Cream 50ml",
+      "stock": 45,
+      "category": "Face Care"
+    },
+    "5171": {
+      "name": "Anti-Aging Serum 30ml",
+      "stock": 32,
+      "category": "Face Care"
+    },
+    "5172": {
+      "name": "Eye Contour Gel 15ml",
+      "stock": 28,
+      "category": "Eye Care"
+    },
+    "BUNDLE-001": {
+      "name": "Complete Face Care Set",
+      "stock": 12,
+      "category": "Sets"
+    },
+    "GIFT-CARD": {
+      "name": "Gift Card €50",
+      "stock": 500,
+      "category": "Gift Cards"
+    },
+    "SAMPLE-CREAM": {
+      "name": "Free Sample - Face Cream 5ml",
+      "stock": 200,
+      "category": "Samples"
+    }
+  },
+
+  "usage_in_code": {
+    "_description": "How to use this lookup in Python code",
+    "_example_1": "Simple lookup",
+    "_code_1": "warehouse_name = stock_lookup.get('SKU-001', 'N/A')",
+
+    "_example_2": "Get name from extended format",
+    "_code_2": "warehouse_name = stock_lookup['SKU-001']['name']",
+
+    "_example_3": "Create lookup from DataFrame",
+    "_code_3": "stock_lookup = dict(zip(stock_df['SKU'], stock_df['Product_Name']))",
+
+    "_example_4": "Apply to DataFrame column",
+    "_code_4": "final_df['Warehouse_Name'] = final_df['SKU'].map(stock_lookup)"
+  },
+
+  "edge_cases": {
+    "_description": "Edge cases and how to handle them",
+
+    "sku_not_in_stock": {
+      "_scenario": "Order has SKU that doesn't exist in stock file",
+      "_sku": "SKU-UNKNOWN",
+      "_warehouse_name": "N/A",
+      "_handling": "Use .fillna('N/A') after mapping"
+    },
+
+    "empty_product_name": {
+      "_scenario": "Stock file has SKU but empty product name",
+      "_sku": "SKU-004",
+      "_warehouse_name": "",
+      "_handling": "Use .fillna('N/A') or show SKU as fallback"
+    },
+
+    "missing_stock_file": {
+      "_scenario": "Analysis run without stock file loaded",
+      "_warehouse_name": "N/A",
+      "_handling": "Initialize all rows with 'N/A'"
+    },
+
+    "duplicate_skus": {
+      "_scenario": "Stock file has duplicate SKUs (should be cleaned)",
+      "_handling": "Use drop_duplicates(subset=['SKU'], keep='first') before creating lookup"
+    },
+
+    "set_component": {
+      "_scenario": "Component SKU from decoded set",
+      "_sku": "SKU-HAT",
+      "_product_name": "Winter Bundle Gift Set",
+      "_warehouse_name": "Зимова шапка",
+      "_note": "Warehouse_Name shows actual component name, Product_Name shows set name"
+    }
+  },
+
+  "performance_notes": {
+    "_stock_file_size": "500-5000 SKUs typical",
+    "_memory_usage": "~100KB - 1MB",
+    "_lookup_complexity": "O(1) - instant",
+    "_creation_time": "< 100ms even for 10,000 SKUs",
+    "_recommendation": "Create once after stock file loaded, reuse for all lookups"
+  },
+
+  "multi_language_example": {
+    "_description": "Example with multiple languages",
+    "_note": "Some clients may have product names in multiple languages",
+
+    "SKU-100": {
+      "name_bg": "Зимова шапка",
+      "name_en": "Winter Hat",
+      "name_uk": "Зимова шапка",
+      "stock": 50,
+      "_usage": "Select appropriate language field based on warehouse location"
+    },
+    "SKU-101": {
+      "name_bg": "Ръкавици",
+      "name_en": "Gloves",
+      "name_uk": "Рукавички",
+      "stock": 30
+    }
+  },
+
+  "implementation_example": {
+    "_description": "Complete implementation in analysis.py",
+    "_location": "analysis.py, after line 248 (after merge)",
+
+    "_step_1": "Create lookup dictionary",
+    "_code_step_1": [
+      "if 'Product_Name' in stock_clean_df.columns:",
+      "    stock_lookup = dict(zip(",
+      "        stock_clean_df['SKU'],",
+      "        stock_clean_df['Product_Name']",
+      "    ))",
+      "else:",
+      "    stock_lookup = {}"
+    ],
+
+    "_step_2": "Add Warehouse_Name column",
+    "_code_step_2": [
+      "final_df['Warehouse_Name'] = final_df['SKU'].map(stock_lookup)",
+      "final_df['Warehouse_Name'] = final_df['Warehouse_Name'].fillna('N/A')"
+    ],
+
+    "_step_3": "Log results",
+    "_code_step_3": [
+      "logger.info(f'Added Warehouse_Name column from stock file')",
+      "logger.info(f'SKUs with warehouse names: {final_df[\"Warehouse_Name\"].notna().sum()}')",
+      "logger.info(f'SKUs without warehouse names: {(final_df[\"Warehouse_Name\"] == \"N/A\").sum()}')"
+    ]
+  }
+}
