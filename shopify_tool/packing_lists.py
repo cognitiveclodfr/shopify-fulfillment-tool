@@ -102,8 +102,19 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
         logger.info(f"Found {filtered_orders['Order_Number'].nunique()} orders for the report.")
 
         # Fill NaN values to avoid issues during processing
-        for col in ["Destination_Country", "Product_Name", "SKU"]:
-            filtered_orders[col] = filtered_orders[col].fillna("")
+        for col in ["Destination_Country", "Warehouse_Name", "Product_Name", "SKU"]:
+            if col in filtered_orders.columns:
+                filtered_orders[col] = filtered_orders[col].fillna("")
+
+        # Use Warehouse_Name if available, otherwise fall back to Product_Name
+        # This ensures backward compatibility with tests and old data
+        if "Warehouse_Name" not in filtered_orders.columns:
+            if "Product_Name" in filtered_orders.columns:
+                logger.info("Warehouse_Name not found, using Product_Name as fallback")
+                filtered_orders["Warehouse_Name"] = filtered_orders["Product_Name"]
+            else:
+                logger.warning("Neither Warehouse_Name nor Product_Name found, using empty string")
+                filtered_orders["Warehouse_Name"] = ""
 
         # Sort the list for optimal packing order
         provider_map = {"DHL": 0, "PostOne": 1, "DPD": 2}
@@ -120,7 +131,7 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
             "Destination_Country",
             "Order_Number",
             "SKU",
-            "Product_Name",
+            "Warehouse_Name",  # From stock file - actual warehouse product names (or Product_Name fallback)
             "Quantity",
             "Shipping_Provider",
         ]
@@ -130,7 +141,7 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
         output_filename = os.path.basename(output_file)
 
         # Rename columns to embed metadata into the header
-        rename_map = {"Shipping_Provider": generation_timestamp, "Product_Name": output_filename}
+        rename_map = {"Shipping_Provider": generation_timestamp, "Warehouse_Name": output_filename}
         print_list = print_list.rename(columns=rename_map)
 
         logger.info("Creating Excel file...")
@@ -193,7 +204,7 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
                 original_col_name = columns_for_print[i]
                 if original_col_name == "Destination_Country":
                     max_len = 5
-                elif original_col_name == "Product_Name":
+                elif original_col_name == "Warehouse_Name":
                     max_len = min(max_len, 45)
                 elif original_col_name == "SKU":
                     max_len = min(max_len, 25)
