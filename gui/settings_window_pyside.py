@@ -1557,7 +1557,8 @@ class SetEditorDialog(QDialog):
 
         # Add component button
         add_comp_btn = QPushButton("+ Add Component")
-        add_comp_btn.clicked.connect(self._add_component_row)
+        # Use lambda to avoid passing 'checked' bool as first argument
+        add_comp_btn.clicked.connect(lambda: self._add_component_row())
         layout.addWidget(add_comp_btn)
 
         # Populate with existing components if provided
@@ -1585,11 +1586,15 @@ class SetEditorDialog(QDialog):
 
     def _add_component_row(self, sku="", quantity=1):
         """Add a new row to the components table."""
+        # Protection: if sku is bool (from button clicked signal), convert to empty string
+        if isinstance(sku, bool):
+            sku = ""
+
         row_idx = self.components_table.rowCount()
         self.components_table.insertRow(row_idx)
 
         # Component SKU
-        sku_edit = QLineEdit(sku)
+        sku_edit = QLineEdit(str(sku))  # Ensure it's a string
         sku_edit.setPlaceholderText("e.g., HAT-001")
         self.components_table.setCellWidget(row_idx, 0, sku_edit)
 
