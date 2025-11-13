@@ -1591,15 +1591,22 @@ class SetEditorDialog(QDialog):
         qty_spinbox.setValue(quantity)
         self.components_table.setCellWidget(row_idx, 1, qty_spinbox)
 
-        # Remove button
+        # Remove button - використовуємо sender() щоб знайти правильний row
         remove_btn = QPushButton("🗑️")
         remove_btn.setMaximumWidth(60)
-        remove_btn.clicked.connect(lambda: self._remove_component_row(row_idx))
+        remove_btn.clicked.connect(self._remove_component_row)
         self.components_table.setCellWidget(row_idx, 2, remove_btn)
 
-    def _remove_component_row(self, row_idx):
+    def _remove_component_row(self):
         """Remove a component row from the table."""
-        self.components_table.removeRow(row_idx)
+        # Знаходимо який button викликав цю функцію
+        button = self.sender()
+        if button:
+            # Знаходимо row index цієї кнопки в таблиці
+            for row in range(self.components_table.rowCount()):
+                if self.components_table.cellWidget(row, 2) == button:
+                    self.components_table.removeRow(row)
+                    break
 
     def _validate_and_save(self):
         """Validate inputs and accept dialog if valid."""
