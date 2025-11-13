@@ -506,5 +506,199 @@ class TestErrorHandling:
             assert config is None
 
 
+class TestSetDecoderMethods:
+    """Test set/bundle decoder management methods."""
+
+    def test_get_set_decoders_empty(self, profile_manager):
+        """Test getting set decoders from fresh config returns empty dict."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        set_decoders = profile_manager.get_set_decoders("M")
+
+        assert isinstance(set_decoders, dict)
+        assert len(set_decoders) == 0
+
+    def test_save_and_get_set_decoders(self, profile_manager):
+        """Test saving and retrieving set decoders."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        # Create test sets
+        test_sets = {
+            "SET-WINTER": [
+                {"sku": "HAT-001", "quantity": 1},
+                {"sku": "GLOVES-001", "quantity": 1}
+            ],
+            "SET-SUMMER": [
+                {"sku": "SUNGLASSES-001", "quantity": 1}
+            ]
+        }
+
+        # Save
+        success = profile_manager.save_set_decoders("M", test_sets)
+        assert success is True
+
+        # Get
+        loaded_sets = profile_manager.get_set_decoders("M")
+        assert loaded_sets == test_sets
+        assert len(loaded_sets) == 2
+        assert "SET-WINTER" in loaded_sets
+        assert len(loaded_sets["SET-WINTER"]) == 2
+
+    def test_add_set_valid(self, profile_manager):
+        """Test adding a valid set definition."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        components = [
+            {"sku": "COMP-1", "quantity": 1},
+            {"sku": "COMP-2", "quantity": 2},
+            {"sku": "COMP-3", "quantity": 1}
+        ]
+
+        # Add set
+        success = profile_manager.add_set("M", "NEW-SET", components)
+        assert success is True
+
+        # Verify saved
+        sets = profile_manager.get_set_decoders("M")
+        assert "NEW-SET" in sets
+        assert len(sets["NEW-SET"]) == 3
+        assert sets["NEW-SET"][0]["sku"] == "COMP-1"
+        assert sets["NEW-SET"][1]["quantity"] == 2
+
+    def test_add_set_update_existing(self, profile_manager):
+        """Test updating an existing set."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        # Add initial set
+        profile_manager.add_set("M", "TEST-SET", [{"sku": "OLD-COMP", "quantity": 1}])
+
+        # Update same set with new components
+        new_components = [
+            {"sku": "NEW-COMP-1", "quantity": 2},
+            {"sku": "NEW-COMP-2", "quantity": 3}
+        ]
+        success = profile_manager.add_set("M", "TEST-SET", new_components)
+        assert success is True
+
+        # Verify updated
+        sets = profile_manager.get_set_decoders("M")
+        assert "TEST-SET" in sets
+        assert len(sets["TEST-SET"]) == 2
+        assert sets["TEST-SET"][0]["sku"] == "NEW-COMP-1"
+
+    def test_add_set_invalid_empty_components(self, profile_manager):
+        """Test adding set with empty components list raises ValidationError."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        # Try to add set with empty components
+        with pytest.raises(ValidationError) as exc_info:
+            profile_manager.add_set("M", "BAD-SET", [])
+
+        assert "non-empty list" in str(exc_info.value).lower()
+
+    def test_add_set_invalid_component_missing_sku(self, profile_manager):
+        """Test adding set with component missing SKU raises ValidationError."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        # Component without SKU
+        components = [{"quantity": 1}]
+
+        with pytest.raises(ValidationError) as exc_info:
+            profile_manager.add_set("M", "BAD-SET", components)
+
+        assert "sku" in str(exc_info.value).lower()
+
+    def test_add_set_invalid_negative_quantity(self, profile_manager):
+        """Test adding set with negative quantity raises ValidationError."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        components = [{"sku": "COMP-1", "quantity": -1}]
+
+        with pytest.raises(ValidationError) as exc_info:
+            profile_manager.add_set("M", "BAD-SET", components)
+
+        assert "positive" in str(exc_info.value).lower()
+
+    def test_add_set_invalid_non_integer_quantity(self, profile_manager):
+        """Test adding set with non-integer quantity raises ValidationError."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        components = [{"sku": "COMP-1", "quantity": "abc"}]
+
+        with pytest.raises(ValidationError) as exc_info:
+            profile_manager.add_set("M", "BAD-SET", components)
+
+        assert "integer" in str(exc_info.value).lower()
+
+    def test_delete_set_exists(self, profile_manager):
+        """Test deleting an existing set."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        # Add set
+        profile_manager.add_set("M", "DELETE-ME", [{"sku": "COMP-1", "quantity": 1}])
+
+        # Verify exists
+        sets = profile_manager.get_set_decoders("M")
+        assert "DELETE-ME" in sets
+
+        # Delete
+        success = profile_manager.delete_set("M", "DELETE-ME")
+        assert success is True
+
+        # Verify removed
+        sets = profile_manager.get_set_decoders("M")
+        assert "DELETE-ME" not in sets
+
+    def test_delete_set_not_exists(self, profile_manager):
+        """Test deleting non-existent set returns False."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        # Try to delete non-existent set
+        success = profile_manager.delete_set("M", "NON-EXISTENT")
+        assert success is False
+
+    def test_set_decoders_persistence_across_loads(self, profile_manager):
+        """Test that set decoders persist across multiple loads."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        # Add sets
+        sets = {
+            "SET-A": [{"sku": "COMP-A", "quantity": 1}],
+            "SET-B": [{"sku": "COMP-B", "quantity": 2}]
+        }
+        profile_manager.save_set_decoders("M", sets)
+
+        # Clear cache to force reload
+        profile_manager._config_cache.clear()
+
+        # Load again
+        loaded_sets = profile_manager.get_set_decoders("M")
+        assert loaded_sets == sets
+
+    def test_multiple_sets_add_and_delete(self, profile_manager):
+        """Test adding and deleting multiple sets in sequence."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        # Clear any existing sets to ensure clean state
+        profile_manager.save_set_decoders("M", {})
+
+        # Add multiple sets
+        profile_manager.add_set("M", "SET-1", [{"sku": "C1", "quantity": 1}])
+        profile_manager.add_set("M", "SET-2", [{"sku": "C2", "quantity": 1}])
+        profile_manager.add_set("M", "SET-3", [{"sku": "C3", "quantity": 1}])
+
+        sets = profile_manager.get_set_decoders("M")
+        assert len(sets) == 3
+
+        # Delete one
+        profile_manager.delete_set("M", "SET-2")
+
+        sets = profile_manager.get_set_decoders("M")
+        assert len(sets) == 2
+        assert "SET-1" in sets
+        assert "SET-2" not in sets
+        assert "SET-3" in sets
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

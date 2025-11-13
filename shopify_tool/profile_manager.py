@@ -638,6 +638,140 @@ class ProfileManager:
 
         return False
 
+    # --- Set/Bundle Management Methods ---
+
+    def get_set_decoders(self, client_id: str) -> Dict:
+        """Get set/bundle decoder definitions for a client.
+
+        Args:
+            client_id (str): Client ID
+
+        Returns:
+            Dict: Set decoders dictionary in format:
+                  {"SET-SKU": [{"sku": "COMP-1", "quantity": 1}, ...]}
+                  Returns empty dict if no sets defined
+        """
+        config = self.load_shopify_config(client_id)
+        if not config:
+            return {}
+
+        return config.get("set_decoders", {})
+
+    def save_set_decoders(self, client_id: str, set_decoders: Dict) -> bool:
+        """Save set/bundle decoder definitions for a client.
+
+        Args:
+            client_id (str): Client ID
+            set_decoders (Dict): Set decoders dictionary
+
+        Returns:
+            bool: True if saved successfully
+
+        Raises:
+            ProfileManagerError: If save fails
+        """
+        config = self.load_shopify_config(client_id)
+        if not config:
+            raise ProfileManagerError(f"Cannot load config for CLIENT_{client_id}")
+
+        config["set_decoders"] = set_decoders
+
+        success = self.save_shopify_config(client_id, config)
+        if success:
+            logger.info(f"Set decoders saved for CLIENT_{client_id}: {len(set_decoders)} sets")
+
+        return success
+
+    def add_set(
+        self,
+        client_id: str,
+        set_sku: str,
+        components: List[Dict[str, any]]
+    ) -> bool:
+        """Add or update a set/bundle definition.
+
+        Args:
+            client_id (str): Client ID
+            set_sku (str): Set SKU to add/update
+            components (List[Dict]): List of components, each with 'sku' and 'quantity'
+                                    Example: [{"sku": "COMP-1", "quantity": 1}, ...]
+
+        Returns:
+            bool: True if added/updated successfully
+
+        Raises:
+            ValidationError: If validation fails
+            ProfileManagerError: If save fails
+        """
+        # Validation
+        if not set_sku or not isinstance(set_sku, str):
+            raise ValidationError("set_sku must be a non-empty string")
+
+        if not components or not isinstance(components, list):
+            raise ValidationError("components must be a non-empty list")
+
+        # Validate each component
+        for idx, comp in enumerate(components):
+            if not isinstance(comp, dict):
+                raise ValidationError(f"Component {idx} must be a dictionary")
+
+            if "sku" not in comp or not comp["sku"]:
+                raise ValidationError(f"Component {idx} missing 'sku' field")
+
+            if "quantity" not in comp:
+                raise ValidationError(f"Component {idx} missing 'quantity' field")
+
+            try:
+                qty = int(comp["quantity"])
+                if qty <= 0:
+                    raise ValidationError(f"Component {idx} quantity must be positive, got {qty}")
+            except (ValueError, TypeError):
+                raise ValidationError(f"Component {idx} quantity must be an integer")
+
+        # Load current sets
+        set_decoders = self.get_set_decoders(client_id)
+
+        # Add/update set
+        set_decoders[set_sku] = components
+
+        # Save
+        success = self.save_set_decoders(client_id, set_decoders)
+        if success:
+            logger.info(f"Set '{set_sku}' added/updated for CLIENT_{client_id} with {len(components)} components")
+
+        return success
+
+    def delete_set(self, client_id: str, set_sku: str) -> bool:
+        """Delete a set/bundle definition.
+
+        Args:
+            client_id (str): Client ID
+            set_sku (str): Set SKU to delete
+
+        Returns:
+            bool: True if deleted, False if set didn't exist
+
+        Raises:
+            ProfileManagerError: If save fails
+        """
+        # Load current sets
+        set_decoders = self.get_set_decoders(client_id)
+
+        # Check if set exists
+        if set_sku not in set_decoders:
+            logger.warning(f"Set '{set_sku}' not found for CLIENT_{client_id}")
+            return False
+
+        # Remove set
+        del set_decoders[set_sku]
+
+        # Save
+        success = self.save_set_decoders(client_id, set_decoders)
+        if success:
+            logger.info(f"Set '{set_sku}' deleted for CLIENT_{client_id}")
+
+        return success
+
     def _save_with_windows_lock(self, file_path: Path, data: Dict) -> bool:
         """Save file with Windows file locking.
 

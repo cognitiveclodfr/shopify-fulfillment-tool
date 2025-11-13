@@ -478,6 +478,10 @@ def run_full_analysis(
     logger.info("Step 2: Running fulfillment simulation...")
     # Get column mappings from config and pass to analysis
     column_mappings = config.get("column_mappings", {})
+    # Add set_decoders to column_mappings for set expansion
+    if not isinstance(column_mappings, dict):
+        column_mappings = {}
+    column_mappings["set_decoders"] = config.get("set_decoders", {})
     logger.debug(f"Using column mappings: {column_mappings}")
     final_df, summary_present_df, summary_missing_df, stats = analysis.run_analysis(
         stock_df, orders_df, history_df, column_mappings
