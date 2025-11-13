@@ -711,3 +711,291 @@ class ActionsHandler(QObject):
             ].reset_index(drop=True)
             self.data_changed.emit()
             self.mw.log_activity("Data Edit", f"Removed order {order_number}.")
+
+    def show_add_product_dialog(self):
+        """Show dialog to add product to order."""
+        from gui.add_product_dialog import AddProductDialog
+        from PySide6.QtWidgets import QDialog
+
+        # Validate prerequisites
+        if not hasattr(self.mw, 'analysis_results_df') or self.mw.analysis_results_df is None:
+            QMessageBox.warning(
+                self.mw,
+                "No Analysis",
+                "Please run analysis first before adding products."
+            )
+            return
+
+        if not hasattr(self.mw, 'stock_file_path') or not self.mw.stock_file_path:
+            QMessageBox.warning(
+                self.mw,
+                "No Stock Data",
+                "Stock file must be loaded to add products."
+            )
+            return
+
+        # Load stock DataFrame
+        try:
+            stock_delimiter = self.mw.active_profile_config.get("settings", {}).get("stock_csv_delimiter", ";")
+
+            # Load raw stock file
+            stock_df = pd.read_csv(
+                self.mw.stock_file_path,
+                delimiter=stock_delimiter,
+                encoding='utf-8-sig'
+            )
+            self.log.info(f"Loaded stock data: {len(stock_df)} rows")
+
+            # Apply column mappings to convert to internal names
+            column_mappings = self.mw.active_profile_config.get("column_mappings", {})
+            if column_mappings:
+                stock_mappings = column_mappings.get("stock", {})
+                if stock_mappings:
+                    # Only rename columns that exist in the DataFrame
+                    stock_rename_map = {csv_col: internal_col for csv_col, internal_col in stock_mappings.items()
+                                       if csv_col in stock_df.columns and csv_col != internal_col}
+                    if stock_rename_map:
+                        stock_df = stock_df.rename(columns=stock_rename_map)
+                        self.log.info(f"Applied column mappings: {stock_rename_map}")
+
+            # Normalize SKU column to string
+            if "SKU" in stock_df.columns:
+                from shopify_tool.csv_utils import normalize_sku
+                stock_df["SKU"] = stock_df["SKU"].apply(normalize_sku)
+
+        except Exception as e:
+            self.log.error(f"Failed to load stock file: {e}", exc_info=True)
+            QMessageBox.critical(
+                self.mw,
+                "Error Loading Stock",
+                f"Could not load stock file.\n\nError: {e}"
+            )
+            return
+
+        # Create live_stock tracking dict from Final_Stock column
+        live_stock = {}
+        if "Final_Stock" in self.mw.analysis_results_df.columns:
+            for _, row in self.mw.analysis_results_df.iterrows():
+                sku = row["SKU"]
+                final_stock = row["Final_Stock"]
+                if pd.notna(sku) and pd.notna(final_stock):
+                    # Use the latest Final_Stock value for each SKU
+                    live_stock[sku] = final_stock
+            self.log.info(f"Created live stock tracking: {len(live_stock)} SKUs")
+        else:
+            self.log.warning("No Final_Stock column in analysis results")
+
+        # Show dialog
+        dialog = AddProductDialog(
+            parent=self.mw,
+            analysis_df=self.mw.analysis_results_df,
+            stock_df=stock_df,
+            live_stock=live_stock
+        )
+
+        if dialog.exec() == QDialog.Accepted:
+            result = dialog.get_result()
+            if result:
+                self._add_product_to_order(result, stock_df, live_stock)
+
+    def _add_product_to_order(self, product_data, stock_df, live_stock):
+        """
+        Add manually added product to order.
+
+        CRITICAL: Does NOT re-run full analysis!
+        Instead: Recalculates fulfillment ONLY for this order.
+
+        Args:
+            product_data: dict {
+                "order_number": str,
+                "sku": str,
+                "product_name": str,
+                "quantity": int
+            }
+            stock_df: DataFrame with stock data
+            live_stock: dict with current stock levels
+        """
+        order_num = product_data["order_number"]
+        sku = product_data["sku"]
+        quantity = product_data["quantity"]
+
+        self.log.info(f"Adding {quantity}x {sku} to order {order_num}")
+
+        # Step 1: Get existing row as template
+        # Convert Order_Number to string for comparison (might be int/float)
+        existing_rows = self.mw.analysis_results_df[
+            self.mw.analysis_results_df["Order_Number"].astype(str) == str(order_num)
+        ]
+
+        if existing_rows.empty:
+            self.log.error(f"Order {order_num} not found")
+            QMessageBox.critical(
+                self.mw,
+                "Error",
+                f"Order {order_num} not found in analysis."
+            )
+            return
+
+        template_row = existing_rows.iloc[0].copy()
+
+        # Step 2: Create new row
+        new_row = template_row.copy()
+        new_row["SKU"] = sku
+        new_row["Product_Name"] = product_data["product_name"]
+        new_row["Quantity"] = quantity
+        new_row["Source"] = "Manual"
+        new_row["Original_SKU"] = sku
+        new_row["Original_Quantity"] = quantity
+        new_row["Is_Set_Component"] = False
+
+        # Set Warehouse_Name from stock if available
+        # Convert SKU to string for comparison (might be int/float)
+        stock_row = stock_df[stock_df["SKU"].astype(str).str.strip() == sku]
+        if not stock_row.empty and "Product_Name" in stock_row.columns:
+            new_row["Warehouse_Name"] = stock_row.iloc[0]["Product_Name"]
+        else:
+            new_row["Warehouse_Name"] = product_data["product_name"]
+
+        # Step 3: Lookup stock value
+        if not stock_row.empty and "Stock" in stock_row.columns:
+            initial_stock = stock_row.iloc[0]["Stock"]
+            new_row["Stock"] = initial_stock
+        else:
+            new_row["Stock"] = 0
+            initial_stock = 0
+
+        # Step 4: Get current live stock
+        current_live_stock = live_stock.get(sku, initial_stock)
+        new_row["Final_Stock"] = current_live_stock
+
+        # Step 5: Append to DataFrame
+        self.mw.analysis_results_df = pd.concat(
+            [self.mw.analysis_results_df, pd.DataFrame([new_row])],
+            ignore_index=True
+        )
+
+        self.log.info(f"Row added to analysis_results_df")
+
+        # Step 6: Recalculate fulfillment for THIS ORDER ONLY
+        self._recalculate_order_fulfillment(order_num)
+
+        # Step 7: Save to session
+        self._save_manual_addition(product_data)
+
+        # Step 8: Emit data changed signal
+        self.data_changed.emit()
+
+        # Step 9: Show success message
+        QMessageBox.information(
+            self.mw,
+            "Product Added",
+            f"Product {sku} ({quantity}x) added to order {order_num}.\n\n"
+            "Fulfillment status has been updated."
+        )
+
+        self.mw.log_activity("Manual Addition", f"Added {quantity}x {sku} to order {order_num}")
+
+    def _recalculate_order_fulfillment(self, order_number):
+        """
+        Recalculate fulfillment status for ONE specific order.
+
+        CRITICAL: Does NOT touch other orders or re-run analysis!
+        This preserves repeated order detection logic.
+
+        Args:
+            order_number: Order to recalculate
+        """
+        self.log.info(f"Recalculating fulfillment for order {order_number}")
+
+        # Get all items for this order
+        # Convert Order_Number to string for comparison (might be int/float)
+        order_items = self.mw.analysis_results_df[
+            self.mw.analysis_results_df["Order_Number"].astype(str) == str(order_number)
+        ]
+
+        # Rebuild live stock tracking from Final_Stock
+        live_stock = {}
+        for _, row in self.mw.analysis_results_df.iterrows():
+            sku = row["SKU"]
+            final_stock = row["Final_Stock"]
+            if pd.notna(sku) and pd.notna(final_stock):
+                live_stock[sku] = final_stock
+
+        # Check if all items can be fulfilled with current live stock
+        can_fulfill = True
+
+        for _, item in order_items.iterrows():
+            sku = item["SKU"]
+            required_qty = item["Quantity"]
+            available = live_stock.get(sku, 0)
+
+            if required_qty > available:
+                can_fulfill = False
+                self.log.debug(f"  {sku}: need {required_qty}, have {available} - NOT OK")
+                break
+            else:
+                self.log.debug(f"  {sku}: need {required_qty}, have {available} - OK")
+
+        # Update fulfillment status for ALL items in this order
+        new_status = "Fulfillable" if can_fulfill else "Not Fulfillable"
+
+        # Convert Order_Number to string for comparison (might be int/float)
+        self.mw.analysis_results_df.loc[
+            self.mw.analysis_results_df["Order_Number"].astype(str) == str(order_number),
+            "Order_Fulfillment_Status"
+        ] = new_status
+
+        # If fulfillable, update Final_Stock (simulate allocation)
+        if can_fulfill:
+            for _, item in order_items.iterrows():
+                sku = item["SKU"]
+                qty = item["Quantity"]
+                new_stock = live_stock.get(sku, 0) - qty
+                # Update Final_Stock for ALL rows with this SKU
+                self.mw.analysis_results_df.loc[
+                    self.mw.analysis_results_df["SKU"] == sku,
+                    "Final_Stock"
+                ] = new_stock
+
+            self.log.info(f"Order {order_number} marked as Fulfillable, stock updated")
+        else:
+            self.log.info(f"Order {order_number} marked as Not Fulfillable")
+
+    def _save_manual_addition(self, product_data):
+        """Save manual addition to session file."""
+        import json
+
+        if not hasattr(self.mw, 'session_path') or not self.mw.session_path:
+            self.log.warning("No active session, manual addition not saved")
+            return
+
+        # Path to manual_additions.json
+        additions_file = os.path.join(self.mw.session_path, "manual_additions.json")
+
+        # Load existing additions
+        if os.path.exists(additions_file):
+            try:
+                with open(additions_file, 'r', encoding='utf-8') as f:
+                    additions = json.load(f)
+            except Exception as e:
+                self.log.error(f"Failed to load manual additions: {e}")
+                additions = []
+        else:
+            additions = []
+
+        # Add new entry
+        additions.append({
+            "order_number": product_data["order_number"],
+            "sku": product_data["sku"],
+            "product_name": product_data["product_name"],
+            "quantity": product_data["quantity"],
+            "timestamp": datetime.now().isoformat()
+        })
+
+        # Save back
+        try:
+            with open(additions_file, 'w', encoding='utf-8') as f:
+                json.dump(additions, f, indent=2, ensure_ascii=False)
+            self.log.info(f"Saved manual addition to {additions_file}")
+        except Exception as e:
+            self.log.error(f"Failed to save manual additions: {e}")

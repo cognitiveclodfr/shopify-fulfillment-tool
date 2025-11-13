@@ -166,6 +166,8 @@ class MainWindow(QMainWindow):
                     self.packing_list_button.setEnabled(False)
                 if hasattr(self, 'stock_export_button'):
                     self.stock_export_button.setEnabled(False)
+                if hasattr(self, 'add_product_button'):
+                    self.add_product_button.setEnabled(False)
 
                 self.log_activity("Client", f"Switched to CLIENT_{client_id}")
             else:
@@ -222,6 +224,7 @@ class MainWindow(QMainWindow):
         # Main actions
         self.run_analysis_button.clicked.connect(self.actions_handler.run_analysis)
         self.settings_button.clicked.connect(self.actions_handler.open_settings_window)
+        self.add_product_button.clicked.connect(self.actions_handler.show_add_product_dialog)
 
         # Reports
         self.packing_list_button.clicked.connect(
@@ -394,6 +397,8 @@ class MainWindow(QMainWindow):
                         self.packing_list_button.setEnabled(True)
                     if hasattr(self, 'stock_export_button'):
                         self.stock_export_button.setEnabled(True)
+                    if hasattr(self, 'add_product_button'):
+                        self.add_product_button.setEnabled(True)
 
                     self.log_activity("Session", f"Loaded session: {session_name}")
                     QMessageBox.information(

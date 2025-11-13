@@ -247,6 +247,31 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None):
         # Simple merge - no conflict
         final_df = pd.merge(orders_clean_df, stock_clean_df, on="SKU", how="left")
 
+    # --- Add Warehouse_Name column from stock file ---
+    # Create stock name lookup dictionary
+    if "Product_Name" in stock_clean_df.columns:
+        stock_lookup = dict(zip(
+            stock_clean_df["SKU"],
+            stock_clean_df["Product_Name"]
+        ))
+
+        logger.info(f"Creating Warehouse_Name lookup: {len(stock_lookup)} SKUs")
+
+        # Add Warehouse_Name column by mapping SKU
+        final_df["Warehouse_Name"] = final_df["SKU"].map(stock_lookup)
+
+        # Fill N/A for SKUs not found in stock
+        final_df["Warehouse_Name"] = final_df["Warehouse_Name"].fillna("N/A")
+
+        # Log statistics
+        matched = (final_df["Warehouse_Name"] != "N/A").sum()
+        total = len(final_df)
+        logger.info(f"Warehouse names: {matched}/{total} SKUs matched")
+    else:
+        # No Product_Name in stock file
+        logger.warning("Stock file has no Product_Name column, using N/A")
+        final_df["Warehouse_Name"] = "N/A"
+
     final_df = pd.merge(final_df, order_item_counts, on="Order_Number")
     # Merge final stock levels to the main dataframe
     final_df = pd.merge(final_df, final_stock_levels, on="SKU", how="left")
@@ -269,14 +294,20 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None):
     final_df["System_note"] = np.where(final_df["Order_Number"].isin(history_df["Order_Number"]), "Repeat", "")
     final_df["Stock_Alert"] = ""  # Initialize the column
     final_df["Status_Note"] = ""  # Initialize column for user-defined rule tags
+
+    # Initialize Source column (all orders start as "Order")
+    final_df["Source"] = "Order"
+
     output_columns = [
         "Order_Number",
         "Order_Type",
         "SKU",
         "Product_Name",
+        "Warehouse_Name",  # NEW: From stock file
         "Quantity",
         "Stock",
         "Final_Stock",
+        "Source",  # NEW: "Order" or "Manual"
         "Stock_Alert",
         "Order_Fulfillment_Status",
         "Shipping_Provider",
@@ -290,7 +321,7 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None):
     if "Total_Price" in final_df.columns:
         # Insert 'Total_Price' into the list at a specific position for consistent column order.
         # Placed after 'Quantity'.
-        output_columns.insert(5, "Total_Price")
+        output_columns.insert(6, "Total_Price")
 
     # Filter the list to include only columns that actually exist in the DataFrame.
     # This prevents errors if a column is unexpectedly missing.
