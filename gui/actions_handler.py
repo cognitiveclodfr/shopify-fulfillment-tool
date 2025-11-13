@@ -737,13 +737,32 @@ class ActionsHandler(QObject):
         # Load stock DataFrame
         try:
             stock_delimiter = self.mw.active_profile_config.get("settings", {}).get("stock_csv_delimiter", ";")
+
+            # Load raw stock file
             stock_df = pd.read_csv(
                 self.mw.stock_file_path,
                 delimiter=stock_delimiter,
-                encoding='utf-8-sig',
-                dtype={'SKU': str}
+                encoding='utf-8-sig'
             )
             self.log.info(f"Loaded stock data: {len(stock_df)} rows")
+
+            # Apply column mappings to convert to internal names
+            column_mappings = self.mw.active_profile_config.get("column_mappings", {})
+            if column_mappings:
+                stock_mappings = column_mappings.get("stock", {})
+                if stock_mappings:
+                    # Only rename columns that exist in the DataFrame
+                    stock_rename_map = {csv_col: internal_col for csv_col, internal_col in stock_mappings.items()
+                                       if csv_col in stock_df.columns and csv_col != internal_col}
+                    if stock_rename_map:
+                        stock_df = stock_df.rename(columns=stock_rename_map)
+                        self.log.info(f"Applied column mappings: {stock_rename_map}")
+
+            # Normalize SKU column to string
+            if "SKU" in stock_df.columns:
+                from shopify_tool.csv_utils import normalize_sku
+                stock_df["SKU"] = stock_df["SKU"].apply(normalize_sku)
+
         except Exception as e:
             self.log.error(f"Failed to load stock file: {e}", exc_info=True)
             QMessageBox.critical(
