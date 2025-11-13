@@ -102,9 +102,19 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
         logger.info(f"Found {filtered_orders['Order_Number'].nunique()} orders for the report.")
 
         # Fill NaN values to avoid issues during processing
-        for col in ["Destination_Country", "Warehouse_Name", "SKU"]:
+        for col in ["Destination_Country", "Warehouse_Name", "Product_Name", "SKU"]:
             if col in filtered_orders.columns:
                 filtered_orders[col] = filtered_orders[col].fillna("")
+
+        # Use Warehouse_Name if available, otherwise fall back to Product_Name
+        # This ensures backward compatibility with tests and old data
+        if "Warehouse_Name" not in filtered_orders.columns:
+            if "Product_Name" in filtered_orders.columns:
+                logger.info("Warehouse_Name not found, using Product_Name as fallback")
+                filtered_orders["Warehouse_Name"] = filtered_orders["Product_Name"]
+            else:
+                logger.warning("Neither Warehouse_Name nor Product_Name found, using empty string")
+                filtered_orders["Warehouse_Name"] = ""
 
         # Sort the list for optimal packing order
         provider_map = {"DHL": 0, "PostOne": 1, "DPD": 2}
@@ -121,7 +131,7 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
             "Destination_Country",
             "Order_Number",
             "SKU",
-            "Warehouse_Name",  # From stock file - actual warehouse product names
+            "Warehouse_Name",  # From stock file - actual warehouse product names (or Product_Name fallback)
             "Quantity",
             "Shipping_Provider",
         ]

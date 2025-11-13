@@ -190,9 +190,10 @@ class AddProductDialog(QDialog):
 
     def setup_autocompleters(self):
         """Setup autocomplete for order and SKU inputs."""
-        # Order number autocomplete
-        order_numbers = self.analysis_df["Order_Number"].unique().tolist()
-        order_numbers = [str(o) for o in order_numbers]  # Convert to strings
+        # Order number autocomplete - convert to strings and strip whitespace
+        order_numbers = self.analysis_df["Order_Number"].astype(str).unique().tolist()
+        order_numbers = [str(o).strip() for o in order_numbers]  # Convert to strings and strip
+        order_numbers = sorted(set(order_numbers))  # Remove duplicates and sort
 
         order_completer = QCompleter(order_numbers, self)
         order_completer.setCaseSensitivity(Qt.CaseInsensitive)
@@ -200,7 +201,8 @@ class AddProductDialog(QDialog):
 
         # SKU autocomplete (from stock)
         skus = self.stock_df["SKU"].unique().tolist()
-        skus = [str(s) for s in skus]
+        skus = [str(s).strip() for s in skus]
+        skus = sorted(set(skus))  # Remove duplicates and sort
 
         sku_completer = QCompleter(skus, self)
         sku_completer.setCaseSensitivity(Qt.CaseInsensitive)
@@ -212,13 +214,16 @@ class AddProductDialog(QDialog):
             self.order_status_label.setText("")
             return
 
-        # Check if order exists
-        order_exists = text in self.analysis_df["Order_Number"].values
+        # Check if order exists - convert both to string for comparison
+        # Order_Number might be stored as int/float in DataFrame
+        text_str = str(text).strip()
+        order_numbers_str = self.analysis_df["Order_Number"].astype(str)
+        order_exists = text_str in order_numbers_str.values
 
         if order_exists:
-            # Get order info
+            # Get order info - compare as strings
             order_rows = self.analysis_df[
-                self.analysis_df["Order_Number"] == text
+                self.analysis_df["Order_Number"].astype(str) == text_str
             ]
             item_count = len(order_rows)
             status = order_rows.iloc[0]["Order_Fulfillment_Status"]
@@ -238,8 +243,9 @@ class AddProductDialog(QDialog):
             self.warning_box.setVisible(False)
             return
 
-        # Check if SKU exists in stock
-        stock_row = self.stock_df[self.stock_df["SKU"] == text]
+        # Check if SKU exists in stock - compare as strings
+        text_str = str(text).strip()
+        stock_row = self.stock_df[self.stock_df["SKU"].astype(str).str.strip() == text_str]
 
         if stock_row.empty:
             self.product_info_label.setText("✗ SKU not found in stock")
@@ -248,7 +254,8 @@ class AddProductDialog(QDialog):
 
         # Get product info
         product_name = stock_row.iloc[0].get("Product_Name", "")
-        current_stock = self.live_stock.get(text, 0)
+        # Live stock keys might be strings, ensure we lookup with string
+        current_stock = self.live_stock.get(text_str, self.live_stock.get(text, 0))
 
         self.product_info_label.setText(
             f"✓ {product_name} | Live stock: {current_stock}"
@@ -301,8 +308,8 @@ class AddProductDialog(QDialog):
         sku = self.sku_input.text().strip()
         quantity = self.quantity_spin.value()
 
-        # Get product name from stock
-        stock_row = self.stock_df[self.stock_df["SKU"] == sku]
+        # Get product name from stock - compare as strings
+        stock_row = self.stock_df[self.stock_df["SKU"].astype(str).str.strip() == sku]
         product_name = stock_row.iloc[0].get("Product_Name", sku) if not stock_row.empty else sku
 
         # Store result
@@ -333,8 +340,9 @@ class AddProductDialog(QDialog):
             self.order_input.setFocus()
             return False
 
-        # Check order exists
-        if order_number not in self.analysis_df["Order_Number"].values:
+        # Check order exists - convert to string for comparison
+        order_numbers_str = self.analysis_df["Order_Number"].astype(str)
+        if order_number not in order_numbers_str.values:
             QMessageBox.warning(
                 self,
                 "Validation Error",
@@ -353,8 +361,9 @@ class AddProductDialog(QDialog):
             self.sku_input.setFocus()
             return False
 
-        # Check SKU exists in stock
-        if sku not in self.stock_df["SKU"].values:
+        # Check SKU exists in stock - convert to string for comparison
+        stock_skus_str = self.stock_df["SKU"].astype(str).str.strip()
+        if sku not in stock_skus_str.values:
             reply = QMessageBox.question(
                 self,
                 "SKU Not Found",
