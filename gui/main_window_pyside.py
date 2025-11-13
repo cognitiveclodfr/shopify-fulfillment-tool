@@ -247,9 +247,71 @@ class MainWindow(QMainWindow):
         self.case_sensitive_checkbox.stateChanged.connect(self.filter_table)
         self.clear_filter_button.clicked.connect(self.clear_filter)
 
+        # Add Ctrl+R shortcut for Run Analysis
+        from PySide6.QtGui import QShortcut, QKeySequence
+        QShortcut(QKeySequence("Ctrl+R"), self,
+                  lambda: self.run_analysis_button.click()
+                          if self.run_analysis_button.isEnabled() else None)
+
+        # Add Ctrl+F shortcut for Filter
+        QShortcut(QKeySequence("Ctrl+F"), self,
+                  lambda: self.filter_input.setFocus())
+
     def clear_filter(self):
         """Clears the filter input text box."""
         self.filter_input.clear()
+
+    def update_session_info_label(self):
+        """Update global header session info label."""
+        if not self.session_path:
+            self.session_info_label.setText("No session")
+            return
+
+        session_name = os.path.basename(self.session_path)
+        self.session_info_label.setText(session_name)
+
+        # Update session_path_label as well for compatibility
+        self.session_path_label.setText(f"Session: {session_name}")
+
+    def update_ui_state(self):
+        """Update button states based on application state.
+
+        Called after state changes (client selected, files loaded, analysis run).
+        """
+        has_client = bool(self.current_client_id)
+        has_session = bool(self.session_path)
+        has_orders = bool(getattr(self, 'orders_file_path', None))
+        has_stock = bool(getattr(self, 'stock_file_path', None))
+        has_analysis = hasattr(self, 'analysis_results_df') and self.analysis_results_df is not None
+
+        # Session management
+        self.new_session_btn.setEnabled(has_client)
+        self.settings_button.setEnabled(has_client)
+
+        # File loading
+        self.load_orders_btn.setEnabled(has_session)
+        self.load_stock_btn.setEnabled(has_session)
+
+        # Run Analysis button
+        self.run_analysis_button.setEnabled(
+            has_session and has_orders and has_stock
+        )
+
+        # Reports and actions
+        reports_enabled = has_session and has_analysis
+        self.packing_list_button.setEnabled(reports_enabled)
+        self.stock_export_button.setEnabled(reports_enabled)
+        self.add_product_button.setEnabled(has_analysis)
+
+        # Update status bar
+        if has_analysis:
+            self.statusBar().showMessage("Analysis complete - ready for export", 5000)
+        elif has_session:
+            self.statusBar().showMessage("Session active - load files to begin", 5000)
+        elif has_client:
+            self.statusBar().showMessage("Client selected - create or open a session", 5000)
+        else:
+            self.statusBar().showMessage("Ready - select a client to begin", 5000)
 
     # --- Client and Session Management (New Architecture) ---
     def on_client_changed(self, client_id: str):
@@ -285,11 +347,15 @@ class MainWindow(QMainWindow):
             self.orders_file_status_label.setText("")
             self.stock_file_status_label.setText("")
 
-            # Disable Run Analysis button until files are loaded
-            self.run_analysis_button.setEnabled(False)
+            # Clear session
+            self.session_path = None
+            self.update_session_info_label()
 
             # Update session browser to show this client's sessions
             self.session_browser.set_client(client_id)
+
+            # Update UI state
+            self.update_ui_state()
 
             logging.info(f"Client {client_id} loaded successfully")
 
@@ -381,7 +447,9 @@ class MainWindow(QMainWindow):
             # Set as current session
             self.session_path = session_path
             session_name = os.path.basename(session_path)
-            self.session_path_label.setText(f"Session: {session_name}")
+
+            # Update session info labels
+            self.update_session_info_label()
 
             # Load session info
             session_info = self.session_manager.get_session_info(session_path)
@@ -392,13 +460,8 @@ class MainWindow(QMainWindow):
                     # Analysis loaded successfully
                     self._update_all_views()
 
-                    # Enable report buttons
-                    if hasattr(self, 'packing_list_button'):
-                        self.packing_list_button.setEnabled(True)
-                    if hasattr(self, 'stock_export_button'):
-                        self.stock_export_button.setEnabled(True)
-                    if hasattr(self, 'add_product_button'):
-                        self.add_product_button.setEnabled(True)
+                    # Auto-switch to Analysis Results tab (Tab 2)
+                    self.main_tabs.setCurrentIndex(1)
 
                     self.log_activity("Session", f"Loaded session: {session_name}")
                     QMessageBox.information(
@@ -417,9 +480,8 @@ class MainWindow(QMainWindow):
                         f"No analysis data found. You can run a new analysis."
                     )
 
-                # Enable file loading buttons
-                self.load_orders_btn.setEnabled(True)
-                self.load_stock_btn.setEnabled(True)
+                # Update UI state
+                self.update_ui_state()
 
         except Exception as e:
             logging.error(f"Failed to load session: {e}", exc_info=True)
@@ -462,6 +524,8 @@ class MainWindow(QMainWindow):
                 self.analysis_stats = recalculate_statistics(self.analysis_results_df)
                 self.ui_manager.update_results_table(self.analysis_results_df)
                 self.update_statistics_tab()
+                # Update summary bar in Tab 2
+                self.ui_manager.update_summary_bar()
             except Exception as e:
                 logging.error(f"Failed to recalculate statistics: {e}", exc_info=True)
                 self.analysis_stats = None
@@ -594,28 +658,80 @@ class MainWindow(QMainWindow):
             if not order_number:
                 return
 
+            from PySide6.QtWidgets import QStyle
             menu = QMenu()
-            # Dynamically create actions and connect them
-            actions = [
-                ("Change Status", lambda: self.actions_handler.toggle_fulfillment_status_for_order(order_number)),
-                ("Add Tag Manually...", lambda: self.actions_handler.add_tag_manually(order_number)),
-                ("---", None),
-                (
-                    f"Remove Item {sku} from Order",
-                    lambda: self.actions_handler.remove_item_from_order(source_index.row()),
-                ),
-                (f"Remove Entire Order {order_number}", lambda: self.actions_handler.remove_entire_order(order_number)),
-                ("---", None),
-                ("Copy Order Number", lambda: QApplication.clipboard().setText(order_number)),
-                ("Copy SKU", lambda: QApplication.clipboard().setText(sku)),
-            ]
-            for text, func in actions:
-                if text == "---":
-                    menu.addSeparator()
-                else:
-                    action = QAction(text, self)
-                    action.triggered.connect(func)
-                    menu.addAction(action)
+
+            # Add actions with icons from QStyle
+            # Change Status
+            change_status_action = QAction(
+                self.style().standardIcon(QStyle.SP_BrowserReload),
+                "Change Status",
+                self
+            )
+            change_status_action.triggered.connect(
+                lambda: self.actions_handler.toggle_fulfillment_status_for_order(order_number)
+            )
+            menu.addAction(change_status_action)
+
+            # Add Tag
+            add_tag_action = QAction(
+                self.style().standardIcon(QStyle.SP_FileDialogDetailedView),
+                "Add Tag Manually...",
+                self
+            )
+            add_tag_action.triggered.connect(
+                lambda: self.actions_handler.add_tag_manually(order_number)
+            )
+            menu.addAction(add_tag_action)
+
+            menu.addSeparator()
+
+            # Remove Item
+            remove_item_action = QAction(
+                self.style().standardIcon(QStyle.SP_DialogCancelButton),
+                f"Remove Item {sku} from Order",
+                self
+            )
+            remove_item_action.triggered.connect(
+                lambda: self.actions_handler.remove_item_from_order(source_index.row())
+            )
+            menu.addAction(remove_item_action)
+
+            # Remove Order
+            remove_order_action = QAction(
+                self.style().standardIcon(QStyle.SP_TrashIcon),
+                f"Remove Entire Order {order_number}",
+                self
+            )
+            remove_order_action.triggered.connect(
+                lambda: self.actions_handler.remove_entire_order(order_number)
+            )
+            menu.addAction(remove_order_action)
+
+            menu.addSeparator()
+
+            # Copy Order Number
+            copy_order_action = QAction(
+                self.style().standardIcon(QStyle.SP_FileDialogDetailedView),
+                "Copy Order Number",
+                self
+            )
+            copy_order_action.triggered.connect(
+                lambda: QApplication.clipboard().setText(order_number)
+            )
+            menu.addAction(copy_order_action)
+
+            # Copy SKU
+            copy_sku_action = QAction(
+                self.style().standardIcon(QStyle.SP_FileDialogDetailedView),
+                "Copy SKU",
+                self
+            )
+            copy_sku_action.triggered.connect(
+                lambda: QApplication.clipboard().setText(sku)
+            )
+            menu.addAction(copy_sku_action)
+
             menu.exec(table.viewport().mapToGlobal(pos))
 
     def closeEvent(self, event):

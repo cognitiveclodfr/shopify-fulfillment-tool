@@ -68,23 +68,28 @@ class ActionsHandler(QObject):
             session_path = self.mw.session_manager.create_session(self.mw.current_client_id)
 
             self.mw.session_path = session_path
-            session_name = os.path.basename(session_path)
-            self.mw.session_path_label.setText(f"Session: {session_name}")
 
-            # Enable file loading buttons
-            self.mw.load_orders_btn.setEnabled(True)
-            self.mw.load_stock_btn.setEnabled(True)
+            # Update session info labels
+            if hasattr(self.mw, 'update_session_info_label'):
+                self.mw.update_session_info_label()
 
             # Refresh session browser to show the new session
-            self.mw.session_browser.refresh_sessions()
+            if hasattr(self.mw, 'session_browser'):
+                self.mw.session_browser.refresh_sessions()
 
+            # Update UI state
+            if hasattr(self.mw, 'update_ui_state'):
+                self.mw.update_ui_state()
+
+            session_name = os.path.basename(session_path)
             self.mw.log_activity("Session", f"New session created: {session_name}")
             self.log.info(f"New session created: {session_path}")
 
             QMessageBox.information(
                 self.mw,
                 "Session Created",
-                f"New session created successfully:\n\n{session_name}"
+                f"New session created successfully:\n\n{session_name}\n\n"
+                f"You can now load Orders and Stock files."
             )
 
         except Exception as e:
@@ -197,6 +202,21 @@ class ActionsHandler(QObject):
             # ========================================
             # END STATISTICS RECORDING
             # ========================================
+
+            # Auto-switch to Analysis Results tab (Tab 2)
+            if hasattr(self.mw, 'main_tabs'):
+                self.mw.main_tabs.setCurrentIndex(1)
+
+            # Update UI state
+            if hasattr(self.mw, 'update_ui_state'):
+                self.mw.update_ui_state()
+
+            QMessageBox.information(
+                self.mw,
+                "Analysis Complete",
+                f"Analysis completed successfully!\n\n"
+                f"Results are now visible in the Analysis Results tab."
+            )
         else:
             self.log.error(f"Analysis failed: {result_msg}")
             QMessageBox.critical(self.mw, "Analysis Error", f"An error occurred during analysis:\n{result_msg}")
