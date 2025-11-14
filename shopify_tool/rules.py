@@ -169,11 +169,37 @@ class RuleEngine:
                     )
 
                     if matches:
-                        # Apply actions to FIRST row of this order only
-                        first_row_index = order_df.index[0]
-                        first_row_mask = pd.Series(False, index=df.index)
-                        first_row_mask[first_row_index] = True
-                        self._execute_actions(df, first_row_mask, rule.get("actions", []))
+                        # Separate actions by scope:
+                        # - ADD_TAG applies to ALL rows (for packing list filtering - don't lose unmarked items)
+                        # - ADD_ORDER_TAG, SET_PACKAGING_TAG apply to FIRST row only (for counting)
+                        actions = rule.get("actions", [])
+
+                        # Actions that apply to ALL rows in order (for filtering)
+                        apply_to_all_actions = []
+                        # Actions that apply to FIRST row only (for counting)
+                        apply_to_first_actions = []
+
+                        for action in actions:
+                            action_type = action.get("type", "").upper()
+                            if action_type == "ADD_TAG":
+                                # ADD_TAG applies to all rows for packing list filtering
+                                # This ensures all items in order are tagged, not just first row
+                                apply_to_all_actions.append(action)
+                            else:
+                                # ADD_ORDER_TAG, SET_PACKAGING_TAG, etc. apply to first row only
+                                # This ensures proper counting (one tag = one order/package)
+                                apply_to_first_actions.append(action)
+
+                        # Apply to all rows of order
+                        if apply_to_all_actions:
+                            self._execute_actions(df, order_mask, apply_to_all_actions)
+
+                        # Apply to first row only
+                        if apply_to_first_actions:
+                            first_row_index = order_df.index[0]
+                            first_row_mask = pd.Series(False, index=df.index)
+                            first_row_mask[first_row_index] = True
+                            self._execute_actions(df, first_row_mask, apply_to_first_actions)
 
         return df
 

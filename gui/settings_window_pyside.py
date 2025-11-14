@@ -322,12 +322,17 @@ class SettingsWindow(QDialog):
         level_combo.setCurrentText(config.get("level", "article"))
         level_combo.setToolTip(
             "article: Apply to each item (row) individually\n"
-            "  → Use article-level fields (SKU, Product_Name, etc.)\n\n"
-            "order: Evaluate entire order and apply to first row only\n"
+            "  → Use article-level fields (SKU, Product_Name, etc.)\n"
+            "  → All actions apply to matching rows\n\n"
+            "order: Evaluate entire order based on aggregate data\n"
             "  → Use order-level fields:\n"
             "     • item_count - number of rows in order\n"
             "     • total_quantity - sum of all quantities\n"
-            "     • has_sku - check if order contains specific SKU"
+            "     • has_sku - check if order contains specific SKU\n"
+            "  → Actions behavior:\n"
+            "     • ADD_TAG - applies to ALL rows (for filtering)\n"
+            "     • ADD_ORDER_TAG - applies to first row only (for counting)\n"
+            "     • SET_PACKAGING_TAG - applies to first row only (for counting)"
         )
         level_layout.addWidget(level_combo)
         level_layout.addStretch()
