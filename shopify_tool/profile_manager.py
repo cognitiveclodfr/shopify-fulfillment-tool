@@ -383,6 +383,49 @@ class ProfileManager:
         logger.info(f"Migration successful for CLIENT_{client_id}")
         return True
 
+    def _migrate_add_tag_categories(self, client_id: str, config: Dict) -> bool:
+        """Add tag_categories to config if missing.
+
+        Args:
+            client_id (str): Client ID (for logging)
+            config (Dict): Configuration dictionary to migrate (modified in-place)
+
+        Returns:
+            bool: True if migration was performed, False if already exists
+        """
+        if "tag_categories" in config:
+            logger.debug(f"tag_categories already exists for CLIENT_{client_id}")
+            return False
+
+        logger.info(f"Adding tag_categories to config for CLIENT_{client_id}")
+
+        # Add default tag categories
+        config["tag_categories"] = {
+            "packaging": {
+                "label": "Packaging",
+                "color": "#4CAF50",
+                "tags": ["SMALL_BAG", "LARGE_BAG", "BOX", "NO_BOX", "BOX+ANY"]
+            },
+            "priority": {
+                "label": "Priority",
+                "color": "#FF9800",
+                "tags": ["URGENT", "HIGH_VALUE", "DOUBLE_TRACK"]
+            },
+            "status": {
+                "label": "Status",
+                "color": "#2196F3",
+                "tags": ["CHECKED", "PROBLEM", "VERIFIED"]
+            },
+            "custom": {
+                "label": "Custom",
+                "color": "#9E9E9E",
+                "tags": []
+            }
+        }
+
+        logger.info(f"Tag categories added for CLIENT_{client_id}")
+        return True
+
     def _migrate_delimiter_config_v1_to_v2(self, client_id: str, config: Dict) -> bool:
         """Migrate delimiter configuration from v1 to v2 format.
 
@@ -496,7 +539,30 @@ class ProfileManager:
             "packing_list_configs": [],
             "stock_export_configs": [],
             "set_decoders": {},
-            "packaging_rules": []
+            "packaging_rules": [],
+
+            "tag_categories": {
+                "packaging": {
+                    "label": "Packaging",
+                    "color": "#4CAF50",
+                    "tags": ["SMALL_BAG", "LARGE_BAG", "BOX", "NO_BOX", "BOX+ANY"]
+                },
+                "priority": {
+                    "label": "Priority",
+                    "color": "#FF9800",
+                    "tags": ["URGENT", "HIGH_VALUE", "DOUBLE_TRACK"]
+                },
+                "status": {
+                    "label": "Status",
+                    "color": "#2196F3",
+                    "tags": ["CHECKED", "PROBLEM", "VERIFIED"]
+                },
+                "custom": {
+                    "label": "Custom",
+                    "color": "#9E9E9E",
+                    "tags": []
+                }
+            }
         }
 
     def load_client_config(self, client_id: str) -> Optional[Dict]:
@@ -562,8 +628,9 @@ class ProfileManager:
             # Check if migrations are needed
             migrated_mappings = self._migrate_column_mappings_v1_to_v2(client_id, config)
             migrated_delimiters = self._migrate_delimiter_config_v1_to_v2(client_id, config)
+            migrated_tag_categories = self._migrate_add_tag_categories(client_id, config)
 
-            if migrated_mappings or migrated_delimiters:
+            if migrated_mappings or migrated_delimiters or migrated_tag_categories:
                 # If config was migrated, save it immediately
                 self.save_shopify_config(client_id, config)
                 logger.info(f"Config migrations completed for CLIENT_{client_id}")

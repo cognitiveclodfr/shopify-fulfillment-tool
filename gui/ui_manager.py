@@ -750,7 +750,37 @@ class UIManager:
         self.mw.proxy_model.setSourceModel(source_model)
         self.mw.tableView.setModel(self.mw.proxy_model)
 
+        # Set tag delegate for Internal_Tags column if it exists
+        if "Internal_Tags" in main_df.columns:
+            from gui.tag_delegate import TagDelegate
+
+            tag_categories = self.mw.active_profile_config.get("tag_categories", {})
+            if not hasattr(self.mw, 'tag_delegate') or self.mw.tag_delegate is None:
+                self.mw.tag_delegate = TagDelegate(tag_categories, self.mw)
+
+            col_index = main_df.columns.get_loc("Internal_Tags")
+            self.mw.tableView.setItemDelegateForColumn(col_index, self.mw.tag_delegate)
+
+            # Populate tag filter combo box
+            self._populate_tag_filter()
+
         self.mw.tableView.resizeColumnsToContents()
+
+    def _populate_tag_filter(self):
+        """Populate the tag filter combo box with available tags from categories."""
+        if not hasattr(self.mw, 'tag_filter_combo'):
+            return
+
+        # Clear existing items (except "All Tags")
+        self.mw.tag_filter_combo.clear()
+        self.mw.tag_filter_combo.addItem("All Tags", None)
+
+        # Populate with all possible tags from categories
+        tag_categories = self.mw.active_profile_config.get("tag_categories", {})
+        for category, config in tag_categories.items():
+            category_label = config.get("label", category)
+            for tag in config.get("tags", []):
+                self.mw.tag_filter_combo.addItem(f"{category_label}: {tag}", tag)
 
     # ========== NEW TAB-SPECIFIC METHODS ==========
 
@@ -808,6 +838,15 @@ class UIManager:
             self.mw.style().standardIcon(QStyle.SP_DialogResetButton)
         )
         layout.addWidget(self.mw.clear_filter_button)
+
+        # Separator
+        layout.addWidget(QLabel(" | "))
+
+        # Tag filter
+        layout.addWidget(QLabel("Tag:"))
+        self.mw.tag_filter_combo = QComboBox()
+        self.mw.tag_filter_combo.addItem("All Tags", None)
+        layout.addWidget(self.mw.tag_filter_combo)
 
         return widget
 

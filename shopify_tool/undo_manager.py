@@ -145,6 +145,8 @@ class UndoManager:
                 success = self._undo_toggle_status(params, affected_rows_before)
             elif operation_type == "add_tag":
                 success = self._undo_add_tag(params, affected_rows_before)
+            elif operation_type == "add_internal_tag":
+                success = self._undo_add_internal_tag(params, affected_rows_before)
             elif operation_type == "remove_item":
                 success = self._undo_remove_item(params, affected_rows_before)
             elif operation_type == "remove_order":
@@ -243,6 +245,44 @@ class UndoManager:
 
         except Exception as e:
             self.log.error(f"Failed to undo add tag: {e}", exc_info=True)
+            return False
+
+    def _undo_add_internal_tag(self, params: Dict, affected_rows_before: pd.DataFrame) -> bool:
+        """Undo add internal tag operation.
+
+        Args:
+            params: Operation parameters
+            affected_rows_before: Rows before tag addition
+
+        Returns:
+            True if successful
+        """
+        try:
+            order_number = params["order_number"]
+
+            # Get current DataFrame
+            df = self.main_window.analysis_results_df
+
+            # Find rows for this order
+            mask = df["Order_Number"].astype(str).str.strip() == str(order_number).strip()
+
+            if not mask.any():
+                self.log.warning(f"Order {order_number} not found in DataFrame")
+                return False
+
+            # Restore Internal_Tags from before state
+            if "Internal_Tags" in affected_rows_before.columns:
+                for idx, original_idx in enumerate(df[mask].index):
+                    if idx < len(affected_rows_before):
+                        df.loc[original_idx, "Internal_Tags"] = affected_rows_before.iloc[idx]["Internal_Tags"]
+
+            self.main_window.analysis_results_df = df
+            self.log.info(f"Restored internal tags for order {order_number}")
+
+            return True
+
+        except Exception as e:
+            self.log.error(f"Failed to undo add internal tag: {e}", exc_info=True)
             return False
 
     def _undo_remove_item(self, params: Dict, affected_rows_before: pd.DataFrame) -> bool:
