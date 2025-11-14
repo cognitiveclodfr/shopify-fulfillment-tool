@@ -659,6 +659,8 @@ class ActionsHandler(QObject):
         if success:
             self.mw.analysis_results_df = updated_df
             self.data_changed.emit()
+            # Auto-save session state after modification
+            self.mw.save_session_state()
             new_status = updated_df.loc[updated_df["Order_Number"] == order_number, "Order_Fulfillment_Status"].iloc[0]
             self.mw.log_activity("Manual Edit", f"Order {order_number} status changed to '{new_status}'.")
             self.log.info(f"Order {order_number} status changed to '{new_status}'.")
@@ -689,6 +691,8 @@ class ActionsHandler(QObject):
                     new_notes = current_notes
                 self.mw.analysis_results_df.loc[index, "Status_Note"] = new_notes
             self.data_changed.emit()
+            # Auto-save session state after modification
+            self.mw.save_session_state()
             self.mw.log_activity("Manual Tag", f"Added note '{tag_to_add}' to order {order_number}.")
 
     def remove_item_from_order(self, order_number, sku):
@@ -716,6 +720,8 @@ class ActionsHandler(QObject):
 
             self.mw.analysis_results_df = self.mw.analysis_results_df[~mask].reset_index(drop=True)
             self.data_changed.emit()
+            # Auto-save session state after modification
+            self.mw.save_session_state()
             self.mw.log_activity("Data Edit", f"Removed item {sku} from order {order_number}.")
 
     def remove_entire_order(self, order_number):
@@ -738,6 +744,8 @@ class ActionsHandler(QObject):
 
             self.mw.analysis_results_df = self.mw.analysis_results_df[order_mask].reset_index(drop=True)
             self.data_changed.emit()
+            # Auto-save session state after modification
+            self.mw.save_session_state()
             self.mw.log_activity("Data Edit", f"Removed order {order_number}.")
 
     def show_add_product_dialog(self):
