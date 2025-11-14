@@ -312,21 +312,25 @@ class MainWindow(QMainWindow):
         if "Internal_Tags" not in self.analysis_results_df.columns:
             self.analysis_results_df["Internal_Tags"] = "[]"
 
-        # Get affected rows (all items in the order)
+        # Get affected rows (all items in the order) BEFORE modification
         mask = self.analysis_results_df["Order_Number"] == order_number
-        affected_rows = self.analysis_results_df[mask].copy()
-
-        # Record operation for undo
-        self.undo_manager.record_operation(
-            operation_type=f"Add Internal Tag: {tag}",
-            affected_rows=affected_rows,
-            before_state=self.analysis_results_df.copy()
-        )
+        affected_rows_before = self.analysis_results_df[mask].copy()
 
         # Update tags for all items in the order
         current_tags = self.analysis_results_df.loc[mask, "Internal_Tags"]
         new_tags = current_tags.apply(lambda t: add_tag(t, tag))
         self.analysis_results_df.loc[mask, "Internal_Tags"] = new_tags
+
+        # Record operation for undo (AFTER modification)
+        self.undo_manager.record_operation(
+            operation_type="add_internal_tag",
+            description=f"Add Internal Tag: {tag} to order {order_number}",
+            params={
+                "order_number": order_number,
+                "tag": tag
+            },
+            affected_rows_before=affected_rows_before
+        )
 
         # Save state and update UI
         self.save_session_state()
