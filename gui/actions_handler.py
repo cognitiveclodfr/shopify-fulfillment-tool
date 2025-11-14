@@ -655,13 +655,28 @@ class ActionsHandler(QObject):
         Args:
             order_number (str): The order number to modify.
         """
+        # Get affected rows BEFORE operation
+        affected_rows = self.mw.analysis_results_df[
+            self.mw.analysis_results_df["Order_Number"].astype(str).str.strip() == str(order_number).strip()
+        ].copy()
+
         success, result, updated_df = toggle_order_fulfillment(self.mw.analysis_results_df, order_number)
         if success:
             self.mw.analysis_results_df = updated_df
+            new_status = updated_df.loc[updated_df["Order_Number"] == order_number, "Order_Fulfillment_Status"].iloc[0]
+
+            # Record for undo
+            self.mw.undo_manager.record_operation(
+                "toggle_status",
+                f"Toggled order {order_number} to '{new_status}'",
+                {"order_number": order_number},
+                affected_rows
+            )
+
             self.data_changed.emit()
             # Auto-save session state after modification
             self.mw.save_session_state()
-            new_status = updated_df.loc[updated_df["Order_Number"] == order_number, "Order_Fulfillment_Status"].iloc[0]
+            self._update_undo_button()
             self.mw.log_activity("Manual Edit", f"Order {order_number} status changed to '{new_status}'.")
             self.log.info(f"Order {order_number} status changed to '{new_status}'.")
         else:
@@ -676,6 +691,11 @@ class ActionsHandler(QObject):
         """
         tag_to_add, ok = QInputDialog.getText(self.mw, "Add Manual Tag", "Enter tag to add:")
         if ok and tag_to_add:
+            # Get affected rows BEFORE operation
+            affected_rows = self.mw.analysis_results_df[
+                self.mw.analysis_results_df["Order_Number"] == order_number
+            ].copy()
+
             order_rows_indices = self.mw.analysis_results_df[
                 self.mw.analysis_results_df["Order_Number"] == order_number
             ].index
@@ -690,9 +710,19 @@ class ActionsHandler(QObject):
                 else:
                     new_notes = current_notes
                 self.mw.analysis_results_df.loc[index, "Status_Note"] = new_notes
+
+            # Record for undo
+            self.mw.undo_manager.record_operation(
+                "add_tag",
+                f"Added tag '{tag_to_add}' to order {order_number}",
+                {"order_number": order_number, "tag": tag_to_add},
+                affected_rows
+            )
+
             self.data_changed.emit()
             # Auto-save session state after modification
             self.mw.save_session_state()
+            self._update_undo_button()
             self.mw.log_activity("Manual Tag", f"Added note '{tag_to_add}' to order {order_number}.")
 
     def remove_item_from_order(self, order_number, sku):
@@ -705,7 +735,7 @@ class ActionsHandler(QObject):
         reply = QMessageBox.question(
             self.mw,
             "Confirm Delete",
-            f"Are you sure you want to remove item {sku} from order {order_number}?\nThis cannot be undone.",
+            f"Are you sure you want to remove item {sku} from order {order_number}?\nThis can be undone with Ctrl+Z.",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
@@ -718,10 +748,23 @@ class ActionsHandler(QObject):
             sku_mask = self.mw.analysis_results_df["SKU"].astype(str).str.strip() == sku_str
             mask = order_mask & sku_mask
 
+            # Get affected rows BEFORE operation
+            affected_rows = self.mw.analysis_results_df[mask].copy()
+
             self.mw.analysis_results_df = self.mw.analysis_results_df[~mask].reset_index(drop=True)
+
+            # Record for undo
+            self.mw.undo_manager.record_operation(
+                "remove_item",
+                f"Removed item {sku} from order {order_number}",
+                {"order_number": order_number, "sku": sku},
+                affected_rows
+            )
+
             self.data_changed.emit()
             # Auto-save session state after modification
             self.mw.save_session_state()
+            self._update_undo_button()
             self.mw.log_activity("Data Edit", f"Removed item {sku} from order {order_number}.")
 
     def remove_entire_order(self, order_number):
@@ -733,19 +776,35 @@ class ActionsHandler(QObject):
         reply = QMessageBox.question(
             self.mw,
             "Confirm Delete",
-            f"Are you sure you want to remove the entire order {order_number}?\nThis cannot be undone.",
+            f"Are you sure you want to remove the entire order {order_number}?\nThis can be undone with Ctrl+Z.",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
         if reply == QMessageBox.Yes:
             # Convert to string for comparison to handle int/float order numbers
             order_number_str = str(order_number).strip()
+
+            # Get affected rows BEFORE operation
+            affected_rows = self.mw.analysis_results_df[
+                self.mw.analysis_results_df["Order_Number"].astype(str).str.strip() == order_number_str
+            ].copy()
+
             order_mask = self.mw.analysis_results_df["Order_Number"].astype(str).str.strip() != order_number_str
 
             self.mw.analysis_results_df = self.mw.analysis_results_df[order_mask].reset_index(drop=True)
+
+            # Record for undo
+            self.mw.undo_manager.record_operation(
+                "remove_order",
+                f"Removed order {order_number}",
+                {"order_number": order_number},
+                affected_rows
+            )
+
             self.data_changed.emit()
             # Auto-save session state after modification
             self.mw.save_session_state()
+            self._update_undo_button()
             self.mw.log_activity("Data Edit", f"Removed order {order_number}.")
 
     def show_add_product_dialog(self):
@@ -1055,3 +1114,19 @@ class ActionsHandler(QObject):
             self.log.info(f"Saved manual addition to {additions_file}")
         except Exception as e:
             self.log.error(f"Failed to save manual additions: {e}")
+
+    def _update_undo_button(self):
+        """Update undo button state and tooltip."""
+        if hasattr(self.mw, 'undo_button'):
+            can_undo = self.mw.undo_manager.can_undo()
+            self.mw.undo_button.setEnabled(can_undo)
+
+            # Update tooltip with next undo description
+            if can_undo:
+                next_undo = self.mw.undo_manager.get_undo_description()
+                if next_undo:
+                    self.mw.undo_button.setToolTip(f"Undo: {next_undo} (Ctrl+Z)")
+                else:
+                    self.mw.undo_button.setToolTip("Undo last operation (Ctrl+Z)")
+            else:
+                self.mw.undo_button.setToolTip("Undo last operation (Ctrl+Z)")
