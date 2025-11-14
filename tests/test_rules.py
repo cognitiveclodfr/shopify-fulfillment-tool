@@ -339,17 +339,17 @@ def test_order_level_item_count(order_level_sample_df):
     engine = RuleEngine(rules)
     result_df = engine.apply(order_level_sample_df.copy())
 
-    # Order #1001 has 3 items, should get SMALL_BAG
+    # Order #1001 has 3 items, first row should get SMALL_BAG
     order_1001 = result_df[result_df["Order_Number"] == "#1001"]
-    assert all(order_1001["Packaging_Tags"] == "SMALL_BAG")
+    assert order_1001.iloc[0]["Packaging_Tags"] == "SMALL_BAG"
 
-    # Order #1002 has 2 items, should get SMALL_BAG
+    # Order #1002 has 2 items, first row should get SMALL_BAG
     order_1002 = result_df[result_df["Order_Number"] == "#1002"]
-    assert all(order_1002["Packaging_Tags"] == "SMALL_BAG")
+    assert order_1002.iloc[0]["Packaging_Tags"] == "SMALL_BAG"
 
-    # Order #1003 has 1 item, should get SMALL_BAG
+    # Order #1003 has 1 item, first row should get SMALL_BAG
     order_1003 = result_df[result_df["Order_Number"] == "#1003"]
-    assert all(order_1003["Packaging_Tags"] == "SMALL_BAG")
+    assert order_1003.iloc[0]["Packaging_Tags"] == "SMALL_BAG"
 
 
 def test_order_level_has_sku(order_level_sample_df):
@@ -372,14 +372,14 @@ def test_order_level_has_sku(order_level_sample_df):
     engine = RuleEngine(rules)
     result_df = engine.apply(order_level_sample_df.copy())
 
-    # Order #1002 has OVERSIZED_001, should get BOX and OVERSIZED tag
+    # Order #1002 has OVERSIZED_001, first row should get BOX and OVERSIZED tag
     order_1002 = result_df[result_df["Order_Number"] == "#1002"]
-    assert all(order_1002["Packaging_Tags"] == "BOX")
-    assert all(order_1002["Status_Note"].str.contains("OVERSIZED"))
+    assert order_1002.iloc[0]["Packaging_Tags"] == "BOX"
+    assert "OVERSIZED" in order_1002.iloc[0]["Status_Note"]
 
-    # Other orders should not have these
+    # Other orders should not have these (checking first row)
     order_1001 = result_df[result_df["Order_Number"] == "#1001"]
-    assert not any(order_1001["Packaging_Tags"] == "BOX")
+    assert order_1001.iloc[0]["Packaging_Tags"] != "BOX"
 
 
 def test_order_level_total_quantity(order_level_sample_df):
@@ -401,13 +401,13 @@ def test_order_level_total_quantity(order_level_sample_df):
     engine = RuleEngine(rules)
     result_df = engine.apply(order_level_sample_df.copy())
 
-    # Order #1003 has quantity=5, should get HIGH_QTY tag
+    # Order #1003 has quantity=5, first row should get HIGH_QTY tag
     order_1003 = result_df[result_df["Order_Number"] == "#1003"]
-    assert all(order_1003["Status_Note"].str.contains("HIGH_QTY"))
+    assert "HIGH_QTY" in order_1003.iloc[0]["Status_Note"]
 
     # Order #1001 has total quantity=3, should not get tag
     order_1001 = result_df[result_df["Order_Number"] == "#1001"]
-    assert not any(order_1001["Status_Note"].str.contains("HIGH_QTY"))
+    assert "HIGH_QTY" not in order_1001.iloc[0]["Status_Note"]
 
 
 def test_order_and_article_level_rules_together(order_level_sample_df):
@@ -442,8 +442,10 @@ def test_order_and_article_level_rules_together(order_level_sample_df):
     engine = RuleEngine(rules)
     result_df = engine.apply(order_level_sample_df.copy())
 
-    # All orders should have SMALL_BAG (order-level)
-    assert all(result_df["Packaging_Tags"] == "SMALL_BAG")
+    # All orders' FIRST ROW should have SMALL_BAG (order-level)
+    for order_num in result_df["Order_Number"].unique():
+        order = result_df[result_df["Order_Number"] == order_num]
+        assert order.iloc[0]["Packaging_Tags"] == "SMALL_BAG"
 
     # Only OVERSIZED_001 row should have HIGH_VALUE tag (article-level)
     high_value_rows = result_df[result_df["Status_Note"].str.contains("HIGH_VALUE", na=False)]
@@ -559,8 +561,10 @@ def test_set_packaging_tag_action(order_level_sample_df):
     # All rows should have the Packaging_Tags column
     assert "Packaging_Tags" in result_df.columns
 
-    # All rows should have TEST_TAG
-    assert all(result_df["Packaging_Tags"] == "TEST_TAG")
+    # First row of each order should have TEST_TAG
+    for order_num in result_df["Order_Number"].unique():
+        order = result_df[result_df["Order_Number"] == order_num]
+        assert order.iloc[0]["Packaging_Tags"] == "TEST_TAG"
 
 
 def test_add_order_tag_action(order_level_sample_df):
@@ -582,10 +586,14 @@ def test_add_order_tag_action(order_level_sample_df):
     engine = RuleEngine(rules)
     result_df = engine.apply(order_level_sample_df.copy())
 
-    # All rows should have ORDER_TAG in Status_Note
-    assert all(result_df["Status_Note"].str.contains("ORDER_TAG"))
+    # First row of each order should have ORDER_TAG in Status_Note
+    for order_num in result_df["Order_Number"].unique():
+        order = result_df[result_df["Order_Number"] == order_num]
+        assert "ORDER_TAG" in order.iloc[0]["Status_Note"]
 
     # Apply rules again - should not duplicate tags
     result_df2 = engine.apply(result_df)
-    for note in result_df2["Status_Note"]:
+    for order_num in result_df2["Order_Number"].unique():
+        order = result_df2[result_df2["Order_Number"] == order_num]
+        note = order.iloc[0]["Status_Note"]
         assert note.count("ORDER_TAG") == 1  # Should only appear once

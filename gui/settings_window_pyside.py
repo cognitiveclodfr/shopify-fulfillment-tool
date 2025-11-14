@@ -72,11 +72,15 @@ class SettingsWindow(QDialog):
         "Total Price",
     ]
     FILTER_OPERATORS = ["==", "!=", "in", "not in", "contains"]
-    CONDITION_FIELDS = FILTERABLE_COLUMNS + [
+    # Group order-level fields first for better UX
+    ORDER_LEVEL_FIELDS = [
+        "--- ORDER-LEVEL FIELDS ---",
         "item_count",
         "total_quantity",
         "has_sku",
+        "--- ARTICLE-LEVEL FIELDS ---",
     ]
+    CONDITION_FIELDS = ORDER_LEVEL_FIELDS + FILTERABLE_COLUMNS
     CONDITION_OPERATORS = [
         "equals",
         "does not equal",
@@ -317,8 +321,13 @@ class SettingsWindow(QDialog):
         level_combo.addItems(["article", "order"])
         level_combo.setCurrentText(config.get("level", "article"))
         level_combo.setToolTip(
-            "article: Apply to each item individually\n"
-            "order: Apply to entire order based on order contents"
+            "article: Apply to each item (row) individually\n"
+            "  → Use article-level fields (SKU, Product_Name, etc.)\n\n"
+            "order: Evaluate entire order and apply to first row only\n"
+            "  → Use order-level fields:\n"
+            "     • item_count - number of rows in order\n"
+            "     • total_quantity - sum of all quantities\n"
+            "     • has_sku - check if order contains specific SKU"
         )
         level_layout.addWidget(level_combo)
         level_layout.addStretch()
@@ -383,7 +392,19 @@ class SettingsWindow(QDialog):
             config = {}
         row_layout = QHBoxLayout()
         field_combo = QComboBox()
-        field_combo.addItems(self.CONDITION_FIELDS)
+
+        # Add fields with separators disabled
+        for field in self.CONDITION_FIELDS:
+            if field.startswith("---"):
+                # Add separator as disabled item
+                field_combo.addItem(field)
+                # Disable the separator item
+                model = field_combo.model()
+                item = model.item(field_combo.count() - 1)
+                item.setEnabled(False)
+            else:
+                field_combo.addItem(field)
+
         op_combo = QComboBox()
         op_combo.addItems(self.CONDITION_OPERATORS)
         delete_btn = QPushButton("X")
@@ -392,7 +413,16 @@ class SettingsWindow(QDialog):
         row_layout.addWidget(op_combo)
         # The value widget will be inserted at index 2 by the handler
 
-        field_combo.setCurrentText(config.get("field", self.CONDITION_FIELDS[0]))
+        # Set current text, skipping separators
+        initial_field = config.get("field", "")
+        if initial_field and not initial_field.startswith("---"):
+            field_combo.setCurrentText(initial_field)
+        elif not initial_field:
+            # Set to first non-separator field
+            for i, field in enumerate(self.CONDITION_FIELDS):
+                if not field.startswith("---"):
+                    field_combo.setCurrentIndex(i)
+                    break
         op_combo.setCurrentText(config.get("operator", self.CONDITION_OPERATORS[0]))
         initial_value = config.get("value", "")
 

@@ -169,8 +169,11 @@ class RuleEngine:
                     )
 
                     if matches:
-                        # Apply actions to ALL rows of this order
-                        self._execute_actions(df, order_mask, rule.get("actions", []))
+                        # Apply actions to FIRST row of this order only
+                        first_row_index = order_df.index[0]
+                        first_row_mask = pd.Series(False, index=df.index)
+                        first_row_mask[first_row_index] = True
+                        self._execute_actions(df, first_row_mask, rule.get("actions", []))
 
         return df
 
@@ -238,6 +241,10 @@ class RuleEngine:
             field = cond.get("field")
             operator = cond.get("operator")
             value = cond.get("value")
+
+            # Skip separator fields (from UI)
+            if field and field.startswith("---"):
+                continue
 
             if not all([field, operator, field in df.columns, operator in OPERATOR_MAP]):
                 continue
@@ -347,6 +354,10 @@ class RuleEngine:
             if not all([field, operator]):
                 continue
 
+            # Skip separator fields (from UI)
+            if field and field.startswith("---"):
+                continue
+
             # Check if this is an order-level field
             if field in self.ORDER_LEVEL_FIELDS:
                 # Calculate order-level metric
@@ -355,7 +366,11 @@ class RuleEngine:
                 field_value = calc_method(order_df, value if field == "has_sku" else None)
 
                 # Apply operator (convert to scalar comparison)
-                if operator == "equals":
+                if field == "has_sku":
+                    # For has_sku, the method returns True/False directly
+                    # operator is ignored - just use the boolean result
+                    result = field_value
+                elif operator == "equals":
                     result = (field_value == value)
                 elif operator == "does not equal":
                     result = (field_value != value)
