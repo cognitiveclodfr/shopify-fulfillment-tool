@@ -85,11 +85,29 @@ class ReportSelectionDialog(QDialog):
             filters_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
             group_layout.addWidget(filters_label)
 
-            # Display each filter
-            for filter_key, filter_value in filters.items():
-                # Format the filter nicely
-                filter_text = self._format_filter(filter_key, filter_value)
-                filter_label = QLabel(f"  • {filter_text}")
+            # Handle both dict and list formats for filters
+            if isinstance(filters, dict):
+                # Dictionary format: {key: value}
+                for filter_key, filter_value in filters.items():
+                    filter_text = self._format_filter(filter_key, filter_value)
+                    filter_label = QLabel(f"  • {filter_text}")
+                    filter_label.setWordWrap(True)
+                    filter_label.setStyleSheet("color: #555; margin-left: 10px;")
+                    group_layout.addWidget(filter_label)
+            elif isinstance(filters, list):
+                # List format: [{"field": "key", "value": "val"}, ...]
+                for filter_item in filters:
+                    if isinstance(filter_item, dict):
+                        field = filter_item.get("field", "Unknown")
+                        value = filter_item.get("value", "")
+                        filter_text = self._format_filter(field, value)
+                        filter_label = QLabel(f"  • {filter_text}")
+                        filter_label.setWordWrap(True)
+                        filter_label.setStyleSheet("color: #555; margin-left: 10px;")
+                        group_layout.addWidget(filter_label)
+            else:
+                # Unknown format - display as string
+                filter_label = QLabel(f"  • {str(filters)}")
                 filter_label.setWordWrap(True)
                 filter_label.setStyleSheet("color: #555; margin-left: 10px;")
                 group_layout.addWidget(filter_label)
