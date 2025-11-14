@@ -409,8 +409,65 @@ class MainWindow(QMainWindow):
         if reply == QMessageBox.Yes:
             self.load_existing_session(session_path)
 
+    def save_session_state(self):
+        """Save current analysis state to session directory.
+
+        Saves both pickle (fast) and Excel (backup) formats.
+        Only saves if session exists and analysis data is present.
+
+        This method is called after every DataFrame modification to ensure
+        state persistence across session reloads.
+        """
+        from pathlib import Path
+
+        # Check prerequisites
+        if not self.session_path:
+            logging.debug("No active session - skipping save_session_state")
+            return
+
+        if self.analysis_results_df is None or self.analysis_results_df.empty:
+            logging.debug("No analysis data to save - skipping save_session_state")
+            return
+
+        try:
+            session_path = Path(self.session_path)
+            analysis_dir = session_path / "analysis"
+
+            # Ensure analysis directory exists
+            analysis_dir.mkdir(parents=True, exist_ok=True)
+
+            # Define file paths
+            pkl_path = analysis_dir / "current_state.pkl"
+            xlsx_path = analysis_dir / "current_state.xlsx"
+            stats_path = analysis_dir / "analysis_stats.json"
+
+            # Save DataFrame to pickle (fast, primary format)
+            logging.info(f"Saving session state to {pkl_path}")
+            self.analysis_results_df.to_pickle(pkl_path)
+
+            # Save DataFrame to Excel (backup, human-readable)
+            logging.info(f"Saving session state backup to {xlsx_path}")
+            self.analysis_results_df.to_excel(xlsx_path, index=False)
+
+            # Save statistics to JSON
+            if self.analysis_stats:
+                logging.info(f"Saving statistics to {stats_path}")
+                with open(stats_path, 'w', encoding='utf-8') as f:
+                    json.dump(self.analysis_stats, f, indent=2, ensure_ascii=False)
+
+            logging.info("Session state saved successfully")
+
+        except Exception as e:
+            # Don't block UI if save fails - just log the error
+            logging.error(f"Failed to save session state: {e}", exc_info=True)
+
     def _load_session_analysis(self, session_path):
         """Load analysis data from session directory.
+
+        Priority order:
+        1. current_state.pkl (fastest, reflects latest modifications)
+        2. current_state.xlsx (backup if pickle corrupted)
+        3. analysis_report.xlsx (original analysis output)
 
         Args:
             session_path: Path to session directory (can be str or Path)
@@ -422,9 +479,58 @@ class MainWindow(QMainWindow):
 
         try:
             session_path = Path(session_path)
+            analysis_dir = session_path / "analysis"
 
-            # Check for analysis_data.json first
-            analysis_data_file = session_path / "analysis" / "analysis_data.json"
+            # Priority 1: Try loading from current_state.pkl
+            pkl_path = analysis_dir / "current_state.pkl"
+            if pkl_path.exists():
+                try:
+                    logging.info(f"Loading session state from pickle: {pkl_path}")
+                    self.analysis_results_df = pd.read_pickle(pkl_path)
+
+                    # Load statistics from JSON if available
+                    stats_path = analysis_dir / "analysis_stats.json"
+                    if stats_path.exists():
+                        logging.info(f"Loading statistics from: {stats_path}")
+                        with open(stats_path, 'r', encoding='utf-8') as f:
+                            self.analysis_stats = json.load(f)
+                    else:
+                        # Recalculate if stats file missing
+                        logging.info("Statistics file not found - recalculating")
+                        self.analysis_stats = recalculate_statistics(self.analysis_results_df)
+
+                    logging.info(f"Loaded {len(self.analysis_results_df)} rows from current_state.pkl")
+                    return True
+
+                except Exception as e:
+                    logging.warning(f"Failed to load pickle, trying Excel fallback: {e}")
+                    # Continue to fallback options
+
+            # Priority 2: Try loading from current_state.xlsx
+            xlsx_path = analysis_dir / "current_state.xlsx"
+            if xlsx_path.exists():
+                try:
+                    logging.info(f"Loading session state from Excel: {xlsx_path}")
+                    self.analysis_results_df = pd.read_excel(xlsx_path)
+
+                    # Load or recalculate statistics
+                    stats_path = analysis_dir / "analysis_stats.json"
+                    if stats_path.exists():
+                        with open(stats_path, 'r', encoding='utf-8') as f:
+                            self.analysis_stats = json.load(f)
+                    else:
+                        self.analysis_stats = recalculate_statistics(self.analysis_results_df)
+
+                    logging.info(f"Loaded {len(self.analysis_results_df)} rows from current_state.xlsx")
+                    return True
+
+                except Exception as e:
+                    logging.warning(f"Failed to load current_state.xlsx, trying original report: {e}")
+                    # Continue to fallback
+
+            # Priority 3: Fallback to original analysis_report.xlsx
+            # Check for analysis_data.json first (indicates analysis was completed)
+            analysis_data_file = analysis_dir / "analysis_data.json"
 
             if not analysis_data_file.exists():
                 logging.warning(f"Analysis data not found: {analysis_data_file}")
@@ -433,22 +539,22 @@ class MainWindow(QMainWindow):
             logging.info(f"Found analysis data: {analysis_data_file}")
 
             # Load the actual Excel report to get DataFrame
-            report_file = session_path / "analysis" / "fulfillment_analysis.xlsx"
+            report_file = analysis_dir / "fulfillment_analysis.xlsx"
 
             if not report_file.exists():
                 # Try alternative name
-                report_file = session_path / "analysis" / "analysis_report.xlsx"
+                report_file = analysis_dir / "analysis_report.xlsx"
 
             if not report_file.exists():
                 logging.warning(f"Analysis report not found: {report_file}")
                 return False
 
-            logging.info(f"Loading analysis from: {report_file}")
+            logging.info(f"Loading analysis from original report: {report_file}")
 
             # Load DataFrame from Excel
             self.analysis_results_df = pd.read_excel(report_file)
 
-            # Recalculate statistics
+            # Recalculate statistics (no saved stats for original report)
             self.analysis_stats = recalculate_statistics(self.analysis_results_df)
 
             logging.info(f"Loaded {len(self.analysis_results_df)} rows from session")

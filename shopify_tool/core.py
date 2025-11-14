@@ -551,6 +551,36 @@ def run_full_analysis(
                     worksheet.set_row(row_num + 1, None, highlight_format)
         logger.info(f"Excel report saved to '{output_file_path}'")
 
+        # Save initial state files (current_state.pkl, current_state.xlsx, analysis_stats.json)
+        # This allows modifications to be tracked from the start
+        if use_session_mode:
+            try:
+                logger.info("Saving initial session state files...")
+
+                # Define file paths
+                current_state_pkl = Path(analysis_dir) / "current_state.pkl"
+                current_state_xlsx = Path(analysis_dir) / "current_state.xlsx"
+                stats_json = Path(analysis_dir) / "analysis_stats.json"
+
+                # Save DataFrame to pickle (fast loading)
+                logger.info(f"Saving current_state.pkl: {current_state_pkl}")
+                final_df.to_pickle(current_state_pkl)
+
+                # Save DataFrame to Excel (backup, human-readable)
+                logger.info(f"Saving current_state.xlsx: {current_state_xlsx}")
+                final_df.to_excel(current_state_xlsx, index=False)
+
+                # Save statistics to JSON
+                logger.info(f"Saving analysis_stats.json: {stats_json}")
+                with open(stats_json, 'w', encoding='utf-8') as f:
+                    json.dump(stats, f, indent=2, ensure_ascii=False)
+
+                logger.info("Initial session state files saved successfully")
+
+            except Exception as e:
+                logger.error(f"Failed to save initial session state: {e}", exc_info=True)
+                # Continue with the workflow even if initial state save fails
+
         # 3.5. Session mode: Export analysis_data.json and update session_info
         if use_session_mode:
             try:
