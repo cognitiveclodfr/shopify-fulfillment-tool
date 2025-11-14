@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QPushButton, QLabel, QGroupBox, QWidget
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QPushButton, QLabel
 from PySide6.QtCore import Signal, Slot
 
 
@@ -33,8 +33,8 @@ class ReportSelectionDialog(QDialog):
         super().__init__(parent)
 
         self.setWindowTitle(f"Select {report_type.replace('_', ' ').title()}")
-        self.setMinimumWidth(500)
-        self.setMinimumHeight(400)
+        self.setMinimumWidth(400)
+        self.setMinimumHeight(300)
 
         layout = QVBoxLayout(self)
 
@@ -44,56 +44,72 @@ class ReportSelectionDialog(QDialog):
             layout.addWidget(no_reports_label)
         else:
             for report_config in reports_config:
-                # Create a group box for each report
-                report_widget = self._create_report_widget(report_config)
-                layout.addWidget(report_widget)
+                # Create a button for each report with tooltip
+                button = self._create_report_button(report_config)
+                layout.addWidget(button)
 
         layout.addStretch()
 
-    def _create_report_widget(self, report_config):
-        """Create a widget for a single report with button and filters display.
+    def _create_report_button(self, report_config):
+        """Create a button for a single report with tooltip showing filters.
 
         Args:
             report_config (dict): Report configuration dictionary.
 
         Returns:
-            QGroupBox: Widget containing button and filters.
+            QPushButton: Button for selecting this report.
         """
-        group = QGroupBox(report_config.get("name", "Unknown Report"))
-        group_layout = QVBoxLayout(group)
-
-        # Create select button
-        button = QPushButton("Generate This Report")
+        button_text = report_config.get("name", "Unknown Report")
+        button = QPushButton(button_text)
         button.clicked.connect(lambda checked=False, rc=report_config: self.on_report_button_clicked(rc))
+        button.setMinimumHeight(40)
+
+        # Create tooltip with filters information
+        tooltip = self._create_tooltip_text(report_config)
+        button.setToolTip(tooltip)
+
         button.setStyleSheet("""
             QPushButton {
                 background-color: #2196F3;
                 color: white;
-                padding: 8px;
+                padding: 10px;
+                font-size: 13px;
                 font-weight: bold;
+                text-align: left;
+                border: none;
+                border-radius: 4px;
             }
             QPushButton:hover {
                 background-color: #1976D2;
             }
+            QPushButton:pressed {
+                background-color: #0D47A1;
+            }
         """)
-        group_layout.addWidget(button)
 
-        # Display filters if they exist
+        return button
+
+    def _create_tooltip_text(self, report_config):
+        """Create tooltip text showing report filters.
+
+        Args:
+            report_config (dict): Report configuration dictionary.
+
+        Returns:
+            str: Formatted tooltip text with filters.
+        """
+        tooltip_lines = [f"<b>{report_config.get('name', 'Unknown Report')}</b>", ""]
+
         filters = report_config.get("filters", {})
         if filters:
-            filters_label = QLabel("Applied Filters:")
-            filters_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
-            group_layout.addWidget(filters_label)
+            tooltip_lines.append("<b>Applied Filters:</b>")
 
             # Handle both dict and list formats for filters
             if isinstance(filters, dict):
                 # Dictionary format: {key: value}
                 for filter_key, filter_value in filters.items():
                     filter_text = self._format_filter(filter_key, filter_value)
-                    filter_label = QLabel(f"  • {filter_text}")
-                    filter_label.setWordWrap(True)
-                    filter_label.setStyleSheet("color: #555; margin-left: 10px;")
-                    group_layout.addWidget(filter_label)
+                    tooltip_lines.append(f"• {filter_text}")
             elif isinstance(filters, list):
                 # List format: [{"field": "key", "value": "val"}, ...]
                 for filter_item in filters:
@@ -101,22 +117,14 @@ class ReportSelectionDialog(QDialog):
                         field = filter_item.get("field", "Unknown")
                         value = filter_item.get("value", "")
                         filter_text = self._format_filter(field, value)
-                        filter_label = QLabel(f"  • {filter_text}")
-                        filter_label.setWordWrap(True)
-                        filter_label.setStyleSheet("color: #555; margin-left: 10px;")
-                        group_layout.addWidget(filter_label)
+                        tooltip_lines.append(f"• {filter_text}")
             else:
                 # Unknown format - display as string
-                filter_label = QLabel(f"  • {str(filters)}")
-                filter_label.setWordWrap(True)
-                filter_label.setStyleSheet("color: #555; margin-left: 10px;")
-                group_layout.addWidget(filter_label)
+                tooltip_lines.append(f"• {str(filters)}")
         else:
-            no_filters_label = QLabel("No filters applied (includes all data)")
-            no_filters_label.setStyleSheet("color: gray; font-style: italic; margin-top: 5px;")
-            group_layout.addWidget(no_filters_label)
+            tooltip_lines.append("<i>No filters (includes all data)</i>")
 
-        return group
+        return "<br>".join(tooltip_lines)
 
     def _format_filter(self, filter_key, filter_value):
         """Format a filter for display.

@@ -716,7 +716,7 @@ class MainWindow(QMainWindow):
                 self
             )
             remove_item_action.triggered.connect(
-                lambda o=order_number, s=sku: self.actions_handler.remove_item_from_order(o, s)
+                lambda checked=False, o=order_number, s=sku: self.actions_handler.remove_item_from_order(o, s)
             )
             menu.addAction(remove_item_action)
 
