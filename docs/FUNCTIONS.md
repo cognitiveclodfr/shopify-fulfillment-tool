@@ -375,18 +375,46 @@ countries = get_unique_column_values(df, "Destination_Country")
 
 ### Primary Analysis Function
 
-#### `run_analysis(stock_df, orders_df, history_df)`
+#### `run_analysis(stock_df, orders_df, history_df, column_mappings=None, courier_mappings=None)`
 
 **Purpose**: Core fulfillment simulation engine that determines which orders can be fulfilled.
 
-**Location**: `shopify_tool/analysis.py:34`
+**Location**: `shopify_tool/analysis.py:77`
 
 **Parameters**:
 | Name | Type | Description |
 |------|------|-------------|
-| `stock_df` | pd.DataFrame | Stock levels (columns: 'Артикул', 'Име', 'Наличност') |
-| `orders_df` | pd.DataFrame | Order line items (columns: 'Name', 'Lineitem sku', etc.) |
+| `stock_df` | pd.DataFrame | Stock levels (will be mapped using column_mappings) |
+| `orders_df` | pd.DataFrame | Order line items (will be mapped using column_mappings) |
 | `history_df` | pd.DataFrame | Previously fulfilled orders ('Order_Number') |
+| `column_mappings` | dict \| None | Optional CSV to internal column name mappings |
+| `courier_mappings` | dict \| None | Optional courier pattern to code mappings |
+
+**Column Mappings Structure**:
+```python
+column_mappings = {
+    "orders": {
+        "Name": "Order_Number",
+        "Lineitem sku": "SKU",
+        "Lineitem quantity": "Quantity",
+        "Shipping Method": "Shipping_Method"
+    },
+    "stock": {
+        "Артикул": "SKU",
+        "Име": "Product_Name",
+        "Наличност": "Stock"
+    }
+}
+```
+
+**Courier Mappings Structure** (see `_generalize_shipping_method()` for details):
+```python
+courier_mappings = {
+    "DHL": {"patterns": ["dhl", "dhl express"]},
+    "FedEx": {"patterns": ["fedex", "federal express"]},
+    "Econt": {"patterns": ["econt"]}
+}
+```
 
 **Returns**: `tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]`
 1. **final_df**: Complete analysis with all columns
@@ -664,9 +692,9 @@ else:
 
 ### Internal Helper Functions
 
-#### `_generalize_shipping_method(method)`
+#### `_generalize_shipping_method(method, courier_mappings=None)`
 
-**Purpose**: Standardizes shipping method names to consistent carrier names.
+**Purpose**: Standardizes shipping method names to consistent carrier names using configurable mappings.
 
 **Location**: `shopify_tool/analysis.py:5`
 
@@ -674,32 +702,86 @@ else:
 | Name | Type | Description |
 |------|------|-------------|
 | `method` | str \| float | Raw shipping method from orders file |
+| `courier_mappings` | dict \| None | Optional courier mappings configuration |
 
 **Returns**: `str` - Standardized shipping provider name
 
-**Mapping Logic**:
+**Courier Mappings Formats**:
+
+The function supports two configuration formats for backward compatibility:
+
+**New Format (Preferred)**:
 ```python
-if pd.isna(method):
-    return "Unknown"
-
-method = str(method).lower()
-
-if "dhl" in method:
-    return "DHL"
-if "dpd" in method:
-    return "DPD"
-if "international shipping" in method:
-    return "PostOne"
-
-return method.title()  # Capitalize each word
+courier_mappings = {
+    "DHL": {
+        "patterns": ["dhl", "dhl express", "dhl_standard"]
+    },
+    "FedEx": {
+        "patterns": ["fedex", "federal express"]
+    },
+    "Econt": {
+        "patterns": ["econt"]
+    }
+}
 ```
 
-**Examples**:
+**Legacy Format**:
+```python
+courier_mappings = {
+    "dhl": "DHL",
+    "dpd": "DPD",
+    "speedy": "Speedy"
+}
+```
+
+**Mapping Logic**:
+```python
+# Handle NaN and empty values
+if pd.isna(method) or not str(method).strip():
+    return "Unknown"
+
+method_lower = str(method).lower()
+
+# If courier_mappings provided, use dynamic mapping
+if courier_mappings:
+    for courier_code, mapping_data in courier_mappings.items():
+        if isinstance(mapping_data, dict):
+            # New format
+            for pattern in mapping_data.get("patterns", []):
+                if pattern.lower() in method_lower:
+                    return courier_code
+        else:
+            # Legacy format
+            if courier_code.lower() in method_lower:
+                return mapping_data
+
+# Fallback to hardcoded rules if no mappings or no match
+if not courier_mappings:
+    if "dhl" in method_lower:
+        return "DHL"
+    if "dpd" in method_lower:
+        return "DPD"
+    if "international shipping" in method_lower:
+        return "PostOne"
+
+# No match found - return title-cased version
+return str(method).title()
+```
+
+**Examples with Dynamic Mappings**:
+| Input | Courier Mappings | Output |
+|-------|------------------|--------|
+| "fedex overnight" | `{"FedEx": {"patterns": ["fedex"]}}` | "FedEx" |
+| "econt express" | `{"Econt": {"patterns": ["econt"]}}` | "Econt" |
+| "dhl express" | `{"dhl": "DHL"}` (legacy) | "DHL" |
+| "custom courier" | `{}` | "Custom Courier" |
+| "dhl standard" | `None` (fallback) | "DHL" |
+
+**Examples with Fallback (No Mappings)**:
 | Input | Output |
 |-------|--------|
 | "DHL Express 12:00" | "DHL" |
-| "dhl standard" | "DHL" |
-| "DPD Economy" | "DPD" |
+| "dpd standard" | "DPD" |
 | "International Shipping" | "PostOne" |
 | "local pickup" | "Local Pickup" |
 | NaN | "Unknown" |
@@ -709,6 +791,8 @@ return method.title()  # Capitalize each word
 - Grouping orders by carrier for packing lists
 - Generating courier-specific statistics
 - Filtering orders for specific carriers
+- Supporting client-specific courier configurations
+- Enabling custom courier integrations through Settings UI
 
 ---
 

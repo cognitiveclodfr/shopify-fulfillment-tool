@@ -2,36 +2,79 @@ import pandas as pd
 import numpy as np
 
 
-def _generalize_shipping_method(method):
+def _generalize_shipping_method(method, courier_mappings=None):
     """Standardizes raw shipping method names to a consistent format.
 
     Takes a raw shipping method string, converts it to lowercase, and maps it
-    to a standardized provider name (e.g., 'dhl express' becomes 'DHL').
+    to a standardized provider name using either the provided courier_mappings
+    or hardcoded fallback rules.
+
+    The function supports two courier_mappings formats:
+    1. New format (preferred):
+       {"DHL": {"patterns": ["dhl", "dhl express"]}, "DPD": {"patterns": ["dpd"]}}
+    2. Legacy format (for backward compatibility):
+       {"dhl": "DHL", "dpd": "DPD"}
+
     If the method is not recognized, it returns a title-cased version of the
     input. Handles NaN values by returning 'Unknown'.
 
     Args:
         method (str | float): The raw shipping method from the orders file.
             Can be a float (NaN) for empty values.
+        courier_mappings (dict, optional): Dictionary mapping courier patterns to
+            standardized courier codes. If None or empty, uses hardcoded fallback
+            rules for backward compatibility.
 
     Returns:
         str: The standardized shipping provider name.
+
+    Examples:
+        >>> _generalize_shipping_method("dhl express", {"DHL": {"patterns": ["dhl"]}})
+        'DHL'
+        >>> _generalize_shipping_method("custom courier", {})
+        'Custom Courier'
+        >>> _generalize_shipping_method(None)
+        'Unknown'
     """
+    # Handle NaN and empty values
     if pd.isna(method):
         return "Unknown"
-    method = str(method).lower()
-    if not method:
+    method_str = str(method)
+    if not method_str.strip():
         return "Unknown"
-    if "dhl" in method:
-        return "DHL"
-    if "dpd" in method:
-        return "DPD"
-    if "international shipping" in method:
-        return "PostOne"
-    return method.title()
+
+    method_lower = method_str.lower()
+
+    # If courier_mappings provided and not empty, use dynamic mapping
+    if courier_mappings:
+        # Check if new format (dict of dicts with "patterns" key)
+        # or legacy format (simple dict mapping)
+        for courier_code, mapping_data in courier_mappings.items():
+            if isinstance(mapping_data, dict):
+                # New format: {"DHL": {"patterns": ["dhl", "dhl express"]}}
+                patterns = mapping_data.get("patterns", [])
+                for pattern in patterns:
+                    if pattern.lower() in method_lower:
+                        return courier_code
+            else:
+                # Legacy format: {"dhl": "DHL"}
+                # Check if the pattern (key) is in the method
+                if courier_code.lower() in method_lower:
+                    return mapping_data
+    else:
+        # Fallback to hardcoded rules for backward compatibility
+        if "dhl" in method_lower:
+            return "DHL"
+        if "dpd" in method_lower:
+            return "DPD"
+        if "international shipping" in method_lower:
+            return "PostOne"
+
+    # If no match found, return title-cased version
+    return method_str.title()
 
 
-def run_analysis(stock_df, orders_df, history_df, column_mappings=None):
+def run_analysis(stock_df, orders_df, history_df, column_mappings=None, courier_mappings=None):
     """Performs the core fulfillment analysis and simulation.
 
     This function is the heart of the fulfillment logic. It takes raw data,
@@ -65,6 +108,11 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None):
             Example: {"orders": {"Name": "Order_Number", "Lineitem sku": "SKU"},
                      "stock": {"Артикул": "SKU", "Наличност": "Stock"}}
             If None, uses default Shopify/Bulgarian mappings for backward compatibility.
+        courier_mappings (dict, optional): Dictionary mapping courier patterns to
+            standardized courier codes. Supports two formats:
+            1. New: {"DHL": {"patterns": ["dhl", "dhl express"]}}
+            2. Legacy: {"dhl": "DHL"}
+            If None or empty, uses hardcoded fallback rules for backward compatibility.
 
     Returns:
         tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
@@ -282,7 +330,9 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None):
     final_df["Stock"] = final_df["Stock"].fillna(0)
     # Use Shipping_Method with underscore (internal name)
     if "Shipping_Method" in final_df.columns:
-        final_df["Shipping_Provider"] = final_df["Shipping_Method"].apply(_generalize_shipping_method)
+        final_df["Shipping_Provider"] = final_df["Shipping_Method"].apply(
+            lambda method: _generalize_shipping_method(method, courier_mappings)
+        )
     else:
         final_df["Shipping_Provider"] = "Unknown"
     final_df["Order_Fulfillment_Status"] = final_df["Order_Number"].map(fulfillment_results)
