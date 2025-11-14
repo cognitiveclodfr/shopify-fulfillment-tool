@@ -44,21 +44,42 @@ def sample_sessions():
             "status": "active",
             "created_at": datetime.now().isoformat(),
             "analysis_completed": True,
-            "session_path": "/path/to/session1"
+            "session_path": "/path/to/session1",
+            "statistics": {
+                "total_orders": 10,
+                "total_items": 25,
+                "packing_lists_count": 2,
+                "packing_lists": ["DHL", "UPS"]
+            },
+            "comments": "Test session 1"
         },
         {
             "session_name": "2025-11-04_2",
             "status": "completed",
             "created_at": datetime.now().isoformat(),
             "analysis_completed": True,
-            "session_path": "/path/to/session2"
+            "session_path": "/path/to/session2",
+            "statistics": {
+                "total_orders": 5,
+                "total_items": 15,
+                "packing_lists_count": 1,
+                "packing_lists": ["FedEx"]
+            },
+            "comments": "Completed session"
         },
         {
             "session_name": "2025-11-04_1",
             "status": "active",
             "created_at": datetime.now().isoformat(),
             "analysis_completed": False,
-            "session_path": "/path/to/session3"
+            "session_path": "/path/to/session3",
+            "statistics": {
+                "total_orders": 0,
+                "total_items": 0,
+                "packing_lists_count": 0,
+                "packing_lists": []
+            },
+            "comments": ""
         }
     ]
 
@@ -66,7 +87,7 @@ def sample_sessions():
 def test_session_browser_initialization(session_browser):
     """Test that SessionBrowserWidget initializes correctly."""
     assert session_browser.sessions_table.rowCount() == 0
-    assert session_browser.sessions_table.columnCount() == 5
+    assert session_browser.sessions_table.columnCount() == 7
     assert not session_browser.open_btn.isEnabled()
 
 
