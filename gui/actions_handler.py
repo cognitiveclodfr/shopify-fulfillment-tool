@@ -938,7 +938,10 @@ class ActionsHandler(QObject):
         # Step 8: Emit data changed signal
         self.data_changed.emit()
 
-        # Step 9: Show success message
+        # Step 9: Auto-save session state after modification
+        self.mw.save_session_state()
+
+        # Step 10: Show success message
         QMessageBox.information(
             self.mw,
             "Product Added",
