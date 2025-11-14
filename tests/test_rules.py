@@ -299,3 +299,375 @@ def test_add_tag_to_nan_note(sample_df):
     # The note for order #1001 should now be 'NewTag'
     note = result_df.loc[result_df["Order_Number"] == "#1001", "Status_Note"].iloc[0]
     assert note == "NewTag"
+
+
+# =============================================================================
+# NEW TESTS FOR ORDER-LEVEL RULES
+# =============================================================================
+
+
+@pytest.fixture
+def order_level_sample_df():
+    """Provides a sample DataFrame for testing order-level rules."""
+    data = {
+        "Order_Number": ["#1001", "#1001", "#1001", "#1002", "#1002", "#1003"],
+        "SKU": ["HAT-001", "GLOVES-001", "SCARF-001", "OVERSIZED_001", "HAT-002", "HAT-003"],
+        "Product_Name": ["Hat", "Gloves", "Scarf", "Oversized Item", "Hat 2", "Hat 3"],
+        "Quantity": [1, 1, 1, 1, 2, 5],
+        "Total_Price": [10.0, 15.0, 12.0, 150.0, 20.0, 50.0],
+        "Status_Note": ["", "", "", "", "", ""],
+    }
+    return pd.DataFrame(data)
+
+
+def test_order_level_item_count(order_level_sample_df):
+    """Tests order-level rule with item_count condition."""
+    rules = [
+        {
+            "name": "Small bag for few items",
+            "level": "order",
+            "match": "ALL",
+            "conditions": [
+                {"field": "item_count", "operator": "is less than or equal", "value": "3"}
+            ],
+            "actions": [
+                {"type": "SET_PACKAGING_TAG", "value": "SMALL_BAG"}
+            ]
+        }
+    ]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(order_level_sample_df.copy())
+
+    # Order #1001 has 3 items, first row should get SMALL_BAG
+    order_1001 = result_df[result_df["Order_Number"] == "#1001"]
+    assert order_1001.iloc[0]["Packaging_Tags"] == "SMALL_BAG"
+
+    # Order #1002 has 2 items, first row should get SMALL_BAG
+    order_1002 = result_df[result_df["Order_Number"] == "#1002"]
+    assert order_1002.iloc[0]["Packaging_Tags"] == "SMALL_BAG"
+
+    # Order #1003 has 1 item, first row should get SMALL_BAG
+    order_1003 = result_df[result_df["Order_Number"] == "#1003"]
+    assert order_1003.iloc[0]["Packaging_Tags"] == "SMALL_BAG"
+
+
+def test_order_level_has_sku(order_level_sample_df):
+    """Tests order-level rule with has_sku condition."""
+    rules = [
+        {
+            "name": "Box for oversized",
+            "level": "order",
+            "match": "ANY",
+            "conditions": [
+                {"field": "has_sku", "operator": "equals", "value": "OVERSIZED_001"}
+            ],
+            "actions": [
+                {"type": "SET_PACKAGING_TAG", "value": "BOX"},
+                {"type": "ADD_ORDER_TAG", "value": "OVERSIZED"}
+            ]
+        }
+    ]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(order_level_sample_df.copy())
+
+    # Order #1002 has OVERSIZED_001, first row should get BOX and OVERSIZED tag
+    order_1002 = result_df[result_df["Order_Number"] == "#1002"]
+    assert order_1002.iloc[0]["Packaging_Tags"] == "BOX"
+    assert "OVERSIZED" in order_1002.iloc[0]["Status_Note"]
+
+    # Other orders should not have these (checking first row)
+    order_1001 = result_df[result_df["Order_Number"] == "#1001"]
+    assert order_1001.iloc[0]["Packaging_Tags"] != "BOX"
+
+
+def test_order_level_total_quantity(order_level_sample_df):
+    """Tests order-level rule with total_quantity condition."""
+    rules = [
+        {
+            "name": "High quantity orders",
+            "level": "order",
+            "match": "ALL",
+            "conditions": [
+                {"field": "total_quantity", "operator": "is greater than or equal", "value": "5"}
+            ],
+            "actions": [
+                {"type": "ADD_ORDER_TAG", "value": "HIGH_QTY"}
+            ]
+        }
+    ]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(order_level_sample_df.copy())
+
+    # Order #1003 has quantity=5, first row should get HIGH_QTY tag
+    order_1003 = result_df[result_df["Order_Number"] == "#1003"]
+    assert "HIGH_QTY" in order_1003.iloc[0]["Status_Note"]
+
+    # Order #1001 has total quantity=3, should not get tag
+    order_1001 = result_df[result_df["Order_Number"] == "#1001"]
+    assert "HIGH_QTY" not in order_1001.iloc[0]["Status_Note"]
+
+
+def test_order_and_article_level_rules_together(order_level_sample_df):
+    """Tests that both order-level and article-level rules work together."""
+    rules = [
+        # Order-level rule
+        {
+            "name": "Small bag for few items",
+            "level": "order",
+            "match": "ALL",
+            "conditions": [
+                {"field": "item_count", "operator": "is less than or equal", "value": "6"}
+            ],
+            "actions": [
+                {"type": "SET_PACKAGING_TAG", "value": "SMALL_BAG"}
+            ]
+        },
+        # Article-level rule
+        {
+            "name": "High value items",
+            "level": "article",
+            "match": "ALL",
+            "conditions": [
+                {"field": "Total_Price", "operator": "is greater than", "value": "100"}
+            ],
+            "actions": [
+                {"type": "ADD_TAG", "value": "HIGH_VALUE"}
+            ]
+        }
+    ]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(order_level_sample_df.copy())
+
+    # All orders' FIRST ROW should have SMALL_BAG (order-level)
+    for order_num in result_df["Order_Number"].unique():
+        order = result_df[result_df["Order_Number"] == order_num]
+        assert order.iloc[0]["Packaging_Tags"] == "SMALL_BAG"
+
+    # Only OVERSIZED_001 row should have HIGH_VALUE tag (article-level)
+    high_value_rows = result_df[result_df["Status_Note"].str.contains("HIGH_VALUE", na=False)]
+    assert len(high_value_rows) == 1
+    assert high_value_rows["SKU"].iloc[0] == "OVERSIZED_001"
+
+
+def test_new_operators_greater_than_or_equal():
+    """Tests the new >= operator."""
+    data = {
+        "Order_Number": ["#2001", "#2002", "#2003"],
+        "SKU": ["A", "B", "C"],
+        "Quantity": [3, 5, 7],
+        "Status_Note": ["", "", ""],
+    }
+    df = pd.DataFrame(data)
+
+    rules = [
+        {
+            "name": "Test >=",
+            "level": "article",
+            "match": "ALL",
+            "conditions": [
+                {"field": "Quantity", "operator": "is greater than or equal", "value": "5"}
+            ],
+            "actions": [
+                {"type": "ADD_TAG", "value": "QTY_GTE_5"}
+            ]
+        }
+    ]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    # Only rows with Quantity >= 5 should have the tag
+    assert "QTY_GTE_5" not in result_df.iloc[0]["Status_Note"]  # 3
+    assert "QTY_GTE_5" in result_df.iloc[1]["Status_Note"]  # 5
+    assert "QTY_GTE_5" in result_df.iloc[2]["Status_Note"]  # 7
+
+
+def test_new_operators_less_than_or_equal():
+    """Tests the new <= operator."""
+    data = {
+        "Order_Number": ["#2001", "#2002", "#2003"],
+        "SKU": ["A", "B", "C"],
+        "Quantity": [3, 5, 7],
+        "Status_Note": ["", "", ""],
+    }
+    df = pd.DataFrame(data)
+
+    rules = [
+        {
+            "name": "Test <=",
+            "level": "article",
+            "match": "ALL",
+            "conditions": [
+                {"field": "Quantity", "operator": "is less than or equal", "value": "5"}
+            ],
+            "actions": [
+                {"type": "ADD_TAG", "value": "QTY_LTE_5"}
+            ]
+        }
+    ]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    # Only rows with Quantity <= 5 should have the tag
+    assert "QTY_LTE_5" in result_df.iloc[0]["Status_Note"]  # 3
+    assert "QTY_LTE_5" in result_df.iloc[1]["Status_Note"]  # 5
+    assert "QTY_LTE_5" not in result_df.iloc[2]["Status_Note"]  # 7
+
+
+def test_order_level_backwards_compatibility(sample_df):
+    """Tests that rules without 'level' field default to article-level."""
+    rules = [
+        {
+            "name": "Tag DHL Orders",
+            "match": "ALL",
+            # No "level" field - should default to "article"
+            "conditions": [{"field": "Shipping_Provider", "operator": "equals", "value": "DHL"}],
+            "actions": [{"type": "ADD_TAG", "value": "DHL-SHIP"}],
+        }
+    ]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(sample_df.copy())
+
+    # Should work the same as before (article-level)
+    dhl_rows = result_df[result_df["Shipping_Provider"] == "DHL"]
+    assert all(dhl_rows["Status_Note"].str.contains("DHL-SHIP"))
+
+
+def test_set_packaging_tag_action(order_level_sample_df):
+    """Tests the SET_PACKAGING_TAG action creates and sets the column correctly."""
+    rules = [
+        {
+            "name": "Test packaging tag",
+            "level": "order",
+            "match": "ALL",
+            "conditions": [
+                {"field": "item_count", "operator": "is greater than", "value": "0"}
+            ],
+            "actions": [
+                {"type": "SET_PACKAGING_TAG", "value": "TEST_TAG"}
+            ]
+        }
+    ]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(order_level_sample_df.copy())
+
+    # All rows should have the Packaging_Tags column
+    assert "Packaging_Tags" in result_df.columns
+
+    # First row of each order should have TEST_TAG
+    for order_num in result_df["Order_Number"].unique():
+        order = result_df[result_df["Order_Number"] == order_num]
+        assert order.iloc[0]["Packaging_Tags"] == "TEST_TAG"
+
+
+def test_add_order_tag_action(order_level_sample_df):
+    """Tests the ADD_ORDER_TAG action adds tags without duplicates."""
+    rules = [
+        {
+            "name": "Test order tag",
+            "level": "order",
+            "match": "ALL",
+            "conditions": [
+                {"field": "item_count", "operator": "is greater than", "value": "0"}
+            ],
+            "actions": [
+                {"type": "ADD_ORDER_TAG", "value": "ORDER_TAG"}
+            ]
+        }
+    ]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(order_level_sample_df.copy())
+
+    # First row of each order should have ORDER_TAG in Status_Note
+    for order_num in result_df["Order_Number"].unique():
+        order = result_df[result_df["Order_Number"] == order_num]
+        assert "ORDER_TAG" in order.iloc[0]["Status_Note"]
+
+    # Apply rules again - should not duplicate tags
+    result_df2 = engine.apply(result_df)
+    for order_num in result_df2["Order_Number"].unique():
+        order = result_df2[result_df2["Order_Number"] == order_num]
+        note = order.iloc[0]["Status_Note"]
+        assert note.count("ORDER_TAG") == 1  # Should only appear once
+
+
+def test_add_tag_in_order_level_rule_applies_to_all_rows(order_level_sample_df):
+    """Tests that ADD_TAG in order-level rule applies to ALL rows of the order.
+
+    This is important for packing list filtering - we don't want to lose unmarked items.
+    """
+    rules = [
+        {
+            "name": "Tag orders with oversized items",
+            "level": "order",
+            "match": "ANY",
+            "conditions": [
+                {"field": "has_sku", "operator": "equals", "value": "OVERSIZED_001"}
+            ],
+            "actions": [
+                {"type": "ADD_TAG", "value": "HAS_OVERSIZED"}
+            ]
+        }
+    ]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(order_level_sample_df.copy())
+
+    # Order #1002 has OVERSIZED_001, so ALL its rows should have the tag
+    order_1002 = result_df[result_df["Order_Number"] == "#1002"]
+    for idx, row in order_1002.iterrows():
+        assert "HAS_OVERSIZED" in row["Status_Note"], f"Row {idx} missing HAS_OVERSIZED tag"
+
+    # Other orders should not have the tag
+    order_1001 = result_df[result_df["Order_Number"] == "#1001"]
+    for idx, row in order_1001.iterrows():
+        assert "HAS_OVERSIZED" not in row["Status_Note"], f"Row {idx} should not have HAS_OVERSIZED tag"
+
+
+def test_mixed_actions_in_order_level_rule(order_level_sample_df):
+    """Tests order-level rule with both ADD_TAG (all rows) and SET_PACKAGING_TAG (first row)."""
+    rules = [
+        {
+            "name": "Large orders get special treatment",
+            "level": "order",
+            "match": "ALL",
+            "conditions": [
+                {"field": "item_count", "operator": "is greater than or equal", "value": "3"}
+            ],
+            "actions": [
+                {"type": "ADD_TAG", "value": "LARGE_ORDER"},  # Should apply to all rows
+                {"type": "SET_PACKAGING_TAG", "value": "LARGE_BAG"},  # Should apply to first row only
+                {"type": "ADD_ORDER_TAG", "value": "BULK"}  # Should apply to first row only
+            ]
+        }
+    ]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(order_level_sample_df.copy())
+
+    # Order #1001 has 3 items - should match
+    order_1001 = result_df[result_df["Order_Number"] == "#1001"]
+
+    # ADD_TAG should be on ALL rows
+    for idx, row in order_1001.iterrows():
+        assert "LARGE_ORDER" in row["Status_Note"], f"Row {idx} missing LARGE_ORDER tag"
+
+    # SET_PACKAGING_TAG and ADD_ORDER_TAG should be on FIRST row only
+    assert order_1001.iloc[0]["Packaging_Tags"] == "LARGE_BAG"
+    assert "BULK" in order_1001.iloc[0]["Status_Note"]
+
+    # Other rows should not have packaging tag
+    for i in range(1, len(order_1001)):
+        assert order_1001.iloc[i]["Packaging_Tags"] != "LARGE_BAG"
+
+    # Order #1003 has 1 item - should NOT match
+    order_1003 = result_df[result_df["Order_Number"] == "#1003"]
+    assert "LARGE_ORDER" not in order_1003.iloc[0]["Status_Note"]
