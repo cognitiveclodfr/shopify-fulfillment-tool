@@ -103,6 +103,7 @@ class SettingsWindow(QDialog):
         "EXCLUDE_SKU",
         "SET_PACKAGING_TAG",
         "ADD_ORDER_TAG",
+        "ADD_INTERNAL_TAG",
     ]
 
     def __init__(self, client_id, client_config, profile_manager, analysis_df=None, parent=None):
@@ -332,7 +333,8 @@ class SettingsWindow(QDialog):
             "  → Actions behavior:\n"
             "     • ADD_TAG - applies to ALL rows (for filtering)\n"
             "     • ADD_ORDER_TAG - applies to first row only (for counting)\n"
-            "     • SET_PACKAGING_TAG - applies to first row only (for counting)"
+            "     • SET_PACKAGING_TAG - applies to first row only (for counting)\n"
+            "     • ADD_INTERNAL_TAG - applies to ALL rows (structured tags)"
         )
         level_layout.addWidget(level_combo)
         level_layout.addStretch()
