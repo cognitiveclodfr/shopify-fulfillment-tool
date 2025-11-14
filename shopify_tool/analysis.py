@@ -458,16 +458,25 @@ def toggle_order_fulfillment(df, order_number):
             - updated_df (pd.DataFrame): The modified DataFrame. If the toggle
               fails, this is the original, unmodified DataFrame.
     """
-    if df is None or order_number not in df["Order_Number"].values:
+    if df is None:
+        return False, "DataFrame is None.", df
+
+    # Convert order_number to string for comparison (handles int/float order numbers)
+    order_number_str = str(order_number).strip()
+    order_numbers_str = df["Order_Number"].astype(str).str.strip()
+
+    if order_number_str not in order_numbers_str.values:
         return False, "Order number not found.", df
 
     # Find current status (assuming all rows for an order have the same status)
-    current_status = df.loc[df["Order_Number"] == order_number, "Order_Fulfillment_Status"].iloc[0]
+    # Use string comparison for finding the order
+    order_mask = order_numbers_str == order_number_str
+    current_status = df.loc[order_mask, "Order_Fulfillment_Status"].iloc[0]
 
     if current_status == "Fulfillable":
         # --- Logic to UN-FULFILL an order ---
         new_status = "Not Fulfillable"
-        order_items = df.loc[df["Order_Number"] == order_number]
+        order_items = df.loc[order_mask]
 
         # Aggregate quantities for each SKU in the order
         stock_to_return = order_items.groupby("SKU")["Quantity"].sum()
@@ -478,7 +487,7 @@ def toggle_order_fulfillment(df, order_number):
     else:
         # --- Logic to FORCE-FULFILL an order ---
         new_status = "Fulfillable"
-        order_items = df.loc[df["Order_Number"] == order_number]
+        order_items = df.loc[order_mask]
         items_needed = order_items.groupby("SKU")["Quantity"].sum()
 
         # Pre-flight check for stock availability
@@ -512,6 +521,6 @@ def toggle_order_fulfillment(df, order_number):
             df.loc[df["SKU"] == sku, "Final_Stock"] -= needed_qty
 
     # Update the DataFrame with the new status
-    df.loc[df["Order_Number"] == order_number, "Order_Fulfillment_Status"] = new_status
+    df.loc[order_mask, "Order_Fulfillment_Status"] = new_status
 
     return True, None, df

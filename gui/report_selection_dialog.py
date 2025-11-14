@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QPushButton
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QPushButton, QLabel
 from PySide6.QtCore import Signal, Slot
 
 
@@ -33,19 +33,120 @@ class ReportSelectionDialog(QDialog):
         super().__init__(parent)
 
         self.setWindowTitle(f"Select {report_type.replace('_', ' ').title()}")
-        self.setMinimumWidth(300)
+        self.setMinimumWidth(400)
+        self.setMinimumHeight(300)
 
         layout = QVBoxLayout(self)
 
         if not reports_config:
-            # You can add a QLabel here to show a message
-            pass
+            no_reports_label = QLabel("No reports configured for this type.")
+            no_reports_label.setStyleSheet("color: gray; font-style: italic; padding: 20px;")
+            layout.addWidget(no_reports_label)
         else:
             for report_config in reports_config:
-                button = QPushButton(report_config.get("name", "Unknown Report"))
-                # Use a lambda to capture the specific config for this button
-                button.clicked.connect(lambda checked=False, rc=report_config: self.on_report_button_clicked(rc))
+                # Create a button for each report with tooltip
+                button = self._create_report_button(report_config)
                 layout.addWidget(button)
+
+        layout.addStretch()
+
+    def _create_report_button(self, report_config):
+        """Create a button for a single report with tooltip showing filters.
+
+        Args:
+            report_config (dict): Report configuration dictionary.
+
+        Returns:
+            QPushButton: Button for selecting this report.
+        """
+        button_text = report_config.get("name", "Unknown Report")
+        button = QPushButton(button_text)
+        button.clicked.connect(lambda checked=False, rc=report_config: self.on_report_button_clicked(rc))
+        button.setMinimumHeight(40)
+
+        # Create tooltip with filters information
+        tooltip = self._create_tooltip_text(report_config)
+        button.setToolTip(tooltip)
+
+        button.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                padding: 10px;
+                font-size: 13px;
+                font-weight: bold;
+                text-align: left;
+                border: none;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #1976D2;
+            }
+            QPushButton:pressed {
+                background-color: #0D47A1;
+            }
+        """)
+
+        return button
+
+    def _create_tooltip_text(self, report_config):
+        """Create tooltip text showing report filters.
+
+        Args:
+            report_config (dict): Report configuration dictionary.
+
+        Returns:
+            str: Formatted tooltip text with filters.
+        """
+        tooltip_lines = [f"<b>{report_config.get('name', 'Unknown Report')}</b>", ""]
+
+        filters = report_config.get("filters", {})
+        if filters:
+            tooltip_lines.append("<b>Applied Filters:</b>")
+
+            # Handle both dict and list formats for filters
+            if isinstance(filters, dict):
+                # Dictionary format: {key: value}
+                for filter_key, filter_value in filters.items():
+                    filter_text = self._format_filter(filter_key, filter_value)
+                    tooltip_lines.append(f"• {filter_text}")
+            elif isinstance(filters, list):
+                # List format: [{"field": "key", "value": "val"}, ...]
+                for filter_item in filters:
+                    if isinstance(filter_item, dict):
+                        field = filter_item.get("field", "Unknown")
+                        value = filter_item.get("value", "")
+                        filter_text = self._format_filter(field, value)
+                        tooltip_lines.append(f"• {filter_text}")
+            else:
+                # Unknown format - display as string
+                tooltip_lines.append(f"• {str(filters)}")
+        else:
+            tooltip_lines.append("<i>No filters (includes all data)</i>")
+
+        return "<br>".join(tooltip_lines)
+
+    def _format_filter(self, filter_key, filter_value):
+        """Format a filter for display.
+
+        Args:
+            filter_key (str): The filter field name.
+            filter_value: The filter value (can be str, list, etc.).
+
+        Returns:
+            str: Formatted filter string.
+        """
+        # Convert key to more readable format
+        readable_key = filter_key.replace("_", " ").title()
+
+        # Format value
+        if isinstance(filter_value, list):
+            if len(filter_value) == 1:
+                return f"{readable_key}: {filter_value[0]}"
+            else:
+                return f"{readable_key}: {', '.join(str(v) for v in filter_value)}"
+        else:
+            return f"{readable_key}: {filter_value}"
 
     @Slot(dict)
     def on_report_button_clicked(self, report_config):

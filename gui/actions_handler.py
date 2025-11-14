@@ -68,23 +68,28 @@ class ActionsHandler(QObject):
             session_path = self.mw.session_manager.create_session(self.mw.current_client_id)
 
             self.mw.session_path = session_path
-            session_name = os.path.basename(session_path)
-            self.mw.session_path_label.setText(f"Session: {session_name}")
 
-            # Enable file loading buttons
-            self.mw.load_orders_btn.setEnabled(True)
-            self.mw.load_stock_btn.setEnabled(True)
+            # Update session info labels
+            if hasattr(self.mw, 'update_session_info_label'):
+                self.mw.update_session_info_label()
 
             # Refresh session browser to show the new session
-            self.mw.session_browser.refresh_sessions()
+            if hasattr(self.mw, 'session_browser'):
+                self.mw.session_browser.refresh_sessions()
 
+            # Update UI state
+            if hasattr(self.mw, 'update_ui_state'):
+                self.mw.update_ui_state()
+
+            session_name = os.path.basename(session_path)
             self.mw.log_activity("Session", f"New session created: {session_name}")
             self.log.info(f"New session created: {session_path}")
 
             QMessageBox.information(
                 self.mw,
                 "Session Created",
-                f"New session created successfully:\n\n{session_name}"
+                f"New session created successfully:\n\n{session_name}\n\n"
+                f"You can now load Orders and Stock files."
             )
 
         except Exception as e:
@@ -197,6 +202,21 @@ class ActionsHandler(QObject):
             # ========================================
             # END STATISTICS RECORDING
             # ========================================
+
+            # Auto-switch to Analysis Results tab (Tab 2)
+            if hasattr(self.mw, 'main_tabs'):
+                self.mw.main_tabs.setCurrentIndex(1)
+
+            # Update UI state
+            if hasattr(self.mw, 'update_ui_state'):
+                self.mw.update_ui_state()
+
+            QMessageBox.information(
+                self.mw,
+                "Analysis Complete",
+                f"Analysis completed successfully!\n\n"
+                f"Results are now visible in the Analysis Results tab."
+            )
         else:
             self.log.error(f"Analysis failed: {result_msg}")
             QMessageBox.critical(self.mw, "Analysis Error", f"An error occurred during analysis:\n{result_msg}")
@@ -671,14 +691,13 @@ class ActionsHandler(QObject):
             self.data_changed.emit()
             self.mw.log_activity("Manual Tag", f"Added note '{tag_to_add}' to order {order_number}.")
 
-    def remove_item_from_order(self, row_index):
+    def remove_item_from_order(self, order_number, sku):
         """Removes a single item (a row) from the analysis DataFrame.
 
         Args:
-            row_index (int): The integer index of the row to remove.
+            order_number (str): The order number.
+            sku (str): The SKU of the item to remove.
         """
-        order_number = self.mw.analysis_results_df.iloc[row_index]["Order_Number"]
-        sku = self.mw.analysis_results_df.iloc[row_index]["SKU"]
         reply = QMessageBox.question(
             self.mw,
             "Confirm Delete",
@@ -687,8 +706,15 @@ class ActionsHandler(QObject):
             QMessageBox.No,
         )
         if reply == QMessageBox.Yes:
-            self.mw.analysis_results_df.drop(self.mw.analysis_results_df.index[row_index], inplace=True)
-            self.mw.analysis_results_df.reset_index(drop=True, inplace=True)
+            # Find and remove the specific row by order number and SKU
+            # Convert to string for comparison to handle int/float order numbers
+            order_number_str = str(order_number).strip()
+            sku_str = str(sku).strip()
+            order_mask = self.mw.analysis_results_df["Order_Number"].astype(str).str.strip() == order_number_str
+            sku_mask = self.mw.analysis_results_df["SKU"].astype(str).str.strip() == sku_str
+            mask = order_mask & sku_mask
+
+            self.mw.analysis_results_df = self.mw.analysis_results_df[~mask].reset_index(drop=True)
             self.data_changed.emit()
             self.mw.log_activity("Data Edit", f"Removed item {sku} from order {order_number}.")
 
@@ -706,9 +732,11 @@ class ActionsHandler(QObject):
             QMessageBox.No,
         )
         if reply == QMessageBox.Yes:
-            self.mw.analysis_results_df = self.mw.analysis_results_df[
-                self.mw.analysis_results_df["Order_Number"] != order_number
-            ].reset_index(drop=True)
+            # Convert to string for comparison to handle int/float order numbers
+            order_number_str = str(order_number).strip()
+            order_mask = self.mw.analysis_results_df["Order_Number"].astype(str).str.strip() != order_number_str
+
+            self.mw.analysis_results_df = self.mw.analysis_results_df[order_mask].reset_index(drop=True)
             self.data_changed.emit()
             self.mw.log_activity("Data Edit", f"Removed order {order_number}.")
 
@@ -772,18 +800,35 @@ class ActionsHandler(QObject):
             )
             return
 
-        # Create live_stock tracking dict from Final_Stock column
+        # Create live_stock tracking dict
+        # Start with base stock from stock file, then override with Final_Stock
         live_stock = {}
+
+        # First, populate with base stock quantities from stock_df
+        if "Stock" in stock_df.columns:
+            for _, row in stock_df.iterrows():
+                sku = row.get("SKU")
+                stock_qty = row.get("Stock", 0)
+                if pd.notna(sku) and pd.notna(stock_qty):
+                    try:
+                        live_stock[str(sku).strip()] = int(stock_qty)
+                    except (ValueError, TypeError):
+                        live_stock[str(sku).strip()] = 0
+            self.log.info(f"Loaded base stock for {len(live_stock)} SKUs from stock file")
+
+        # Then, override with Final_Stock values from analysis (more current)
         if "Final_Stock" in self.mw.analysis_results_df.columns:
             for _, row in self.mw.analysis_results_df.iterrows():
                 sku = row["SKU"]
                 final_stock = row["Final_Stock"]
                 if pd.notna(sku) and pd.notna(final_stock):
-                    # Use the latest Final_Stock value for each SKU
-                    live_stock[sku] = final_stock
-            self.log.info(f"Created live stock tracking: {len(live_stock)} SKUs")
+                    try:
+                        live_stock[str(sku).strip()] = int(final_stock)
+                    except (ValueError, TypeError):
+                        pass  # Keep base stock value if Final_Stock is invalid
+            self.log.info(f"Updated with Final_Stock for analysis SKUs. Total: {len(live_stock)} SKUs")
         else:
-            self.log.warning("No Final_Stock column in analysis results")
+            self.log.warning("No Final_Stock column in analysis results, using base stock only")
 
         # Show dialog
         dialog = AddProductDialog(
