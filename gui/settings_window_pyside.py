@@ -72,7 +72,11 @@ class SettingsWindow(QDialog):
         "Total Price",
     ]
     FILTER_OPERATORS = ["==", "!=", "in", "not in", "contains"]
-    CONDITION_FIELDS = FILTERABLE_COLUMNS
+    CONDITION_FIELDS = FILTERABLE_COLUMNS + [
+        "item_count",
+        "total_quantity",
+        "has_sku",
+    ]
     CONDITION_OPERATORS = [
         "equals",
         "does not equal",
@@ -80,12 +84,22 @@ class SettingsWindow(QDialog):
         "does not contain",
         "is greater than",
         "is less than",
+        "is greater than or equal",
+        "is less than or equal",
         "starts with",
         "ends with",
         "is empty",
         "is not empty",
     ]
-    ACTION_TYPES = ["ADD_TAG", "SET_STATUS", "SET_PRIORITY", "EXCLUDE_FROM_REPORT", "EXCLUDE_SKU"]
+    ACTION_TYPES = [
+        "ADD_TAG",
+        "SET_STATUS",
+        "SET_PRIORITY",
+        "EXCLUDE_FROM_REPORT",
+        "EXCLUDE_SKU",
+        "SET_PACKAGING_TAG",
+        "ADD_ORDER_TAG",
+    ]
 
     def __init__(self, client_id, client_config, profile_manager, analysis_df=None, parent=None):
         """Initializes the SettingsWindow.
@@ -284,7 +298,7 @@ class SettingsWindow(QDialog):
                 blank rule.
         """
         if not isinstance(config, dict):
-            config = {"name": "New Rule", "match": "ALL", "conditions": [], "actions": []}
+            config = {"name": "New Rule", "level": "article", "match": "ALL", "conditions": [], "actions": []}
         rule_box = QGroupBox()
         rule_layout = QVBoxLayout(rule_box)
         header_layout = QHBoxLayout()
@@ -294,6 +308,22 @@ class SettingsWindow(QDialog):
         delete_rule_btn = QPushButton("Delete Rule")
         header_layout.addWidget(delete_rule_btn)
         rule_layout.addLayout(header_layout)
+
+        # Add level selector
+        level_layout = QHBoxLayout()
+        level_layout.addWidget(QLabel("Rule Level:"))
+
+        level_combo = QComboBox()
+        level_combo.addItems(["article", "order"])
+        level_combo.setCurrentText(config.get("level", "article"))
+        level_combo.setToolTip(
+            "article: Apply to each item individually\n"
+            "order: Apply to entire order based on order contents"
+        )
+        level_layout.addWidget(level_combo)
+        level_layout.addStretch()
+
+        rule_layout.addLayout(level_layout)
         conditions_box = QGroupBox("IF")
         conditions_layout = QVBoxLayout(conditions_box)
         match_layout = QHBoxLayout()
@@ -321,6 +351,7 @@ class SettingsWindow(QDialog):
         widget_refs = {
             "group_box": rule_box,
             "name_edit": name_edit,
+            "level_combo": level_combo,
             "match_combo": match_combo,
             "conditions_layout": conditions_rows_layout,
             "actions_layout": actions_rows_layout,
@@ -1304,6 +1335,7 @@ class SettingsWindow(QDialog):
 
                 new_rules.append({
                     "name": rule_w["name_edit"].text(),
+                    "level": rule_w["level_combo"].currentText(),
                     "match": rule_w["match_combo"].currentText(),
                     "conditions": conditions,
                     "actions": actions,
