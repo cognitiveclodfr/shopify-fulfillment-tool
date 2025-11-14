@@ -17,6 +17,7 @@ from shopify_tool.utils import resource_path
 from shopify_tool.analysis import recalculate_statistics
 from shopify_tool.profile_manager import ProfileManager, NetworkError
 from shopify_tool.session_manager import SessionManager
+from shopify_tool.undo_manager import UndoManager
 from gui.log_handler import QtLogHandler
 from gui.ui_manager import UIManager
 from gui.file_handler import FileHandler
@@ -82,6 +83,9 @@ class MainWindow(QMainWindow):
 
         # Initialize new architecture managers
         self._init_managers()
+
+        # Initialize undo manager
+        self.undo_manager = UndoManager(self)
 
         # Initialize handlers
         self.ui_manager = UIManager(self)
@@ -257,9 +261,40 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+F"), self,
                   lambda: self.filter_input.setFocus())
 
+        # Add Ctrl+Z shortcut for Undo
+        QShortcut(QKeySequence("Ctrl+Z"), self, self.undo_last_operation)
+
     def clear_filter(self):
         """Clears the filter input text box."""
         self.filter_input.clear()
+
+    def undo_last_operation(self):
+        """Undo the last DataFrame modification."""
+        if not self.undo_manager.can_undo():
+            QMessageBox.information(self, "Undo", "Nothing to undo")
+            return
+
+        success, message = self.undo_manager.undo()
+
+        if success:
+            # Reload current state from undo manager's restored DataFrame
+            self._update_all_views()
+            self.log_activity("Undo", message)
+            self.save_session_state()
+
+            # Update undo button state
+            if hasattr(self, 'undo_button'):
+                self.undo_button.setEnabled(self.undo_manager.can_undo())
+                # Update tooltip with next undo description
+                next_undo = self.undo_manager.get_undo_description()
+                if next_undo:
+                    self.undo_button.setToolTip(f"Undo: {next_undo} (Ctrl+Z)")
+                else:
+                    self.undo_button.setToolTip("Undo last operation (Ctrl+Z)")
+
+            QMessageBox.information(self, "Undo", message)
+        else:
+            QMessageBox.critical(self, "Undo Failed", message)
 
     def update_session_info_label(self):
         """Update global header session info label."""

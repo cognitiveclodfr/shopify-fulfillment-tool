@@ -817,6 +817,16 @@ class UIManager:
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
 
+        # Undo button (left side)
+        self.mw.undo_button = QPushButton("↶ Undo")
+        self.mw.undo_button.setToolTip("Undo last operation (Ctrl+Z)")
+        self.mw.undo_button.setEnabled(False)  # Enabled by undo_manager
+        self.mw.undo_button.clicked.connect(self.mw.undo_last_operation)
+        layout.addWidget(self.mw.undo_button)
+
+        # Add separator
+        layout.addSpacing(20)
+
         # Add Product button (Tab 2 version - keep reference for signal connection)
         self.mw.add_product_button_tab2 = QPushButton("➕ Add Product to Order")
         self.mw.add_product_button_tab2.setEnabled(False)
