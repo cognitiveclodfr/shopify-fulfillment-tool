@@ -594,17 +594,23 @@ def run_full_analysis(
 
                 logger.info(f"analysis_data.json saved to: {analysis_data_path}")
 
-                # Update session_info.json with analysis results
+                # Update session_info.json with analysis results and statistics
                 session_manager.update_session_info(working_path, {
                     "analysis_completed": True,
                     "analysis_completed_at": datetime.now().isoformat(),
                     "total_orders": analysis_data["total_orders"],
                     "fulfillable_orders": analysis_data["fulfillable_orders"],
                     "not_fulfillable_orders": analysis_data["not_fulfillable_orders"],
-                    "analysis_report_path": "analysis/analysis_report.xlsx"
+                    "analysis_report_path": "analysis/analysis_report.xlsx",
+                    "statistics": {
+                        "total_orders": len(final_df["Order_Number"].unique()),
+                        "total_items": len(final_df),
+                        "packing_lists_count": 0,  # Updated when packing lists generated
+                        "packing_lists": []
+                    }
                 })
 
-                logger.info("Session info updated with analysis results")
+                logger.info("Session info updated with analysis results and statistics")
 
             except Exception as e:
                 logger.error(f"Failed to export analysis data: {e}", exc_info=True)

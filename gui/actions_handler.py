@@ -637,6 +637,35 @@ class ActionsHandler(QObject):
 
             self.mw.log_activity("Report", f"Generated: {report_name}")
 
+            # ========================================
+            # UPDATE SESSION STATISTICS (packing lists count)
+            # ========================================
+            if report_type == "packing_lists" and self.mw.session_path and self.mw.session_manager:
+                try:
+                    # Count existing packing lists in session
+                    packing_lists_dir = Path(session_path) / "packing_lists"
+                    if packing_lists_dir.exists():
+                        packing_lists_files = [f.stem for f in packing_lists_dir.glob("*.json")]
+
+                        # Get current statistics
+                        session_info = self.mw.session_manager.get_session_info(str(session_path))
+                        if session_info:
+                            current_stats = session_info.get("statistics", {})
+
+                            # Update packing lists count and list
+                            current_stats["packing_lists_count"] = len(packing_lists_files)
+                            current_stats["packing_lists"] = sorted(packing_lists_files)
+
+                            # Save updated statistics
+                            self.mw.session_manager.update_session_info(str(session_path), {
+                                "statistics": current_stats
+                            })
+
+                            self.log.info(f"Updated session statistics: {len(packing_lists_files)} packing lists")
+                except Exception as e:
+                    self.log.warning(f"Failed to update session statistics: {e}")
+                    # Don't fail the report if statistics update fails
+
         except Exception as e:
             self.log.error(f"Failed to generate report '{report_name}': {e}", exc_info=True)
             QMessageBox.critical(
