@@ -52,7 +52,7 @@ class SessionManager:
     SESSION_SUBDIRS = ["input", "analysis", "packing_lists", "stock_exports"]
 
     # Valid session statuses
-    VALID_STATUSES = ["active", "completed", "abandoned"]
+    VALID_STATUSES = ["active", "completed", "abandoned", "archived"]
 
     def __init__(self, profile_manager):
         """Initialize SessionManager with ProfileManager.
@@ -117,7 +117,15 @@ class SessionManager:
                 "stock_file": None,
                 "analysis_completed": False,
                 "packing_lists_generated": [],
-                "stock_exports_generated": []
+                "stock_exports_generated": [],
+                "statistics": {
+                    "total_orders": 0,
+                    "total_items": 0,
+                    "packing_lists_count": 0,
+                    "packing_lists": []
+                },
+                "comments": "",
+                "last_modified": datetime.now().isoformat()
             }
 
             session_info_path = session_path / "session_info.json"
@@ -253,6 +261,14 @@ class SessionManager:
 
             # Add full path to info
             session_info["session_path"] = str(session_path_obj)
+
+            # Calculate statistics if missing (backwards compatibility)
+            if "statistics" not in session_info:
+                session_info["statistics"] = self.calculate_session_statistics(session_path)
+
+            # Ensure comments field exists
+            if "comments" not in session_info:
+                session_info["comments"] = ""
 
             return session_info
 
@@ -427,3 +443,59 @@ class SessionManager:
         except Exception as e:
             logger.error(f"Failed to delete session: {e}")
             raise SessionManagerError(f"Failed to delete session: {e}")
+
+    def calculate_session_statistics(self, session_path: str) -> Dict:
+        """Calculate session statistics by scanning session directory.
+
+        Reads analysis_data.json for orders/items count and scans packing_lists
+        directory for generated packing lists.
+
+        Args:
+            session_path (str): Full path to session directory
+
+        Returns:
+            dict: {
+                "total_orders": int,
+                "total_items": int,
+                "packing_lists_count": int,
+                "packing_lists": list[str]
+            }
+        """
+        session_path_obj = Path(session_path)
+        statistics = {
+            "total_orders": 0,
+            "total_items": 0,
+            "packing_lists_count": 0,
+            "packing_lists": []
+        }
+
+        try:
+            # Try to read analysis_data.json for orders/items count
+            analysis_dir = session_path_obj / "analysis"
+            analysis_data_path = analysis_dir / "analysis_data.json"
+
+            if analysis_data_path.exists():
+                with open(analysis_data_path, 'r', encoding='utf-8') as f:
+                    analysis_data = json.load(f)
+
+                # Count unique orders and total items
+                if isinstance(analysis_data, list):
+                    statistics["total_items"] = len(analysis_data)
+                    # Count unique Order_Number values
+                    order_numbers = set()
+                    for item in analysis_data:
+                        if "Order_Number" in item:
+                            order_numbers.add(item["Order_Number"])
+                    statistics["total_orders"] = len(order_numbers)
+
+            # Count packing lists
+            packing_lists_dir = session_path_obj / "packing_lists"
+            if packing_lists_dir.exists():
+                packing_lists = [f.stem for f in packing_lists_dir.glob("*.json")]
+                statistics["packing_lists"] = sorted(packing_lists)
+                statistics["packing_lists_count"] = len(packing_lists)
+
+        except Exception as e:
+            logger.warning(f"Failed to calculate statistics for {session_path}: {e}")
+
+        return statistics

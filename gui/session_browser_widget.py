@@ -8,7 +8,7 @@ import logging
 from datetime import datetime
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget, QTableWidgetItem,
-    QPushButton, QComboBox, QGroupBox, QHeaderView, QMessageBox
+    QPushButton, QComboBox, QGroupBox, QHeaderView, QMessageBox, QLineEdit
 )
 from PySide6.QtCore import Signal, Qt
 
@@ -56,7 +56,7 @@ class SessionBrowserWidget(QWidget):
         filter_layout.addWidget(QLabel("Status:"))
 
         self.status_filter = QComboBox()
-        self.status_filter.addItems(["All", "Active", "Completed", "Abandoned"])
+        self.status_filter.addItems(["All", "Active", "Completed", "Abandoned", "Archived"])
         self.status_filter.setToolTip("Filter sessions by status")
         self.status_filter.currentTextChanged.connect(self._apply_filter)
         filter_layout.addWidget(self.status_filter)
@@ -72,15 +72,16 @@ class SessionBrowserWidget(QWidget):
 
         # Sessions table
         self.sessions_table = QTableWidget()
-        self.sessions_table.setColumnCount(5)
+        self.sessions_table.setColumnCount(7)
         self.sessions_table.setHorizontalHeaderLabels([
             "Session Name",
+            "Created",
             "Status",
-            "Created At",
             "Orders",
-            "Analysis Complete"
+            "Items",
+            "Packing Lists",
+            "Comments"
         ])
-        self.sessions_table.horizontalHeader().setStretchLastSection(True)
         self.sessions_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.sessions_table.setSelectionMode(QTableWidget.SingleSelection)
         self.sessions_table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -89,11 +90,19 @@ class SessionBrowserWidget(QWidget):
 
         # Set column widths
         header = self.sessions_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.Stretch)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(0, 150)  # Session Name
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(1, 150)  # Created
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(2, 100)  # Status
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(3, 80)   # Orders
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(4, 80)   # Items
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(5, 120)  # Packing Lists
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)  # Comments
 
         group_layout.addWidget(self.sessions_table)
 
@@ -162,23 +171,14 @@ class SessionBrowserWidget(QWidget):
         self.sessions_table.setRowCount(len(self.sessions_data))
 
         for row, session_info in enumerate(self.sessions_data):
-            # Session name
+            session_path = session_info.get("session_path", "")
+            stats = session_info.get("statistics", {})
+
+            # Column 0: Session name
             name_item = QTableWidgetItem(session_info.get("session_name", ""))
             self.sessions_table.setItem(row, 0, name_item)
 
-            # Status
-            status = session_info.get("status", "unknown")
-            status_item = QTableWidgetItem(status.capitalize())
-            # Color code by status
-            if status == "active":
-                status_item.setForeground(Qt.blue)
-            elif status == "completed":
-                status_item.setForeground(Qt.darkGreen)
-            elif status == "abandoned":
-                status_item.setForeground(Qt.red)
-            self.sessions_table.setItem(row, 1, status_item)
-
-            # Created at
+            # Column 1: Created at
             created_at = session_info.get("created_at", "")
             if created_at:
                 try:
@@ -189,27 +189,73 @@ class SessionBrowserWidget(QWidget):
             else:
                 created_str = ""
             created_item = QTableWidgetItem(created_str)
-            self.sessions_table.setItem(row, 2, created_item)
+            self.sessions_table.setItem(row, 1, created_item)
 
-            # Orders count (from analysis_data if available)
-            orders_count = "-"
-            # We don't have orders count in session_info by default,
-            # but could add it or read from analysis files
-            orders_item = QTableWidgetItem(orders_count)
+            # Column 2: Status (EDITABLE COMBOBOX)
+            status = session_info.get("status", "active")
+            status_combo = QComboBox()
+            status_combo.addItems(["Active", "Completed", "Abandoned", "Archived"])
+            status_combo.setCurrentText(status.capitalize())
+            # Color code by status
+            if status == "active":
+                status_combo.setStyleSheet("QComboBox { color: blue; }")
+            elif status == "completed":
+                status_combo.setStyleSheet("QComboBox { color: darkgreen; }")
+            elif status == "abandoned":
+                status_combo.setStyleSheet("QComboBox { color: red; }")
+            elif status == "archived":
+                status_combo.setStyleSheet("QComboBox { color: gray; }")
+            status_combo.currentTextChanged.connect(
+                lambda new_status, path=session_path: self._on_status_changed(path, new_status)
+            )
+            self.sessions_table.setCellWidget(row, 2, status_combo)
+
+            # Column 3: Orders (READ-ONLY)
+            orders_count = stats.get("total_orders", 0)
+            orders_item = QTableWidgetItem(str(orders_count) if orders_count > 0 else "N/A")
             orders_item.setTextAlignment(Qt.AlignCenter)
             self.sessions_table.setItem(row, 3, orders_item)
 
-            # Analysis complete
-            analysis_complete = session_info.get("analysis_completed", False)
-            complete_item = QTableWidgetItem("Yes" if analysis_complete else "No")
-            complete_item.setTextAlignment(Qt.AlignCenter)
-            if analysis_complete:
-                complete_item.setForeground(Qt.darkGreen)
-            self.sessions_table.setItem(row, 4, complete_item)
+            # Column 4: Items (READ-ONLY)
+            items_count = stats.get("total_items", 0)
+            items_item = QTableWidgetItem(str(items_count) if items_count > 0 else "N/A")
+            items_item.setTextAlignment(Qt.AlignCenter)
+            self.sessions_table.setItem(row, 4, items_item)
+
+            # Column 5: Packing Lists (READ-ONLY)
+            packing_lists_count = stats.get("packing_lists_count", 0)
+            packing_lists_item = QTableWidgetItem(str(packing_lists_count))
+            packing_lists_item.setTextAlignment(Qt.AlignCenter)
+            self.sessions_table.setItem(row, 5, packing_lists_item)
+
+            # Column 6: Comments (EDITABLE LINE EDIT)
+            comments = session_info.get("comments", "")
+            comments_edit = QLineEdit(comments)
+            comments_edit.setPlaceholderText("Add comments...")
+            comments_edit.editingFinished.connect(
+                lambda path=session_path, widget=comments_edit: self._on_comments_changed(path, widget.text())
+            )
+            self.sessions_table.setCellWidget(row, 6, comments_edit)
+
+            # Build tooltip with full info
+            packing_lists_str = ", ".join(stats.get("packing_lists", [])) or "None"
+            tooltip = f"""Session: {session_info.get('session_name', '')}
+Created: {created_str}
+Status: {status.capitalize()}
+Orders: {orders_count if orders_count > 0 else 'N/A'}
+Items: {items_count if items_count > 0 else 'N/A'}
+Packing Lists ({packing_lists_count}): {packing_lists_str}
+Comments: {comments if comments else 'None'}"""
+
+            # Apply tooltip to all cells in row
+            for col in range(7):
+                item = self.sessions_table.item(row, col)
+                if item:
+                    item.setToolTip(tooltip)
 
         self.sessions_table.setSortingEnabled(True)
         # Sort by created date descending (newest first)
-        self.sessions_table.sortItems(2, Qt.DescendingOrder)
+        self.sessions_table.sortItems(1, Qt.DescendingOrder)
 
     def _apply_filter(self):
         """Apply the status filter."""
@@ -259,3 +305,59 @@ class SessionBrowserWidget(QWidget):
 
         session_info = self.sessions_data[current_row]
         return session_info.get("session_path", "")
+
+    def _on_status_changed(self, session_path: str, new_status: str):
+        """Handle status change in table.
+
+        Args:
+            session_path: Full path to session directory
+            new_status: New status text (capitalized)
+        """
+        try:
+            # Convert to lowercase for storage
+            status = new_status.lower()
+
+            # Update session_info.json
+            self.session_manager.update_session_status(session_path, status)
+
+            logger.info(f"Updated session status: {session_path} -> {status}")
+
+        except Exception as e:
+            logger.error(f"Failed to update status: {e}")
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to update status:\n{str(e)}"
+            )
+            # Revert to previous value
+            self.refresh_sessions()
+
+    def _on_comments_changed(self, session_path: str, comments: str):
+        """Handle comments change in table.
+
+        Args:
+            session_path: Full path to session directory
+            comments: New comments text
+        """
+        try:
+            # Update session_info.json
+            self.session_manager.update_session_info(session_path, {
+                "comments": comments
+            })
+
+            logger.info(f"Updated session comments: {session_path}")
+
+        except Exception as e:
+            logger.error(f"Failed to update comments: {e}")
+            # Don't show error dialog for comments (less critical)
+            # Just log the error
+
+    def showEvent(self, event):
+        """Refresh sessions when widget becomes visible.
+
+        Args:
+            event: Show event
+        """
+        super().showEvent(event)
+        if self.current_client_id:
+            self.refresh_sessions()
