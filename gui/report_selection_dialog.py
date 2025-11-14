@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QPushButton
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QPushButton, QLabel, QGroupBox, QWidget
 from PySide6.QtCore import Signal, Slot
 
 
@@ -33,19 +33,94 @@ class ReportSelectionDialog(QDialog):
         super().__init__(parent)
 
         self.setWindowTitle(f"Select {report_type.replace('_', ' ').title()}")
-        self.setMinimumWidth(300)
+        self.setMinimumWidth(500)
+        self.setMinimumHeight(400)
 
         layout = QVBoxLayout(self)
 
         if not reports_config:
-            # You can add a QLabel here to show a message
-            pass
+            no_reports_label = QLabel("No reports configured for this type.")
+            no_reports_label.setStyleSheet("color: gray; font-style: italic; padding: 20px;")
+            layout.addWidget(no_reports_label)
         else:
             for report_config in reports_config:
-                button = QPushButton(report_config.get("name", "Unknown Report"))
-                # Use a lambda to capture the specific config for this button
-                button.clicked.connect(lambda checked=False, rc=report_config: self.on_report_button_clicked(rc))
-                layout.addWidget(button)
+                # Create a group box for each report
+                report_widget = self._create_report_widget(report_config)
+                layout.addWidget(report_widget)
+
+        layout.addStretch()
+
+    def _create_report_widget(self, report_config):
+        """Create a widget for a single report with button and filters display.
+
+        Args:
+            report_config (dict): Report configuration dictionary.
+
+        Returns:
+            QGroupBox: Widget containing button and filters.
+        """
+        group = QGroupBox(report_config.get("name", "Unknown Report"))
+        group_layout = QVBoxLayout(group)
+
+        # Create select button
+        button = QPushButton("Generate This Report")
+        button.clicked.connect(lambda checked=False, rc=report_config: self.on_report_button_clicked(rc))
+        button.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                padding: 8px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #1976D2;
+            }
+        """)
+        group_layout.addWidget(button)
+
+        # Display filters if they exist
+        filters = report_config.get("filters", {})
+        if filters:
+            filters_label = QLabel("Applied Filters:")
+            filters_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
+            group_layout.addWidget(filters_label)
+
+            # Display each filter
+            for filter_key, filter_value in filters.items():
+                # Format the filter nicely
+                filter_text = self._format_filter(filter_key, filter_value)
+                filter_label = QLabel(f"  • {filter_text}")
+                filter_label.setWordWrap(True)
+                filter_label.setStyleSheet("color: #555; margin-left: 10px;")
+                group_layout.addWidget(filter_label)
+        else:
+            no_filters_label = QLabel("No filters applied (includes all data)")
+            no_filters_label.setStyleSheet("color: gray; font-style: italic; margin-top: 5px;")
+            group_layout.addWidget(no_filters_label)
+
+        return group
+
+    def _format_filter(self, filter_key, filter_value):
+        """Format a filter for display.
+
+        Args:
+            filter_key (str): The filter field name.
+            filter_value: The filter value (can be str, list, etc.).
+
+        Returns:
+            str: Formatted filter string.
+        """
+        # Convert key to more readable format
+        readable_key = filter_key.replace("_", " ").title()
+
+        # Format value
+        if isinstance(filter_value, list):
+            if len(filter_value) == 1:
+                return f"{readable_key}: {filter_value[0]}"
+            else:
+                return f"{readable_key}: {', '.join(str(v) for v in filter_value)}"
+        else:
+            return f"{readable_key}: {filter_value}"
 
     @Slot(dict)
     def on_report_button_clicked(self, report_config):

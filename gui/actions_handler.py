@@ -691,14 +691,13 @@ class ActionsHandler(QObject):
             self.data_changed.emit()
             self.mw.log_activity("Manual Tag", f"Added note '{tag_to_add}' to order {order_number}.")
 
-    def remove_item_from_order(self, row_index):
+    def remove_item_from_order(self, order_number, sku):
         """Removes a single item (a row) from the analysis DataFrame.
 
         Args:
-            row_index (int): The integer index of the row to remove.
+            order_number (str): The order number.
+            sku (str): The SKU of the item to remove.
         """
-        order_number = self.mw.analysis_results_df.iloc[row_index]["Order_Number"]
-        sku = self.mw.analysis_results_df.iloc[row_index]["SKU"]
         reply = QMessageBox.question(
             self.mw,
             "Confirm Delete",
@@ -707,8 +706,10 @@ class ActionsHandler(QObject):
             QMessageBox.No,
         )
         if reply == QMessageBox.Yes:
-            self.mw.analysis_results_df.drop(self.mw.analysis_results_df.index[row_index], inplace=True)
-            self.mw.analysis_results_df.reset_index(drop=True, inplace=True)
+            # Find and remove the specific row by order number and SKU
+            mask = (self.mw.analysis_results_df["Order_Number"] == order_number) & \
+                   (self.mw.analysis_results_df["SKU"] == sku)
+            self.mw.analysis_results_df = self.mw.analysis_results_df[~mask].reset_index(drop=True)
             self.data_changed.emit()
             self.mw.log_activity("Data Edit", f"Removed item {sku} from order {order_number}.")
 

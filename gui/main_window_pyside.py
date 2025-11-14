@@ -286,7 +286,13 @@ class MainWindow(QMainWindow):
 
         # Session management
         self.new_session_btn.setEnabled(has_client)
-        self.settings_button.setEnabled(has_client)
+
+        # Settings button (Tab 1 version)
+        if hasattr(self, 'settings_button'):
+            self.settings_button.setEnabled(has_client)
+        # Settings button (Tab 2 version)
+        if hasattr(self, 'settings_button_tab2'):
+            self.settings_button_tab2.setEnabled(has_client)
 
         # File loading
         self.load_orders_btn.setEnabled(has_session)
@@ -297,11 +303,28 @@ class MainWindow(QMainWindow):
             has_session and has_orders and has_stock
         )
 
-        # Reports and actions
+        # Reports and actions (both Tab 1 and Tab 2 versions)
         reports_enabled = has_session and has_analysis
-        self.packing_list_button.setEnabled(reports_enabled)
-        self.stock_export_button.setEnabled(reports_enabled)
-        self.add_product_button.setEnabled(has_analysis)
+
+        # Tab 1 buttons
+        if hasattr(self, 'packing_list_button'):
+            self.packing_list_button.setEnabled(reports_enabled)
+        if hasattr(self, 'stock_export_button'):
+            self.stock_export_button.setEnabled(reports_enabled)
+        if hasattr(self, 'add_product_button'):
+            self.add_product_button.setEnabled(has_analysis)
+
+        # Tab 2 buttons
+        if hasattr(self, 'packing_list_button_tab2'):
+            self.packing_list_button_tab2.setEnabled(reports_enabled)
+        if hasattr(self, 'stock_export_button_tab2'):
+            self.stock_export_button_tab2.setEnabled(reports_enabled)
+        if hasattr(self, 'add_product_button_tab2'):
+            self.add_product_button_tab2.setEnabled(has_analysis)
+
+        # Open Session Folder button (enabled when session exists)
+        if hasattr(self, 'open_session_folder_button'):
+            self.open_session_folder_button.setEnabled(has_session)
 
         # Update status bar
         if has_analysis:
@@ -669,7 +692,7 @@ class MainWindow(QMainWindow):
                 self
             )
             change_status_action.triggered.connect(
-                lambda: self.actions_handler.toggle_fulfillment_status_for_order(order_number)
+                lambda checked=False, o=order_number: self.actions_handler.toggle_fulfillment_status_for_order(o)
             )
             menu.addAction(change_status_action)
 
@@ -680,7 +703,7 @@ class MainWindow(QMainWindow):
                 self
             )
             add_tag_action.triggered.connect(
-                lambda: self.actions_handler.add_tag_manually(order_number)
+                lambda checked=False, o=order_number: self.actions_handler.add_tag_manually(o)
             )
             menu.addAction(add_tag_action)
 
@@ -693,7 +716,7 @@ class MainWindow(QMainWindow):
                 self
             )
             remove_item_action.triggered.connect(
-                lambda: self.actions_handler.remove_item_from_order(source_index.row())
+                lambda o=order_number, s=sku: self.actions_handler.remove_item_from_order(o, s)
             )
             menu.addAction(remove_item_action)
 
@@ -704,7 +727,7 @@ class MainWindow(QMainWindow):
                 self
             )
             remove_order_action.triggered.connect(
-                lambda: self.actions_handler.remove_entire_order(order_number)
+                lambda checked=False, o=order_number: self.actions_handler.remove_entire_order(o)
             )
             menu.addAction(remove_order_action)
 
@@ -717,7 +740,7 @@ class MainWindow(QMainWindow):
                 self
             )
             copy_order_action.triggered.connect(
-                lambda: QApplication.clipboard().setText(order_number)
+                lambda checked=False, o=order_number: QApplication.clipboard().setText(str(o))
             )
             menu.addAction(copy_order_action)
 
@@ -728,7 +751,7 @@ class MainWindow(QMainWindow):
                 self
             )
             copy_sku_action.triggered.connect(
-                lambda: QApplication.clipboard().setText(sku)
+                lambda checked=False, s=sku: QApplication.clipboard().setText(str(s))
             )
             menu.addAction(copy_sku_action)
 

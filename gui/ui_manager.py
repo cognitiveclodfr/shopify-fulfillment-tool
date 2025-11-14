@@ -517,9 +517,9 @@ class UIManager:
         layout = QVBoxLayout()
         group.setLayout(layout)
 
-        self.mw.packing_list_button = QPushButton("Create Packing List")
+        self.mw.packing_list_button = QPushButton("📄 Create Packing List")
         self.mw.packing_list_button.setToolTip("Generate packing lists based on pre-defined filters.")
-        self.mw.stock_export_button = QPushButton("Create Stock Export")
+        self.mw.stock_export_button = QPushButton("📊 Create Stock Export")
         self.mw.stock_export_button.setToolTip("Generate stock export files for couriers.")
 
         self.mw.packing_list_button.setEnabled(False)
@@ -527,8 +527,51 @@ class UIManager:
 
         layout.addWidget(self.mw.packing_list_button)
         layout.addWidget(self.mw.stock_export_button)
+
+        # Add "Open Session Folder" button
+        self.mw.open_session_folder_button = QPushButton("📁 Open Session Folder")
+        self.mw.open_session_folder_button.setIcon(
+            self.mw.style().standardIcon(QStyle.SP_DirOpenIcon)
+        )
+        self.mw.open_session_folder_button.setEnabled(False)
+        self.mw.open_session_folder_button.setToolTip(
+            "Open the current session folder in file explorer"
+        )
+        self.mw.open_session_folder_button.clicked.connect(self._open_session_folder)
+        layout.addWidget(self.mw.open_session_folder_button)
+
         layout.addStretch()
         return group
+
+    def _open_session_folder(self):
+        """Open session folder in file explorer."""
+        import subprocess
+        import platform
+
+        if not self.mw.session_path:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self.mw,
+                "No Session",
+                "No session is currently active."
+            )
+            return
+
+        try:
+            system = platform.system()
+            if system == "Windows":
+                subprocess.Popen(['explorer', self.mw.session_path])
+            elif system == "Darwin":  # macOS
+                subprocess.Popen(["open", self.mw.session_path])
+            else:  # Linux
+                subprocess.Popen(["xdg-open", self.mw.session_path])
+        except Exception as e:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(
+                self.mw,
+                "Error",
+                f"Failed to open session folder:\n{str(e)}"
+            )
 
     def _create_main_actions_group(self):
         """Creates the 'Actions' QGroupBox containing the main 'Run' button."""
@@ -774,37 +817,54 @@ class UIManager:
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        # Add Product button
-        self.mw.add_product_button = QPushButton("➕ Add Product to Order")
-        self.mw.add_product_button.setEnabled(False)
-        self.mw.add_product_button.setToolTip(
+        # Add Product button (Tab 2 version - keep reference for signal connection)
+        self.mw.add_product_button_tab2 = QPushButton("➕ Add Product to Order")
+        self.mw.add_product_button_tab2.setEnabled(False)
+        self.mw.add_product_button_tab2.setToolTip(
             "Manually add a product to an existing order"
         )
-        layout.addWidget(self.mw.add_product_button)
+        # Connect to same handler as Tab 1 button
+        self.mw.add_product_button_tab2.clicked.connect(
+            lambda: self.mw.actions_handler.show_add_product_dialog()
+            if hasattr(self.mw, 'actions_handler') else None
+        )
+        layout.addWidget(self.mw.add_product_button_tab2)
 
-        # Packing List button
-        self.mw.packing_list_button = QPushButton("📄 Packing List")
-        self.mw.packing_list_button.setEnabled(False)
-        self.mw.packing_list_button.setToolTip(
+        # Packing List button (Tab 2 version)
+        self.mw.packing_list_button_tab2 = QPushButton("📄 Packing List")
+        self.mw.packing_list_button_tab2.setEnabled(False)
+        self.mw.packing_list_button_tab2.setToolTip(
             "Generate packing lists based on pre-defined filters"
         )
-        layout.addWidget(self.mw.packing_list_button)
+        self.mw.packing_list_button_tab2.clicked.connect(
+            lambda: self.mw.actions_handler.open_report_selection_dialog("packing_lists")
+            if hasattr(self.mw, 'actions_handler') else None
+        )
+        layout.addWidget(self.mw.packing_list_button_tab2)
 
-        # Stock Export button
-        self.mw.stock_export_button = QPushButton("📊 Stock Export")
-        self.mw.stock_export_button.setEnabled(False)
-        self.mw.stock_export_button.setToolTip(
+        # Stock Export button (Tab 2 version)
+        self.mw.stock_export_button_tab2 = QPushButton("📊 Stock Export")
+        self.mw.stock_export_button_tab2.setEnabled(False)
+        self.mw.stock_export_button_tab2.setToolTip(
             "Generate stock export files for couriers"
         )
-        layout.addWidget(self.mw.stock_export_button)
+        self.mw.stock_export_button_tab2.clicked.connect(
+            lambda: self.mw.actions_handler.open_report_selection_dialog("stock_exports")
+            if hasattr(self.mw, 'actions_handler') else None
+        )
+        layout.addWidget(self.mw.stock_export_button_tab2)
 
-        # Settings button
-        self.mw.settings_button = QPushButton("⚙️ Client Settings")
-        self.mw.settings_button.setEnabled(False)
-        self.mw.settings_button.setToolTip(
+        # Settings button (Tab 2 version)
+        self.mw.settings_button_tab2 = QPushButton("⚙️ Client Settings")
+        self.mw.settings_button_tab2.setEnabled(False)
+        self.mw.settings_button_tab2.setToolTip(
             "Open the settings window for the active client"
         )
-        layout.addWidget(self.mw.settings_button)
+        self.mw.settings_button_tab2.clicked.connect(
+            lambda: self.mw.actions_handler.open_settings_window()
+            if hasattr(self.mw, 'actions_handler') else None
+        )
+        layout.addWidget(self.mw.settings_button_tab2)
 
         layout.addStretch()
 
