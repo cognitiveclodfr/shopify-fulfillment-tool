@@ -298,6 +298,24 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None):
     # Initialize Source column (all orders start as "Order")
     final_df["Source"] = "Order"
 
+    # Initialize Internal_Tags column (structured tagging system)
+    final_df["Internal_Tags"] = "[]"
+
+    # Migrate Packaging_Tags to Internal_Tags if it exists
+    if "Packaging_Tags" in final_df.columns:
+        from shopify_tool.tag_manager import add_tag
+
+        logger.info("Migrating Packaging_Tags to Internal_Tags")
+        for idx, row in final_df.iterrows():
+            packaging_tag = row["Packaging_Tags"]
+            if pd.notna(packaging_tag) and packaging_tag != "":
+                # Add packaging tag to Internal_Tags
+                final_df.loc[idx, "Internal_Tags"] = add_tag(
+                    final_df.loc[idx, "Internal_Tags"],
+                    str(packaging_tag)
+                )
+        logger.info("Packaging_Tags migration completed")
+
     output_columns = [
         "Order_Number",
         "Order_Type",
@@ -317,6 +335,7 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None):
         "Notes",
         "System_note",
         "Status_Note",
+        "Internal_Tags",  # NEW: Structured tagging system
     ]
     if "Total_Price" in final_df.columns:
         # Insert 'Total_Price' into the list at a specific position for consistent column order.

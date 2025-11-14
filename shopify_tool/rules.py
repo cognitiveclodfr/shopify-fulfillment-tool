@@ -228,6 +228,8 @@ class RuleEngine:
                     needed_columns.add("Status_Note")
                 elif action_type == "SET_PACKAGING_TAG":
                     needed_columns.add("Packaging_Tags")
+                elif action_type == "ADD_INTERNAL_TAG":
+                    needed_columns.add("Internal_Tags")
 
         # Add only the necessary columns if they don't already exist
         if "Priority" in needed_columns and "Priority" not in df.columns:
@@ -238,6 +240,8 @@ class RuleEngine:
             df["Status_Note"] = ""
         if "Packaging_Tags" in needed_columns and "Packaging_Tags" not in df.columns:
             df["Packaging_Tags"] = ""
+        if "Internal_Tags" in needed_columns and "Internal_Tags" not in df.columns:
+            df["Internal_Tags"] = "[]"
 
     def _get_matching_rows(self, df, rule):
         """Evaluates a rule's conditions and finds all matching rows.
@@ -335,6 +339,14 @@ class RuleEngine:
             elif action_type == "SET_PACKAGING_TAG":
                 # Set packaging tag (overwrite existing)
                 df.loc[matches, "Packaging_Tags"] = value
+
+            elif action_type == "ADD_INTERNAL_TAG":
+                # Add tag to Internal_Tags column using tag_manager
+                from shopify_tool.tag_manager import add_tag
+
+                current_tags = df.loc[matches, "Internal_Tags"]
+                new_tags = current_tags.apply(lambda t: add_tag(t, value))
+                df.loc[matches, "Internal_Tags"] = new_tags
 
             elif action_type == "SET_STATUS":
                 df.loc[matches, "Order_Fulfillment_Status"] = value

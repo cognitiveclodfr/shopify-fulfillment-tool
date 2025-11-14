@@ -250,6 +250,7 @@ class MainWindow(QMainWindow):
         self.filter_column_selector.currentIndexChanged.connect(self.filter_table)
         self.case_sensitive_checkbox.stateChanged.connect(self.filter_table)
         self.clear_filter_button.clicked.connect(self.clear_filter)
+        self.tag_filter_combo.currentIndexChanged.connect(self.filter_table)
 
         # Add Ctrl+R shortcut for Run Analysis
         from PySide6.QtGui import QShortcut, QKeySequence
@@ -265,8 +266,10 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+Z"), self, self.undo_last_operation)
 
     def clear_filter(self):
-        """Clears the filter input text box."""
+        """Clears the filter input text box and tag filter."""
         self.filter_input.clear()
+        if hasattr(self, 'tag_filter_combo'):
+            self.tag_filter_combo.setCurrentIndex(0)  # Reset to "All Tags"
 
     def undo_last_operation(self):
         """Undo the last DataFrame modification."""
@@ -295,6 +298,45 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Undo", message)
         else:
             QMessageBox.critical(self, "Undo Failed", message)
+
+    def _add_internal_tag(self, order_number: str, tag: str):
+        """Add internal tag to all items in an order.
+
+        Args:
+            order_number: Order number to tag
+            tag: Tag to add
+        """
+        from shopify_tool.tag_manager import add_tag
+
+        # Ensure Internal_Tags column exists
+        if "Internal_Tags" not in self.analysis_results_df.columns:
+            self.analysis_results_df["Internal_Tags"] = "[]"
+
+        # Get affected rows (all items in the order)
+        mask = self.analysis_results_df["Order_Number"] == order_number
+        affected_rows = self.analysis_results_df[mask].copy()
+
+        # Record operation for undo
+        self.undo_manager.record_operation(
+            operation_type=f"Add Internal Tag: {tag}",
+            affected_rows=affected_rows,
+            before_state=self.analysis_results_df.copy()
+        )
+
+        # Update tags for all items in the order
+        current_tags = self.analysis_results_df.loc[mask, "Internal_Tags"]
+        new_tags = current_tags.apply(lambda t: add_tag(t, tag))
+        self.analysis_results_df.loc[mask, "Internal_Tags"] = new_tags
+
+        # Save state and update UI
+        self.save_session_state()
+        self._update_all_views()
+        self.log_activity("Internal Tag", f"Added '{tag}' to order {order_number}")
+
+        # Update undo button
+        if hasattr(self, 'undo_button'):
+            self.undo_button.setEnabled(True)
+            self.undo_button.setToolTip(f"Undo: Add Internal Tag: {tag} (Ctrl+Z)")
 
     def update_session_info_label(self):
         """Update global header session info label."""
@@ -662,17 +704,39 @@ class MainWindow(QMainWindow):
         from the UI controls and applies them to the `QSortFilterProxyModel`
         to update the visible rows in the table.
         """
-        text = self.filter_input.text()
-        column_index = self.filter_column_selector.currentIndex()
+        # Check if tag filter is active
+        selected_tag = None
+        if hasattr(self, 'tag_filter_combo'):
+            selected_tag = self.tag_filter_combo.currentData()
 
-        # First item is "All Columns", so filter should be -1
-        filter_column = column_index - 1
+        if selected_tag:
+            # Tag filter is active - filter by Internal_Tags column
+            # Find the Internal_Tags column index
+            if self.analysis_results_df is not None and "Internal_Tags" in self.analysis_results_df.columns:
+                col_index = self.analysis_results_df.columns.get_loc("Internal_Tags")
 
-        case_sensitivity = Qt.CaseSensitive if self.case_sensitive_checkbox.isChecked() else Qt.CaseInsensitive
+                # Use JSON-formatted tag as filter pattern (e.g., "URGENT")
+                # This will match if the tag appears in the JSON array
+                self.proxy_model.setFilterKeyColumn(col_index)
+                self.proxy_model.setFilterCaseSensitivity(Qt.CaseSensitive)
+                # Use regex pattern to match the tag within the JSON array
+                # Pattern: "TAGNAME" (with quotes, as it appears in JSON)
+                import re
+                pattern = f'"{re.escape(selected_tag)}"'
+                self.proxy_model.setFilterRegularExpression(pattern)
+        else:
+            # Regular text filter
+            text = self.filter_input.text()
+            column_index = self.filter_column_selector.currentIndex()
 
-        self.proxy_model.setFilterKeyColumn(filter_column)
-        self.proxy_model.setFilterCaseSensitivity(case_sensitivity)
-        self.proxy_model.setFilterRegularExpression(text)
+            # First item is "All Columns", so filter should be -1
+            filter_column = column_index - 1
+
+            case_sensitivity = Qt.CaseSensitive if self.case_sensitive_checkbox.isChecked() else Qt.CaseInsensitive
+
+            self.proxy_model.setFilterKeyColumn(filter_column)
+            self.proxy_model.setFilterCaseSensitivity(case_sensitivity)
+            self.proxy_model.setFilterRegularExpression(text)
 
     def _update_all_views(self):
         """Central slot to refresh all UI components after data changes.
@@ -847,6 +911,24 @@ class MainWindow(QMainWindow):
                 lambda checked=False, o=order_number: self.actions_handler.add_tag_manually(o)
             )
             menu.addAction(add_tag_action)
+
+            # Internal Tags submenu
+            tags_menu = menu.addMenu("Internal Tags")
+            tags_menu.setIcon(self.style().standardIcon(QStyle.SP_FileDialogDetailedView))
+
+            # Get tag categories from config
+            tag_categories = self.active_profile_config.get("tag_categories", {})
+
+            for category, config in tag_categories.items():
+                category_label = config.get("label", category)
+                category_menu = tags_menu.addMenu(category_label)
+
+                for tag in config.get("tags", []):
+                    add_tag_action = QAction(f"Add {tag}", self)
+                    add_tag_action.triggered.connect(
+                        lambda checked=False, o=order_number, t=tag: self._add_internal_tag(o, t)
+                    )
+                    category_menu.addAction(add_tag_action)
 
             menu.addSeparator()
 
