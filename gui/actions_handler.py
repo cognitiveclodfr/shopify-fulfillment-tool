@@ -692,7 +692,17 @@ class ActionsHandler(QObject):
         success, result, updated_df = toggle_order_fulfillment(self.mw.analysis_results_df, order_number)
         if success:
             self.mw.analysis_results_df = updated_df
-            new_status = updated_df.loc[updated_df["Order_Number"] == order_number, "Order_Fulfillment_Status"].iloc[0]
+
+            # Use consistent filtering approach with type conversion and strip
+            mask = updated_df["Order_Number"].astype(str).str.strip() == str(order_number).strip()
+            matching_rows = updated_df.loc[mask, "Order_Fulfillment_Status"]
+
+            if matching_rows.empty:
+                self.log.error(f"Order {order_number} not found after toggle operation")
+                QMessageBox.critical(self.mw, "Error", f"Order {order_number} not found after status change")
+                return
+
+            new_status = matching_rows.iloc[0]
 
             # Record for undo
             self.mw.undo_manager.record_operation(
