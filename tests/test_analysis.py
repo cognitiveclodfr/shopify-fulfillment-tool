@@ -29,7 +29,7 @@ from shopify_tool.analysis import _generalize_shipping_method, run_analysis, tog
 )
 def test_generalize_shipping_method(input_method, expected_output):
     """
-    Tests the _generalize_shipping_method function with various inputs.
+    Tests the _generalize_shipping_method function with various inputs using hardcoded fallback.
 
     Args:
         input_method (str or None): The raw shipping method string to test.
@@ -38,6 +38,149 @@ def test_generalize_shipping_method(input_method, expected_output):
     # The assert statement checks if the function's output matches the expected output.
     # If they don't match, pytest will report a failure.
     assert _generalize_shipping_method(input_method) == expected_output
+
+
+# Test cases for _generalize_shipping_method with courier_mappings parameter
+@pytest.mark.parametrize(
+    "input_method, courier_mappings, expected_output",
+    [
+        # New format tests
+        ("dhl express", {"DHL": {"patterns": ["dhl"]}}, "DHL"),
+        ("DHL Standard", {"DHL": {"patterns": ["dhl", "dhl express"]}}, "DHL"),
+        ("dpd next day", {"DPD": {"patterns": ["dpd"]}}, "DPD"),
+        ("speedy delivery", {"Speedy": {"patterns": ["speedy"]}}, "Speedy"),
+        ("fedex overnight", {"FedEx": {"patterns": ["fedex", "federal express"]}}, "FedEx"),
+        # Legacy format tests
+        ("dhl express", {"dhl": "DHL", "dpd": "DPD"}, "DHL"),
+        ("dpd standard", {"dhl": "DHL", "dpd": "DPD"}, "DPD"),
+        ("speedy delivery", {"speedy": "Speedy"}, "Speedy"),
+        # Custom couriers
+        ("econt express", {"Econt": {"patterns": ["econt"]}}, "Econt"),
+        ("my custom courier", {"CustomCo": {"patterns": ["custom"]}}, "CustomCo"),
+        # Fallback for unknown couriers
+        ("unknown courier", {"DHL": {"patterns": ["dhl"]}}, "Unknown Courier"),
+        ("random service", {}, "Random Service"),
+        # NaN and empty values
+        (None, {"DHL": {"patterns": ["dhl"]}}, "Unknown"),
+        (pd.NA, {"DHL": {"patterns": ["dhl"]}}, "Unknown"),
+        ("", {"DHL": {"patterns": ["dhl"]}}, "Unknown"),
+        ("  ", {"DHL": {"patterns": ["dhl"]}}, "Unknown"),
+        # Empty courier_mappings should fall back to hardcoded rules
+        ("dhl express", {}, "DHL"),
+        ("dpd standard", {}, "DPD"),
+        ("international shipping", {}, "PostOne"),
+        ("custom method", {}, "Custom Method"),
+    ],
+)
+def test_generalize_shipping_method_with_mappings(input_method, courier_mappings, expected_output):
+    """
+    Tests the _generalize_shipping_method function with courier_mappings parameter.
+
+    Args:
+        input_method (str or None): The raw shipping method string to test.
+        courier_mappings (dict): The courier mappings configuration.
+        expected_output (str): The expected standardized string.
+    """
+    assert _generalize_shipping_method(input_method, courier_mappings) == expected_output
+
+
+def test_run_analysis_with_courier_mappings():
+    """Tests that run_analysis correctly uses courier_mappings parameter."""
+    # Create test data
+    stock_df = pd.DataFrame({"Артикул": ["SKU-1"], "Име": ["Test Product"], "Наличност": [10]})
+
+    orders_df = pd.DataFrame(
+        {
+            "Name": ["1001", "1002", "1003"],
+            "Lineitem sku": ["SKU-1", "SKU-1", "SKU-1"],
+            "Lineitem quantity": [1, 1, 1],
+            "Shipping Method": ["fedex overnight", "econt express", "custom delivery"],
+            "Shipping Country": ["US", "BG", "UK"],
+            "Tags": ["", "", ""],
+            "Notes": ["", "", ""],
+        }
+    )
+
+    history_df = pd.DataFrame(columns=["Order_Number", "Execution_Date"])
+
+    # Define custom courier mappings (new format)
+    courier_mappings = {
+        "FedEx": {"patterns": ["fedex", "federal express"]},
+        "Econt": {"patterns": ["econt"]},
+        "CustomCo": {"patterns": ["custom"]}
+    }
+
+    # Run analysis with courier mappings
+    final_df, _, _, _ = run_analysis(stock_df, orders_df, history_df, None, courier_mappings)
+
+    # Check that shipping providers are correctly mapped
+    providers = final_df.set_index("Order_Number")["Shipping_Provider"]
+    assert providers["1001"] == "FedEx"
+    assert providers["1002"] == "Econt"
+    assert providers["1003"] == "CustomCo"
+
+
+def test_run_analysis_with_legacy_courier_mappings():
+    """Tests that run_analysis correctly uses legacy courier_mappings format."""
+    # Create test data
+    stock_df = pd.DataFrame({"Артикул": ["SKU-1"], "Име": ["Test Product"], "Наличност": [10]})
+
+    orders_df = pd.DataFrame(
+        {
+            "Name": ["1001", "1002"],
+            "Lineitem sku": ["SKU-1", "SKU-1"],
+            "Lineitem quantity": [1, 1],
+            "Shipping Method": ["dhl express", "speedy delivery"],
+            "Shipping Country": ["DE", "BG"],
+            "Tags": ["", ""],
+            "Notes": ["", ""],
+        }
+    )
+
+    history_df = pd.DataFrame(columns=["Order_Number", "Execution_Date"])
+
+    # Define legacy courier mappings
+    courier_mappings = {
+        "dhl": "DHL",
+        "speedy": "Speedy"
+    }
+
+    # Run analysis with legacy courier mappings
+    final_df, _, _, _ = run_analysis(stock_df, orders_df, history_df, None, courier_mappings)
+
+    # Check that shipping providers are correctly mapped
+    providers = final_df.set_index("Order_Number")["Shipping_Provider"]
+    assert providers["1001"] == "DHL"
+    assert providers["1002"] == "Speedy"
+
+
+def test_run_analysis_without_courier_mappings():
+    """Tests that run_analysis works without courier_mappings (backward compatibility)."""
+    # Create test data
+    stock_df = pd.DataFrame({"Артикул": ["SKU-1"], "Име": ["Test Product"], "Наличност": [10]})
+
+    orders_df = pd.DataFrame(
+        {
+            "Name": ["1001", "1002", "1003"],
+            "Lineitem sku": ["SKU-1", "SKU-1", "SKU-1"],
+            "Lineitem quantity": [1, 1, 1],
+            "Shipping Method": ["dhl express", "dpd standard", "international shipping"],
+            "Shipping Country": ["DE", "BG", "UK"],
+            "Tags": ["", "", ""],
+            "Notes": ["", "", ""],
+        }
+    )
+
+    history_df = pd.DataFrame(columns=["Order_Number", "Execution_Date"])
+
+    # Run analysis without courier mappings (should use hardcoded fallback)
+    final_df, _, _, _ = run_analysis(stock_df, orders_df, history_df)
+
+    # Check that shipping providers are correctly mapped using hardcoded rules
+    providers = final_df.set_index("Order_Number")["Shipping_Provider"]
+    assert providers["1001"] == "DHL"
+    assert providers["1002"] == "DPD"
+    assert providers["1003"] == "PostOne"
 
 
 def test_fulfillment_prioritization_logic():

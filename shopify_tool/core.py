@@ -483,8 +483,11 @@ def run_full_analysis(
         column_mappings = {}
     column_mappings["set_decoders"] = config.get("set_decoders", {})
     logger.debug(f"Using column mappings: {column_mappings}")
+    # Get courier mappings from config
+    courier_mappings = config.get("courier_mappings", {})
+    logger.debug(f"Using courier mappings: {courier_mappings}")
     final_df, summary_present_df, summary_missing_df, stats = analysis.run_analysis(
-        stock_df, orders_df, history_df, column_mappings
+        stock_df, orders_df, history_df, column_mappings, courier_mappings
     )
     logger.info("Analysis computation complete.")
 

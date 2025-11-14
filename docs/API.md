@@ -174,14 +174,16 @@ Validates that required columns are present in the dataframes.
 
 ### Functions
 
-#### `run_analysis(stock_df, orders_df, history_df)`
+#### `run_analysis(stock_df, orders_df, history_df, column_mappings=None, courier_mappings=None)`
 
 Performs the core fulfillment analysis and simulation.
 
 **Parameters**:
-- `stock_df` (pd.DataFrame): DataFrame with stock levels for each SKU (requires 'Артикул', 'Наличност' columns)
-- `orders_df` (pd.DataFrame): DataFrame with order line items (requires 'Name', 'Lineitem sku', 'Lineitem quantity')
+- `stock_df` (pd.DataFrame): DataFrame with stock levels for each SKU (columns will be mapped using column_mappings)
+- `orders_df` (pd.DataFrame): DataFrame with order line items (columns will be mapped using column_mappings)
 - `history_df` (pd.DataFrame): DataFrame with previously fulfilled order numbers (requires 'Order_Number' column)
+- `column_mappings` (dict, optional): Dictionary with 'orders' and 'stock' keys mapping CSV columns to internal names. If None, uses default Shopify/Bulgarian mappings.
+- `courier_mappings` (dict, optional): Dictionary mapping courier patterns to standardized codes. Supports new format ({"DHL": {"patterns": ["dhl"]}}) and legacy format ({"dhl": "DHL"}). If None, uses hardcoded fallback rules.
 
 **Returns**: `tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]`
 - `final_df`: Main DataFrame with detailed results for every line item
@@ -254,21 +256,30 @@ Manually toggles the fulfillment status of an order and recalculates stock.
 
 ### Internal Functions
 
-#### `_generalize_shipping_method(method)`
+#### `_generalize_shipping_method(method, courier_mappings=None)`
 
-Standardizes raw shipping method names to consistent format.
+Standardizes raw shipping method names to consistent format using configurable mappings.
 
 **Parameters**:
 - `method` (str | float): Raw shipping method string or NaN
+- `courier_mappings` (dict, optional): Courier mappings configuration. Supports:
+  - New format: `{"DHL": {"patterns": ["dhl", "dhl express"]}}`
+  - Legacy format: `{"dhl": "DHL"}`
+  - If None or empty, uses hardcoded fallback rules
 
 **Returns**: `str` - Standardized shipping provider name
 
-**Mappings**:
+**Default Fallback Mappings (when courier_mappings is None)**:
 - "dhl" → "DHL"
 - "dpd" → "DPD"
 - "international shipping" → "PostOne"
 - Unknown → Title case
 - NaN → "Unknown"
+
+**Dynamic Mapping Examples**:
+- `method="fedex overnight"`, `courier_mappings={"FedEx": {"patterns": ["fedex"]}}` → "FedEx"
+- `method="econt express"`, `courier_mappings={"Econt": {"patterns": ["econt"]}}` → "Econt"
+- `method="dhl"`, `courier_mappings={"dhl": "DHL"}` (legacy) → "DHL"
 
 ---
 
