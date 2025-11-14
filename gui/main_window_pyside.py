@@ -887,6 +887,8 @@ class MainWindow(QMainWindow):
                 return
 
             from PySide6.QtWidgets import QStyle
+            from functools import partial
+
             menu = QMenu()
 
             # Add actions with icons from QStyle
@@ -897,7 +899,7 @@ class MainWindow(QMainWindow):
                 self
             )
             change_status_action.triggered.connect(
-                lambda checked=False, o=order_number: self.actions_handler.toggle_fulfillment_status_for_order(o)
+                partial(self.actions_handler.toggle_fulfillment_status_for_order, order_number)
             )
             menu.addAction(change_status_action)
 
@@ -908,7 +910,7 @@ class MainWindow(QMainWindow):
                 self
             )
             add_tag_action.triggered.connect(
-                lambda checked=False, o=order_number: self.actions_handler.add_tag_manually(o)
+                partial(self.actions_handler.add_tag_manually, order_number)
             )
             menu.addAction(add_tag_action)
 
@@ -925,8 +927,9 @@ class MainWindow(QMainWindow):
 
                 for tag in config.get("tags", []):
                     add_tag_action = QAction(f"Add {tag}", self)
+                    # Use partial to properly bind tag value
                     add_tag_action.triggered.connect(
-                        lambda checked=False, o=order_number, t=tag: self._add_internal_tag(o, t)
+                        partial(self._add_internal_tag, order_number, tag)
                     )
                     category_menu.addAction(add_tag_action)
 
@@ -939,7 +942,7 @@ class MainWindow(QMainWindow):
                 self
             )
             remove_item_action.triggered.connect(
-                lambda checked=False, o=order_number, s=sku: self.actions_handler.remove_item_from_order(o, s)
+                partial(self.actions_handler.remove_item_from_order, order_number, sku)
             )
             menu.addAction(remove_item_action)
 
@@ -950,7 +953,7 @@ class MainWindow(QMainWindow):
                 self
             )
             remove_order_action.triggered.connect(
-                lambda checked=False, o=order_number: self.actions_handler.remove_entire_order(o)
+                partial(self.actions_handler.remove_entire_order, order_number)
             )
             menu.addAction(remove_order_action)
 
@@ -963,7 +966,7 @@ class MainWindow(QMainWindow):
                 self
             )
             copy_order_action.triggered.connect(
-                lambda checked=False, o=order_number: QApplication.clipboard().setText(str(o))
+                partial(QApplication.clipboard().setText, str(order_number))
             )
             menu.addAction(copy_order_action)
 
@@ -974,7 +977,7 @@ class MainWindow(QMainWindow):
                 self
             )
             copy_sku_action.triggered.connect(
-                lambda checked=False, s=sku: QApplication.clipboard().setText(str(s))
+                partial(QApplication.clipboard().setText, str(sku))
             )
             menu.addAction(copy_sku_action)
 
