@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Signal
 
 from shopify_tool.profile_manager import ProfileManager, ValidationError, ProfileManagerError
+from gui.wheel_ignore_combobox import WheelIgnoreComboBox
 
 
 logger = logging.getLogger(__name__)
@@ -146,7 +147,7 @@ class ClientSelectorWidget(QWidget):
         layout.addWidget(label)
 
         # Client dropdown
-        self.client_combo = QComboBox()
+        self.client_combo = WheelIgnoreComboBox()
         self.client_combo.setMinimumWidth(150)
         self.client_combo.setToolTip("Select active client to work with")
         self.client_combo.currentTextChanged.connect(self._on_client_changed)

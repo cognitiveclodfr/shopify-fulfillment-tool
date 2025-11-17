@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Signal, Qt
 
 from shopify_tool.session_manager import SessionManager
+from gui.wheel_ignore_combobox import WheelIgnoreComboBox
 
 
 logger = logging.getLogger(__name__)
@@ -55,7 +56,7 @@ class SessionBrowserWidget(QWidget):
 
         filter_layout.addWidget(QLabel("Status:"))
 
-        self.status_filter = QComboBox()
+        self.status_filter = WheelIgnoreComboBox()
         self.status_filter.addItems(["All", "Active", "Completed", "Abandoned", "Archived"])
         self.status_filter.setToolTip("Filter sessions by status")
         self.status_filter.currentTextChanged.connect(self._apply_filter)
@@ -194,7 +195,7 @@ class SessionBrowserWidget(QWidget):
 
             # Column 2: Status (EDITABLE COMBOBOX)
             status = session_info.get("status", "active")
-            status_combo = QComboBox()
+            status_combo = WheelIgnoreComboBox()
             status_combo.addItems(["Active", "Completed", "Abandoned", "Archived"])
             status_combo.setCurrentText(status.capitalize())
             # Color code by status

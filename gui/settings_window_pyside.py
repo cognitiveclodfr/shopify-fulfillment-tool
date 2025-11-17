@@ -29,6 +29,7 @@ from PySide6.QtCore import Qt
 
 from shopify_tool.core import get_unique_column_values
 from gui.column_mapping_widget import ColumnMappingWidget
+from gui.wheel_ignore_combobox import WheelIgnoreComboBox
 from shopify_tool.set_decoder import import_sets_from_csv, export_sets_to_csv
 
 
@@ -318,7 +319,7 @@ class SettingsWindow(QDialog):
         level_layout = QHBoxLayout()
         level_layout.addWidget(QLabel("Rule Level:"))
 
-        level_combo = QComboBox()
+        level_combo = WheelIgnoreComboBox()
         level_combo.addItems(["article", "order"])
         level_combo.setCurrentText(config.get("level", "article"))
         level_combo.setToolTip(
@@ -344,7 +345,7 @@ class SettingsWindow(QDialog):
         conditions_layout = QVBoxLayout(conditions_box)
         match_layout = QHBoxLayout()
         match_layout.addWidget(QLabel("Execute actions if"))
-        match_combo = QComboBox()
+        match_combo = WheelIgnoreComboBox()
         match_combo.addItems(["ALL", "ANY"])
         match_combo.setCurrentText(config.get("match", "ALL"))
         match_layout.addWidget(match_combo)
@@ -398,7 +399,7 @@ class SettingsWindow(QDialog):
         if not isinstance(config, dict):
             config = {}
         row_layout = QHBoxLayout()
-        field_combo = QComboBox()
+        field_combo = WheelIgnoreComboBox()
 
         # Add fields with separators disabled
         for field in self.CONDITION_FIELDS:
@@ -412,7 +413,7 @@ class SettingsWindow(QDialog):
             else:
                 field_combo.addItem(field)
 
-        op_combo = QComboBox()
+        op_combo = WheelIgnoreComboBox()
         op_combo.addItems(self.CONDITION_OPERATORS)
         delete_btn = QPushButton("X")
 
@@ -495,7 +496,7 @@ class SettingsWindow(QDialog):
 
         if use_combobox:
             unique_values = get_unique_column_values(self.analysis_df, field)
-            new_widget = QComboBox()
+            new_widget = WheelIgnoreComboBox()
             new_widget.addItems([""] + unique_values)  # Add a blank option
             if initial_value and str(initial_value) in unique_values:
                 new_widget.setCurrentText(str(initial_value))
@@ -523,7 +524,7 @@ class SettingsWindow(QDialog):
         if not isinstance(config, dict):
             config = {}
         row_layout = QHBoxLayout()
-        type_combo = QComboBox()
+        type_combo = WheelIgnoreComboBox()
         type_combo.addItems(self.ACTION_TYPES)
         value_edit = QLineEdit()
         delete_btn = QPushButton("X")
@@ -621,7 +622,7 @@ class SettingsWindow(QDialog):
         match_layout = QHBoxLayout()
         match_layout.addWidget(QLabel("Execute actions if"))
 
-        match_combo = QComboBox()
+        match_combo = WheelIgnoreComboBox()
         match_combo.addItems(["ALL", "ANY"])
         match_combo.setCurrentText(config.get("match", "ALL"))
         match_layout.addWidget(match_combo)
@@ -756,9 +757,9 @@ class SettingsWindow(QDialog):
         if not isinstance(config, dict):
             config = {}
         row_layout = QHBoxLayout()
-        field_combo = QComboBox()
+        field_combo = WheelIgnoreComboBox()
         field_combo.addItems(fields)
-        op_combo = QComboBox()
+        op_combo = WheelIgnoreComboBox()
         op_combo.addItems(operators)
         value_edit = QLineEdit()
         delete_btn = QPushButton("X")
@@ -819,7 +820,7 @@ class SettingsWindow(QDialog):
             try:
                 unique_values = self.analysis_df[field].dropna().unique().tolist()
                 unique_values = sorted([str(v) for v in unique_values])
-                new_widget = QComboBox()
+                new_widget = WheelIgnoreComboBox()
                 new_widget.addItems(unique_values)
                 if initial_value and str(initial_value) in unique_values:
                     new_widget.setCurrentText(str(initial_value))
