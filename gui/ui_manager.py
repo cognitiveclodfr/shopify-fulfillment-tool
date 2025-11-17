@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QKeySequence, QShortcut
 from .pandas_model import PandasModel
+from .wheel_ignore_combobox import WheelIgnoreComboBox
 
 
 class UIManager:
@@ -643,7 +644,7 @@ class UIManager:
 
         # --- Advanced Filter Controls ---
         filter_layout = QHBoxLayout()
-        self.mw.filter_column_selector = QComboBox()
+        self.mw.filter_column_selector = WheelIgnoreComboBox()
         self.mw.filter_input = QLineEdit()
         self.mw.filter_input.setPlaceholderText("Enter filter text...")
         self.mw.case_sensitive_checkbox = QCheckBox("Case Sensitive")
@@ -818,7 +819,7 @@ class UIManager:
         layout.addWidget(QLabel("Filter by:"))
 
         # Column selector
-        self.mw.filter_column_selector = QComboBox()
+        self.mw.filter_column_selector = WheelIgnoreComboBox()
         self.mw.filter_column_selector.addItem("All Columns")
         layout.addWidget(self.mw.filter_column_selector)
 
@@ -844,7 +845,7 @@ class UIManager:
 
         # Tag filter
         layout.addWidget(QLabel("Tag:"))
-        self.mw.tag_filter_combo = QComboBox()
+        self.mw.tag_filter_combo = WheelIgnoreComboBox()
         self.mw.tag_filter_combo.addItem("All Tags", None)
         layout.addWidget(self.mw.tag_filter_combo)
 
