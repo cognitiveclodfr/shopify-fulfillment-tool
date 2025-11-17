@@ -3,7 +3,7 @@
 **Version:** 1.8.0
 **Document Type:** End-User Documentation
 **Last Updated:** November 17, 2025
-**Audience:** Warehouse Staff, Logistics Coordinators, Managers
+**Audience:** Warehouse Staff, Managers
 
 ---
 
@@ -25,12 +25,12 @@
 
 ### What is the Shopify Fulfillment Tool?
 
-The **Shopify Fulfillment Tool** is a desktop application designed to streamline warehouse order fulfillment for Shopify e-commerce operations. It helps you:
+The **Shopify Fulfillment Tool** is a desktop application designed to streamline warehouse order fulfillment for Shopify/WooComerse/ANY e-commerce operations. It helps you:
 
 ✅ **Analyze** which orders can be fulfilled based on available stock
 ✅ **Prioritize** orders intelligently (multi-item orders first)
-✅ **Generate** packing lists for warehouse staff
-✅ **Track** repeat customers automatically
+✅ **Generate** packing lists for warehouse staff, stock exports for warehouse sigh off
+✅ **Track** repeat errors automatically
 ✅ **Automate** order tagging and categorization
 ✅ **Export** data for integration with the Packing Tool
 
@@ -126,14 +126,14 @@ The application has **4 main tabs**:
 |-----|---------|
 | **📋 Session Setup** | Create sessions, load files, run analysis |
 | **📊 Analysis Results** | View results, edit data, generate reports |
-| **🕒 History** | Browse past sessions and reload them |
-| **ℹ️ Info** | View application logs and diagnostics |
+| **🕒 Session Browser** | Browse past sessions and reload them |
+| **ℹ️ Info** | View application logs and diagnostics and stats |
 
 **Quick Tour:**
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│ [Client: CLIENT_M ▼]                    [⚙️ Settings]│
+│ [Client: CLIENT_M ▼]             [⚙️ Manage Clients]│
 ├─────────────────────────────────────────────────────┤
 │ ┌─ Session Setup ─┐  Analysis Results  History  Info│
 │ │                                                    │
@@ -199,7 +199,7 @@ Sessions are stored on the **file server** and can be accessed from any computer
 
 To continue working on a previous session:
 
-1. Go to **🕒 History** tab
+1. Go to **🕒 Session Browser** tab
 
 2. **Browse sessions** in the table:
    - Columns: Session ID, Date Created, Total Orders, Status
@@ -213,8 +213,8 @@ To continue working on a previous session:
 | Status | Meaning |
 |--------|---------|
 | ✅ **Complete** | Analysis finished, packing lists generated |
-| 🔄 **In Progress** | Analysis running or incomplete |
-| 📝 **Draft** | Session created but analysis not started |
+| 🔄 **Active** | Analysis running or incomplete |
+| 📝 **Abbadoned** | Session created but analysis not started |
 | 🔒 **Locked** | Another user is currently working on this session |
 
 **Visual Reference:**
@@ -363,7 +363,7 @@ When you click "▶️ Run Analysis", the application:
 3. **Prioritizes** - Sorts orders (multi-item orders first)
 4. **Simulates stock allocation** - Calculates what can be fulfilled
 5. **Applies rules** - Automatic tagging, status changes
-6. **Detects repeats** - Identifies returning customers
+6. **Detects repeats** - Identifies repeating orders
 7. **Generates statistics** - Order counts, courier breakdown
 
 **Time estimates:**
@@ -409,7 +409,6 @@ Results are displayed in a **data table** with these columns:
 | **Courier** | Shipping method (DHL, PostOne, etc.) |
 | **Status** | Fulfillable / Not Fulfillable |
 | **Tags** | Auto-generated tags |
-| **Priority** | High / Medium / Low |
 | **Location** | Warehouse location (if configured) |
 
 **Color Coding:**
@@ -418,7 +417,7 @@ Rows are color-coded for quick identification:
 
 - 🟢 **Green** - Order is fulfillable (all items in stock)
 - 🔴 **Red** - Order is NOT fulfillable (out of stock)
-- 🟡 **Yellow** - Repeat customer (ordered before)
+- 🟡 **Yellow** - Repeat orders (orders was analysed before)
 
 **Visual Reference:**
 ```
@@ -432,11 +431,11 @@ After analysis, the statistics panel shows:
 **Overall Statistics:**
 ```
 Total Orders: 150
-  • Fulfillable: 120 (80%)
-  • Not Fulfillable: 30 (20%)
+  • Fulfillable: 120 
+  • Not Fulfillable: 30 
 
 Total Items to Write Off: 450
-Unique SKUs: 85
+Total Items not to Write Off: 50
 ```
 
 **By Courier:**
@@ -444,21 +443,11 @@ Unique SKUs: 85
 DHL: 60 orders (250 items)
 PostOne: 40 orders (120 items)
 Speedy: 30 orders (50 items)
-DPD: 20 orders (30 items)
 ```
 
-**Repeat Customers:**
+**Repeat orders:**
 ```
 Repeat Orders: 15
-New Customers: 135
-```
-
-**Low Stock Alerts:**
-```
-⚠️ 5 SKUs below threshold:
-  • SKU-001: 2 units (threshold: 10)
-  • SKU-045: 5 units (threshold: 10)
-  ...
 ```
 
 **Visual Reference:**
@@ -486,7 +475,6 @@ This happens **automatically during analysis** - no manual work needed!
 
 | Use Case | Rule Configuration |
 |----------|-------------------|
-| **COD Orders** | If Payment Method = "COD" → Add tag "Cash on Delivery" |
 | **Fragile Items** | If Product Name contains "Glass" → Add tag "Fragile" |
 | **Express Shipping** | If Shipping = "Express" → Set Priority = "High" |
 | **Exclude Test Orders** | If Order Number contains "TEST" → Exclude from report |
@@ -497,7 +485,7 @@ This happens **automatically during analysis** - no manual work needed!
 **Steps:**
 
 1. **Open Client Settings:**
-   - Click **⚙️ Settings** button (top-right)
+   - Click **⚙️ Open Client Settings** button
    - Go to **"Rules"** tab
 
 2. **Click "Add Rule"** button
@@ -506,25 +494,23 @@ This happens **automatically during analysis** - no manual work needed!
 
    **Rule Name:**
    ```
-   "COD Payment Orders"
+   "DHL Orders"
    ```
 
    **Condition:**
    ```
-   Field: Payment_Method
+   Field: Shipping_Method
    Operator: equals
-   Value: "COD"
+   Value: "DHL"
    ```
 
    **Action:**
    ```
    Type: ADD_TAG
-   Value: "Cash on Delivery"
+   Value: "High"
    ```
 
 4. **Save rule**
-
-5. **Enable rule** (toggle switch)
 
 **Visual Reference:**
 ```
@@ -551,7 +537,6 @@ This happens **automatically during analysis** - no manual work needed!
 | `SET_STATUS` | Change order status | SET_STATUS = "Hold" |
 | `SET_PRIORITY` | Set priority level | SET_PRIORITY = "High" |
 | `EXCLUDE_FROM_REPORT` | Hide from packing list | EXCLUDE_FROM_REPORT |
-| `SET_LOCATION` | Set warehouse location | SET_LOCATION = "Zone A" |
 
 #### Rule Examples
 
@@ -578,41 +563,19 @@ Condition: SKU equals "SHIPPING-PROTECT"
 Action: EXCLUDE_FROM_REPORT
 ```
 
-**Example 4: International Orders**
-```yaml
-Rule Name: "International Shipments"
-Condition: Shipping_Country not_equals "Bulgaria"
-Actions:
-  - ADD_TAG = "International"
-  - SET_LOCATION = "Export Zone"
-```
 
 #### Managing Rules
 
-**Enable/Disable Rules:**
-- Toggle switch next to each rule
-- Disabled rules are skipped during analysis
-- Useful for seasonal rules
-
 **Edit Rules:**
-- Click **Edit** button (pencil icon)
+- Click on rule place
 - Modify conditions or actions
 - Save changes
 - Run analysis again to apply
 
 **Delete Rules:**
-- Click **Delete** button (trash icon)
-- Confirm deletion
+- Click **Delete** button
 - Cannot be undone
 
-**Rule Priority:**
-- Rules are applied in order (top to bottom)
-- Drag and drop to reorder
-- If multiple rules set the same field, last one wins
-
-**Import/Export Rules:**
-- Export rules to JSON file (backup or share)
-- Import rules from file (restore or copy between clients)
 
 **Visual Reference:**
 ```
@@ -629,7 +592,6 @@ A **packing list** is a formatted report for warehouse staff showing:
 - Which orders to pack
 - Which items to pick
 - Quantities needed
-- Warehouse locations
 
 The packing list is **filtered** based on criteria like:
 - Courier (DHL, PostOne, Speedy, etc.)
@@ -650,11 +612,8 @@ The packing list is **filtered** based on criteria like:
    - Pre-configured lists appear (e.g., "DHL Orders", "PostOne Orders")
    - Or choose "All Orders" for unfiltered
 
-4. **Choose save location:**
-   - File browser opens
-   - Navigate to desired folder
-   - Enter filename (or use default)
-   - Click "Save"
+4. **Save location:**
+   - Automaticly at server folder of session, in folder packing_lists
 
 5. **Packing list generated:**
    - ✅ Excel file (.xlsx) created for printing
@@ -675,7 +634,6 @@ Most clients have pre-configured packing lists:
 | **DHL Orders** | Courier = DHL | 07, Shipping protection |
 | **PostOne Orders** | Courier = PostOne | 07, Shipping protection |
 | **Speedy Orders** | Courier = Speedy | 07 |
-| **DPD Orders** | Courier = DPD | 07 |
 | **All Orders** | No filter | None |
 
 **Setting up in Client Settings:**
@@ -696,8 +654,7 @@ Most clients have pre-configured packing lists:
 ```
 ┌────────────────────────────────────────────────────────┐
 │ PACKING LIST - DHL Orders                              │
-│ Generated: 2025-11-17 14:30                            │
-│ Total Orders: 60 | Total Items: 250                    │
+│ Generated: 2025-11-17 14:30                            │                 
 ├────────────────────────────────────────────────────────┤
 │ Order_Number │ SKU      │ Product_Name  │ Qty │ Location│
 ├──────────────┼──────────┼───────────────┼─────┼─────────┤
@@ -749,7 +706,7 @@ Most clients have pre-configured packing lists:
 
 **Accessing Client Settings:**
 
-1. Click **⚙️ Settings** button
+1. Click **⚙️ Open Client Settings** button
 2. Go to **"Client Configuration"** tab
 3. View/edit client-specific settings
 
@@ -759,8 +716,6 @@ Most clients have pre-configured packing lists:
 ```
 - Client ID: M
 - Client Name: Main Client
-- Default Courier: DHL
-- Warehouse Location: Sofia
 ```
 
 **2. Column Mappings**
@@ -837,13 +792,9 @@ Already covered in [Feature 2: Rule Engine](#feature-2-rule-engine).
 - `SET_STATUS` - Change status
 - `SET_PRIORITY` - Set priority (High/Medium/Low)
 - `EXCLUDE_FROM_REPORT` - Hide from packing list
-- `SET_LOCATION` - Set warehouse location
 
 **Rule Examples:**
 ```
-Rule: "COD Orders"
-Condition: Payment_Method equals "COD"
-Action: ADD_TAG = "Cash on Delivery"
 
 Rule: "Fragile Items"
 Condition: Product_Name contains "Glass"
@@ -859,59 +810,6 @@ Action: EXCLUDE_FROM_REPORT
 ```
 
 ---
-
-### Application Settings
-
-**Accessing:**
-1. Click **⚙️ Settings** button
-2. Go to **"Application Settings"** tab
-
-**Settings Categories:**
-
-**1. Display Settings**
-- Theme: Light / Dark
-- Font size: Small / Medium / Large
-- Show grid lines: Yes / No
-- Highlight colors: Configure
-
-**2. Performance Settings**
-- Max orders per session: 50,000
-- Cache results: Yes / No
-- Auto-save interval: 5 minutes
-- Log level: Info / Debug
-
-**3. File Locations**
-- Default output folder
-- Reports save location
-- Log file location
-- Temp files location
-
-**4. Network Settings**
-- Server path: `\\192.168.88.101\...`
-- Connection timeout: 30 seconds
-- Retry attempts: 3
-- Check connection on startup
-
-**5. Advanced Settings**
-- Enable experimental features
-- Debug mode
-- Export settings
-- Import settings
-
-**Saving Settings:**
-- Click **"Save"** button
-- Changes apply immediately
-- Some settings require restart
-
-**Resetting to Defaults:**
-- Click **"Reset to Defaults"** button
-- Confirm action
-- Application restarts
-
-**Visual Reference:**
-```
-[Screenshot placeholder: Application settings]
-```
 
 ---
 
@@ -1322,15 +1220,6 @@ A: No hard limit, but 50+ rules can slow analysis. Keep rules focused and disabl
 
 A: No, rules only affect tags, status, and priority. Stock levels are calculated based on orders and available stock.
 
-**Q: Can I import rules from another client?**
-
-A: Yes:
-1. Settings → Rules
-2. Click "Export Rules"
-3. Save rules file
-4. Switch to other client
-5. Click "Import Rules"
-6. Select rules file
 
 **Q: What happens if multiple rules match?**
 
@@ -1438,64 +1327,10 @@ A: Verification steps:
 
 ---
 
-## 📞 Support & Contact
-
-### Getting Help
-
-**📖 Documentation:**
-- This User Guide
-- Technical Documentation (docs/ folder)
-- Release Notes
-- Changelog
-
-**🐛 Reporting Bugs:**
-1. Check logs: `Logs/shopify_tool/` on server
-2. Note steps to reproduce
-3. Create GitHub issue or contact support
-4. Include:
-   - Version number (v1.8.0)
-   - Error message
-   - Log file (if available)
-   - Screenshots
-
-**💡 Feature Requests:**
-- Suggest improvements via GitHub Issues
-- Tag as "enhancement"
-- Describe use case and benefit
-
-**🆘 Emergency Support:**
-- Contact warehouse manager
-- Check #it-support channel (if using Slack)
-- Email: support@example.com
-
----
-
-## 📝 Additional Resources
-
-**Training Materials:**
-- Video tutorials (link)
-- Interactive demos (link)
-- Quick reference card (PDF)
-
-**Best Practices:**
-- Daily workflow checklist
-- Quality control procedures
-- Troubleshooting flowchart
-
-**Templates:**
-- CSV templates for orders and stock
-- Rule configuration examples
-- Report templates
-
----
-
 **Document Version:** 1.0
 **Last Updated:** November 17, 2025
 **For Version:** 1.8.0
 
-**Feedback:**
-Found an error or have a suggestion? Contact documentation team or create a GitHub issue.
 
 ---
 
-*Thank you for using Shopify Fulfillment Tool!*
