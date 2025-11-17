@@ -59,8 +59,17 @@ class FileHandler:
         try:
             detected_delimiter, method = detect_csv_delimiter(filepath)
             self.log.info(f"Orders file: detected delimiter '{detected_delimiter}' using {method}")
+        except FileNotFoundError as e:
+            self.log.error(f"Orders file not found for delimiter detection: {e}")
+            detected_delimiter = ","  # fallback to comma
+        except PermissionError as e:
+            self.log.error(f"Permission denied reading orders file: {e}")
+            detected_delimiter = ","  # fallback to comma
+        except UnicodeDecodeError as e:
+            self.log.error(f"Encoding error in orders file: {e}")
+            detected_delimiter = ","  # fallback to comma
         except Exception as e:
-            self.log.error(f"Delimiter detection failed for orders: {e}")
+            self.log.error(f"Unexpected error detecting delimiter for orders: {e}", exc_info=True)
             detected_delimiter = ","  # fallback to comma
 
         # Determine which delimiter to use
@@ -135,8 +144,17 @@ class FileHandler:
         try:
             detected_delimiter, method = detect_csv_delimiter(filepath)
             self.log.info(f"Detected delimiter '{detected_delimiter}' using {method}")
+        except FileNotFoundError as e:
+            self.log.error(f"Stock file not found for delimiter detection: {e}")
+            detected_delimiter = ";"  # fallback
+        except PermissionError as e:
+            self.log.error(f"Permission denied reading stock file: {e}")
+            detected_delimiter = ";"  # fallback
+        except UnicodeDecodeError as e:
+            self.log.error(f"Encoding error in stock file: {e}")
+            detected_delimiter = ";"  # fallback
         except Exception as e:
-            self.log.error(f"Delimiter detection failed: {e}")
+            self.log.error(f"Unexpected error detecting delimiter for stock: {e}", exc_info=True)
             detected_delimiter = ";"  # fallback
 
         # Determine which delimiter to use

@@ -164,8 +164,14 @@ class ProfileManager:
             logger.info(f"Network connection OK: {self.base_path}")
             return True
 
+        except PermissionError as e:
+            logger.error(f"Network connection FAILED - Permission denied: {e}")
+            return False
+        except OSError as e:
+            logger.error(f"Network connection FAILED - OS error (network issue?): {e}")
+            return False
         except Exception as e:
-            logger.error(f"Network connection FAILED: {e}")
+            logger.error(f"Network connection FAILED - Unexpected error: {e}", exc_info=True)
             return False
 
     @staticmethod
@@ -227,8 +233,14 @@ class ProfileManager:
 
             return sorted(clients)
 
+        except PermissionError as e:
+            logger.error(f"Permission denied accessing clients directory: {e}")
+            return []
+        except OSError as e:
+            logger.error(f"File system error listing clients: {e}")
+            return []
         except Exception as e:
-            logger.error(f"Failed to list clients: {e}")
+            logger.error(f"Unexpected error listing clients: {e}", exc_info=True)
             return []
 
     def create_client_profile(self, client_id: str, client_name: str) -> bool:
@@ -586,8 +598,14 @@ class ProfileManager:
                 config = json.load(f)
             return config
 
+        except PermissionError as e:
+            logger.error(f"Permission denied reading client config for CLIENT_{client_id}: {e}")
+            return None
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in client config for CLIENT_{client_id}: {e}")
+            return None
         except Exception as e:
-            logger.error(f"Failed to load client config: {e}")
+            logger.error(f"Unexpected error loading client config for CLIENT_{client_id}: {e}", exc_info=True)
             return None
 
     def load_shopify_config(self, client_id: str) -> Optional[Dict]:
