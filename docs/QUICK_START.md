@@ -7,7 +7,7 @@
 ## 🚀 First Time Setup
 
 ### Step 1: Launch Application
-Double-click `gui_main.py` or application shortcut
+Double-click application shortcut
 
 ### Step 2: Select Client
 Top dropdown → Select your client (e.g., "M - Main Client")
@@ -20,7 +20,8 @@ Top dropdown → Select your client (e.g., "M - Main Client")
 Click **"▶️ Run Analysis"** → Wait 5-30 seconds
 
 ### Step 5: Generate Report
-Click **"📄 Generate Packing List"** → Choose location → Done!
+Click **"📄 Generate Packing List"** → Done!
+Click **"📄 Generate Stock Export"** → Done!
 
 ---
 
@@ -36,13 +37,13 @@ Click **"📄 Generate Packing List"** → Choose location → Done!
 │    ↓                                    │
 │ 4. Review Results                       │
 │    ↓                                    │
-│ 5. Generate Packing List                │
+│ 5. Generate Packing+Export List         │
 │    ↓                                    │
 │ 6. Print & Process Orders               │
 └─────────────────────────────────────────┘
 ```
 
-**Time:** 5-10 minutes per day
+**Time:** 2-5 minutes per day
 
 ---
 
@@ -67,7 +68,7 @@ After analysis, rows are color-coded:
 
 - **🟢 Green** - Order is fulfillable (all items in stock)
 - **🔴 Red** - Order is NOT fulfillable (out of stock)
-- **🟡 Yellow** - Repeat customer (ordered before)
+- **🟡 Yellow** - Repeat order (analysed before)
 
 ---
 
@@ -77,16 +78,17 @@ After analysis completes, check the statistics panel:
 
 ```
 Total Orders: 150
-  • Fulfillable: 120 (80%)
-  • Not Fulfillable: 30 (20%)
+  • Fulfillable: 120
+  • Not Fulfillable: 30 
 
 By Courier:
   • DHL: 60 orders
   • PostOne: 40 orders
   • Speedy: 30 orders
 
-Repeat Customers: 15
-Low Stock Alerts: 5 SKUs
+Items to Write Off: 100
+Items not to Write Off: 25
+Repeat Orders: 15
 ```
 
 ---
@@ -96,8 +98,8 @@ Low Stock Alerts: 5 SKUs
 | Problem | Quick Fix |
 |---------|-----------|
 | **File won't load** | Check file is CSV (not XLS) |
-| **"Server not found"** | Check VPN connection |
-| **Analysis stuck** | Wait or split into smaller batches |
+| **"Server not found"** | Check connection |
+| **Analysis stuck** | Wait or split into smaller batches (1000 orders and more scenario) |
 | **Results look wrong** | Check column mappings in Settings |
 | **Missing orders in packing list** | Check filters and excluded SKUs |
 
@@ -105,19 +107,21 @@ Low Stock Alerts: 5 SKUs
 
 ## ⚙️ Key Settings
 
-**Access Settings:** Click **⚙️ Settings** button (top-right)
+**Access Settings:** Click **Open Client Settings** button 
 
 **Important Tabs:**
 - **Rules** - Automate order tagging and categorization
-- **Packing Lists** - Configure courier-specific reports
+- **Packing Lists** - Configure courier(or any colum)-specific reports
+- **Stock Exports** - Configure courier(or any colum)-specific reports for warehouse order
 - **Column Mappings** - Map CSV headers to system fields
 - **Courier Mappings** - Map shipping methods to couriers
+- **Sets** - Map sets decoding methods to orders
 
 ---
 
 ## 📁 File Requirements
 
-**Orders CSV Format:**
+**Orders CSV Format (For Shopify):**
 ```csv
 Name,Lineitem sku,Lineitem quantity,Shipping Method
 12345,SKU-001,2,DHL Express
@@ -137,15 +141,9 @@ SKU-002,Product B,120
 
 ## 🎯 Quick Tips
 
-**Performance:**
-- 1,000 orders → ~5 seconds
-- 10,000 orders → ~30 seconds
-- For 50,000+ orders, split into batches
-
 **Best Practices:**
-- Run analysis daily for fresh data
 - Review low stock alerts
-- Check repeat customer orders for special handling
+- Check repeat orders for check if any problem
 - Use rules to automate repetitive tasks
 
 **Shortcuts:**
@@ -162,11 +160,6 @@ SKU-002,Product B,120
 - **Technical Docs:** `docs/` folder - API and architecture
 - **Troubleshooting:** See USER_GUIDE.md Section 6
 
-**Support:**
-- IT Department / Warehouse Manager
-- Logs: `Logs/shopify_tool/` on server
-- GitHub Issues: Report bugs and feature requests
-
 ---
 
 ## 📅 Session Management
@@ -177,7 +170,7 @@ SKU-002,Product B,120
 - Sessions auto-save every 5 minutes
 
 **Loading Past Sessions:**
-1. Go to **🕒 History** tab
+1. Go to **Session Browser** tab
 2. Find session by date
 3. Double-click to load
 
@@ -192,7 +185,7 @@ SKU-002,Product B,120
 
 **Rule Engine:**
 - Automatically tag orders based on conditions
-- Example: Tag "COD" if payment method is Cash on Delivery
+- Example: Tag "small BOX" if total q of products is 3
 - Configure in Settings → Rules
 
 **Sets/Bundles:**
@@ -219,9 +212,8 @@ Before running analysis, ensure:
 - [ ] No error messages displayed
 
 After analysis:
-- [ ] Check statistics for fulfillment %
+- [ ] Check statistics for fulfillment info
 - [ ] Review low stock alerts
-- [ ] Verify repeat customer orders
 - [ ] Generate packing list for each courier
 
 ---
@@ -234,12 +226,6 @@ After analysis:
 3. Review results
 4. Generate packing list
 5. Start processing orders!
-
-**Pro Tip:** Save this guide as a bookmark for quick reference.
-
----
-
-**That's it! You're ready to process orders.** 🎉
 
 For detailed explanations, see the [Full User Guide](USER_GUIDE.md).
 
