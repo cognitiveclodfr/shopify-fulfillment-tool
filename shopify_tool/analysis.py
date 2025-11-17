@@ -6,131 +6,43 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def _generalize_shipping_method(method, courier_mappings=None):
-    """Standardizes raw shipping method names to a consistent format.
-
-    Takes a raw shipping method string, converts it to lowercase, and maps it
-    to a standardized provider name using either the provided courier_mappings
-    or hardcoded fallback rules.
-
-    The function supports two courier_mappings formats:
-    1. New format (preferred):
-       {"DHL": {"patterns": ["dhl", "dhl express"]}, "DPD": {"patterns": ["dpd"]}}
-    2. Legacy format (for backward compatibility):
-       {"dhl": "DHL", "dpd": "DPD"}
-
-    If the method is not recognized, it returns a title-cased version of the
-    input. Handles NaN values by returning 'Unknown'.
-
-    Args:
-        method (str | float): The raw shipping method from the orders file.
-            Can be a float (NaN) for empty values.
-        courier_mappings (dict, optional): Dictionary mapping courier patterns to
-            standardized courier codes. If None or empty, uses hardcoded fallback
-            rules for backward compatibility.
-
-    Returns:
-        str: The standardized shipping provider name.
-
-    Examples:
-        >>> _generalize_shipping_method("dhl express", {"DHL": {"patterns": ["dhl"]}})
-        'DHL'
-        >>> _generalize_shipping_method("custom courier", {})
-        'Custom Courier'
-        >>> _generalize_shipping_method(None)
-        'Unknown'
+def _clean_and_prepare_data(
+    orders_df: pd.DataFrame,
+    stock_df: pd.DataFrame,
+    column_mappings: Optional[dict] = None
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    # Handle NaN and empty values
-    if pd.isna(method):
-        return "Unknown"
-    method_str = str(method)
-    if not method_str.strip():
-        return "Unknown"
+    Clean and standardize input data for analysis.
 
-    method_lower = method_str.lower()
-
-    # If courier_mappings provided and not empty, use dynamic mapping
-    if courier_mappings:
-        # Check if new format (dict of dicts with "patterns" key)
-        # or legacy format (simple dict mapping)
-        for courier_code, mapping_data in courier_mappings.items():
-            if isinstance(mapping_data, dict):
-                # New format: {"DHL": {"patterns": ["dhl", "dhl express"]}}
-                patterns = mapping_data.get("patterns", [])
-                for pattern in patterns:
-                    if pattern.lower() in method_lower:
-                        return courier_code
-            else:
-                # Legacy format: {"dhl": "DHL"}
-                # Check if the pattern (key) is in the method
-                if courier_code.lower() in method_lower:
-                    return mapping_data
-    else:
-        # Fallback to hardcoded rules for backward compatibility
-        if "dhl" in method_lower:
-            return "DHL"
-        if "dpd" in method_lower:
-            return "DPD"
-        if "international shipping" in method_lower:
-            return "PostOne"
-
-    # If no match found, return title-cased version
-    return method_str.title()
-
-
-def run_analysis(stock_df, orders_df, history_df, column_mappings=None, courier_mappings=None):
-    """Performs the core fulfillment analysis and simulation.
-
-    This function is the heart of the fulfillment logic. It takes raw data,
-    cleans it, and simulates the stock allocation process.
-
-    The process includes:
-    1.  Applying column mappings to standardize column names from various sources
-    2.  Cleaning and standardizing columns in orders and stock DataFrames.
-    3.  Prioritizing orders for fulfillment, typically processing multi-item
-        orders first to maximize the number of complete orders shipped.
-    4.  Iterating through prioritized orders, checking stock availability, and
-        allocating stock for fulfillable orders.
-    5.  Calculating the final stock levels after the simulation.
-    6.  Enriching the data with additional information like shipping provider,
-        order type (Single/Multi), and repeat order status.
-    7.  Generating summary reports for fulfilled and missing items.
-    8.  Calculating final statistics.
-
-    This function operates purely on DataFrames and does not perform any
-    file I/O.
+    Performs:
+    - Apply column mappings from external sources to internal standard names
+    - Handle NaN values in critical columns (forward-fill order-level columns)
+    - Normalize column names and data types
+    - Convert numeric columns (Quantity, Stock)
+    - Normalize SKU format for consistent matching
+    - Remove duplicates from stock data
+    - Validate required columns exist
+    - Expand sets/bundles into component SKUs
 
     Args:
-        stock_df (pd.DataFrame): DataFrame with stock levels for each SKU.
-            Column names will be mapped according to column_mappings['stock'].
-        orders_df (pd.DataFrame): DataFrame with all order line items.
-            Column names will be mapped according to column_mappings['orders'].
-        history_df (pd.DataFrame): DataFrame with previously fulfilled order
-            numbers. Requires an 'Order_Number' column.
-        column_mappings (dict, optional): Dictionary with 'orders' and 'stock' keys,
-            each containing a mapping of CSV column names to internal standard names.
-            Example: {"orders": {"Name": "Order_Number", "Lineitem sku": "SKU"},
-                     "stock": {"Артикул": "SKU", "Наличност": "Stock"}}
+        orders_df: Raw orders DataFrame with external column names
+        stock_df: Raw stock DataFrame with external column names
+        column_mappings: Configuration dictionary with column mappings and set decoders.
+            Format: {
+                "orders": {"External_Col": "Internal_Col", ...},
+                "stock": {"External_Col": "Internal_Col", ...},
+                "set_decoders": {...}
+            }
             If None, uses default Shopify/Bulgarian mappings for backward compatibility.
-        courier_mappings (dict, optional): Dictionary mapping courier patterns to
-            standardized courier codes. Supports two formats:
-            1. New: {"DHL": {"patterns": ["dhl", "dhl express"]}}
-            2. Legacy: {"dhl": "DHL"}
-            If None or empty, uses hardcoded fallback rules for backward compatibility.
 
     Returns:
-        tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
-            A tuple containing four elements:
-            - final_df (pd.DataFrame): The main DataFrame with detailed results
-              for every line item, including the calculated
-              'Order_Fulfillment_Status'.
-            - summary_present_df (pd.DataFrame): A summary of all SKUs that
-              will be fulfilled, aggregated by quantity.
-            - summary_missing_df (pd.DataFrame): A summary of SKUs in
-              unfulfillable orders that were out of stock.
-            - stats (dict): A dictionary containing key statistics about the
-              fulfillment analysis (e.g., total orders completed).
+        Tuple of (cleaned_orders_df, cleaned_stock_df)
+
+    Raises:
+        ValueError: If required columns missing after mapping
     """
+    logger.debug("Phase 1/7: Cleaning and preparing data...")
+
     # --- Step 0: Apply Column Mappings ---
     # Check if DataFrames already have internal names (backward compatibility for tests)
     orders_has_internal_names = all(
@@ -237,8 +149,6 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None, courier_
     # --- Set/Bundle Decoding ---
     # Expand sets into component SKUs before fulfillment simulation
     from .set_decoder import decode_sets_in_orders
-    import logging
-    logger = logging.getLogger(__name__)
 
     set_decoders = column_mappings.get("set_decoders", {}) if column_mappings else {}
     if set_decoders:
@@ -251,60 +161,319 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None, courier_
         orders_clean_df["Original_Quantity"] = orders_clean_df["Quantity"]
         orders_clean_df["Is_Set_Component"] = False
 
-    # --- Fulfillment Simulation ---
-    order_item_counts = orders_clean_df.groupby("Order_Number").size().rename("item_count")
-    orders_with_counts = pd.merge(orders_clean_df, order_item_counts, on="Order_Number")
+    logger.debug(f"Cleaned {len(orders_clean_df)} order rows, {len(stock_clean_df)} SKUs")
+    return orders_clean_df, stock_clean_df
+
+
+def _prioritize_orders(orders_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Prioritize orders to maximize fulfillment completion rate.
+
+    Strategy:
+    - Multi-item orders first (higher completion priority)
+    - Then single-item orders
+    - Within each group, sorted by order number for consistency
+
+    This ensures maximum number of complete orders fulfilled.
+    Uses VECTORIZED groupby operations instead of iterrows().
+
+    Args:
+        orders_df: Cleaned orders DataFrame
+
+    Returns:
+        DataFrame with columns ["Order_Number", "item_count"] in priority sequence
+
+    Note:
+        Multi-item orders are prioritized because completing them
+        provides better customer satisfaction than partial fulfillment
+        of multiple orders.
+    """
+    logger.debug("Phase 2/7: Prioritizing orders (multi-item first)...")
+
+    # VECTORIZED: Count items per order using groupby
+    order_item_counts = orders_df.groupby("Order_Number").size().rename("item_count")
+
+    # Merge counts back to get unique orders with their counts
+    orders_with_counts = pd.merge(orders_df, order_item_counts, on="Order_Number")
+
+    # Get unique orders and sort by item count (descending), then by order number
     prioritized_orders = (
         orders_with_counts[["Order_Number", "item_count"]]
         .drop_duplicates()
         .sort_values(by=["item_count", "Order_Number"], ascending=[False, True])
     )
 
-    live_stock = pd.Series(stock_clean_df.Stock.values, index=stock_clean_df.SKU).to_dict()
+    logger.debug(f"Prioritized {len(prioritized_orders)} unique orders")
+    return prioritized_orders
+
+
+def _simulate_stock_allocation(
+    orders_df: pd.DataFrame,
+    stock_df: pd.DataFrame,
+    prioritized_orders: pd.DataFrame
+) -> Dict[str, str]:
+    """
+    Simulate stock allocation across prioritized orders.
+
+    Algorithm:
+    1. Initialize stock availability dict from stock DataFrame
+    2. Process orders in priority sequence
+    3. For each order, check if all items available
+    4. Mark order as fulfillable/not fulfillable
+    5. Deduct stock for fulfillable orders
+
+    Performance:
+    Uses VECTORIZED operations where possible. The main loop iterates over
+    unique orders (not individual items), which is necessary for the sequential
+    stock allocation logic.
+
+    Args:
+        orders_df: Cleaned orders DataFrame with item counts
+        stock_df: Stock availability DataFrame
+        prioritized_orders: DataFrame with ["Order_Number", "item_count"] in priority order
+
+    Returns:
+        Dictionary mapping order_number to fulfillment status
+        Format: {"ORDER-123": "Fulfillable", "ORDER-124": "Not Fulfillable"}
+
+    Note:
+        This is the core fulfillment simulation algorithm.
+        Changes here affect all downstream reporting.
+    """
+    logger.debug("Phase 3/7: Simulating stock allocation...")
+
+    # Initialize stock tracking - VECTORIZED dict creation
+    live_stock = pd.Series(stock_df.Stock.values, index=stock_df.SKU).to_dict()
     fulfillment_results = {}
 
+    # Add item_count to orders for filtering
+    order_item_counts = orders_df.groupby("Order_Number").size().rename("item_count")
+    orders_with_counts = pd.merge(orders_df, order_item_counts, on="Order_Number")
+
+    # Iterate over prioritized orders (necessary for sequential allocation)
     for order_number in prioritized_orders["Order_Number"]:
+        # Get all items for this order - VECTORIZED filter
         order_items = orders_with_counts[orders_with_counts["Order_Number"] == order_number]
+
+        # Check if order can be fulfilled - VECTORIZED check
+        # Group by SKU to handle multiple line items of same SKU
+        required_quantities = order_items.groupby("SKU")["Quantity"].sum()
+
         can_fulfill_order = True
-        # Перевіряємо, чи можна виконати замовлення
-        for _, item in order_items.iterrows():
-            sku, required_qty = item["SKU"], item["Quantity"]
+        for sku, required_qty in required_quantities.items():
             if required_qty > live_stock.get(sku, 0):
                 can_fulfill_order = False
                 break
-        # Якщо так, списуємо товари
+
+        # Update fulfillment status and deduct stock if fulfillable
         if can_fulfill_order:
             fulfillment_results[order_number] = "Fulfillable"
-            for _, item in order_items.iterrows():
-                live_stock[item["SKU"]] -= item["Quantity"]
+            # Deduct stock - VECTORIZED operation
+            for sku, qty in required_quantities.items():
+                live_stock[sku] -= qty
         else:
             fulfillment_results[order_number] = "Not Fulfillable"
 
-    # Calculate final stock levels after fulfillment
+    fulfillable_count = sum(1 for status in fulfillment_results.values() if status == "Fulfillable")
+    logger.debug(f"Fulfillable: {fulfillable_count}/{len(fulfillment_results)} orders")
+
+    return fulfillment_results
+
+
+def _calculate_final_stock(
+    stock_df: pd.DataFrame,
+    fulfillment_results: Dict[str, str],
+    orders_df: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Calculate final stock levels after fulfillment simulation.
+
+    Recalculates stock by replaying the fulfillment decisions to determine
+    remaining stock for each SKU.
+
+    Args:
+        stock_df: Initial stock DataFrame
+        fulfillment_results: Dict of order_number -> status from simulation
+        orders_df: Orders DataFrame
+
+    Returns:
+        DataFrame with columns ["SKU", "Final_Stock"]
+
+    Note:
+        This recreates the stock calculation based on fulfillment results.
+    """
+    logger.debug("Phase 4/7: Calculating final stock levels...")
+
+    # Initialize final stock from initial stock
+    live_stock = pd.Series(stock_df.Stock.values, index=stock_df.SKU).to_dict()
+
+    # Replay fulfillment to calculate final stock
+    for order_number, status in fulfillment_results.items():
+        if status == "Fulfillable":
+            # Get items for this order
+            order_items = orders_df[orders_df["Order_Number"] == order_number]
+            # Deduct stock - VECTORIZED groupby
+            for sku, qty in order_items.groupby("SKU")["Quantity"].sum().items():
+                live_stock[sku] -= qty
+
+    # Convert to DataFrame
     final_stock_levels = pd.Series(live_stock, name="Final_Stock").reset_index().rename(columns={"index": "SKU"})
 
-    # --- Final Report Generation ---
-    # Merge orders with stock data
+    logger.debug(f"Calculated final stock for {len(final_stock_levels)} SKUs")
+    return final_stock_levels
+
+
+def _detect_repeated_orders(
+    final_df: pd.DataFrame,
+    history_df: pd.DataFrame
+) -> pd.Series:
+    """
+    Detect orders that appear in historical fulfillment data (repeated orders).
+
+    Business Logic:
+    An order is "repeated" if the same Order_Number appears in historical
+    fulfillment data.
+
+    This is used for:
+    - Special tagging (System_note = "Repeat")
+    - Reporting and analytics
+    - Courier statistics
+
+    Uses VECTORIZED operations (.isin()) instead of iterrows().
+
+    Args:
+        final_df: Current orders DataFrame with Order_Number column
+        history_df: Historical orders DataFrame with Order_Number column
+
+    Returns:
+        pd.Series (string) with "Repeat" for repeated orders, "" otherwise
+
+    Example:
+        >>> repeated = _detect_repeated_orders(final_df, history_df)
+        >>> final_df['System_note'] = repeated
+    """
+    logger.debug("Phase 5/7: Detecting repeated orders...")
+
+    # VECTORIZED: Check if Order_Number exists in history
+    # This replaces iterrows() with vectorized .isin() operation
+    repeated = np.where(
+        final_df["Order_Number"].isin(history_df["Order_Number"]),
+        "Repeat",
+        ""
+    )
+
+    repeated_count = (repeated == "Repeat").sum()
+    logger.debug(f"Found {repeated_count} repeated orders")
+
+    return pd.Series(repeated, index=final_df.index)
+
+
+def _migrate_packaging_tags(final_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Migrate Packaging_Tags to Internal_Tags system.
+
+    This handles backward compatibility by migrating old packaging tags
+    to the new structured tagging system.
+
+    Args:
+        final_df: DataFrame with potential Packaging_Tags column
+
+    Returns:
+        DataFrame with updated Internal_Tags column
+    """
+    logger.debug("Migrating Packaging_Tags to Internal_Tags (if present)...")
+
+    # Migrate Packaging_Tags to Internal_Tags if it exists
+    if "Packaging_Tags" in final_df.columns:
+        from shopify_tool.tag_manager import add_tag
+
+        logger.info("Migrating Packaging_Tags to Internal_Tags")
+
+        # VECTORIZED approach: Apply function to each row
+        # While apply() is not fully vectorized, it's better than iterrows()
+        # and necessary here because add_tag modifies a JSON string
+        def migrate_tag(row):
+            packaging_tag = row["Packaging_Tags"]
+            if pd.notna(packaging_tag) and packaging_tag != "":
+                return add_tag(row["Internal_Tags"], str(packaging_tag))
+            return row["Internal_Tags"]
+
+        final_df["Internal_Tags"] = final_df.apply(migrate_tag, axis=1)
+        logger.info("Packaging_Tags migration completed")
+
+    return final_df
+
+
+def _merge_results_to_dataframe(
+    orders_df: pd.DataFrame,
+    stock_df: pd.DataFrame,
+    order_item_counts: pd.Series,
+    final_stock_levels: pd.DataFrame,
+    fulfillment_results: Dict[str, str],
+    history_df: pd.DataFrame,
+    courier_mappings: Optional[dict] = None
+) -> pd.DataFrame:
+    """
+    Merge all analysis results into final output DataFrame.
+
+    Combines:
+    - Original order data
+    - Stock information
+    - Fulfillment simulation results
+    - Item counts
+    - Final stock levels
+    - Repeated orders flags
+    - Courier mappings
+    - All calculated fields
+
+    Args:
+        orders_df: Cleaned orders DataFrame
+        stock_df: Cleaned stock DataFrame
+        order_item_counts: Series with item counts per order
+        final_stock_levels: DataFrame with final stock calculations
+        fulfillment_results: Dict of order fulfillment statuses
+        history_df: Historical fulfillment data
+        courier_mappings: Optional courier mapping configuration
+
+    Returns:
+        Complete analyzed DataFrame ready for reporting
+
+    Output Columns:
+    - All original order columns
+    - Stock, Final_Stock (from stock data)
+    - Warehouse_Name (from stock data)
+    - Order_Fulfillment_Status (from simulation)
+    - Order_Type (Single/Multi)
+    - Shipping_Provider (mapped)
+    - Destination_Country
+    - System_note (Repeat flag)
+    - Stock_Alert, Status_Note (initialized)
+    - Source (initialized to "Order")
+    - Internal_Tags (structured tagging)
+    """
+    logger.debug("Phase 6/7: Merging results to final DataFrame...")
+
+    # --- Merge orders with stock data ---
     # If both have Product_Name, prefer the one from orders (use suffixes to handle conflict)
-    has_product_name_in_orders = "Product_Name" in orders_clean_df.columns
-    has_product_name_in_stock = "Product_Name" in stock_clean_df.columns
+    has_product_name_in_orders = "Product_Name" in orders_df.columns
+    has_product_name_in_stock = "Product_Name" in stock_df.columns
 
     if has_product_name_in_orders and has_product_name_in_stock:
         # Both have Product_Name - use suffixes and prefer orders
-        final_df = pd.merge(orders_clean_df, stock_clean_df, on="SKU", how="left", suffixes=('', '_stock'))
+        final_df = pd.merge(orders_df, stock_df, on="SKU", how="left", suffixes=('', '_stock'))
         # Drop stock Product_Name, keep orders Product_Name
         if 'Product_Name_stock' in final_df.columns:
             final_df = final_df.drop(columns=['Product_Name_stock'])
     else:
         # Simple merge - no conflict
-        final_df = pd.merge(orders_clean_df, stock_clean_df, on="SKU", how="left")
+        final_df = pd.merge(orders_df, stock_df, on="SKU", how="left")
 
     # --- Add Warehouse_Name column from stock file ---
     # Create stock name lookup dictionary
-    if "Product_Name" in stock_clean_df.columns:
+    if "Product_Name" in stock_df.columns:
         stock_lookup = dict(zip(
-            stock_clean_df["SKU"],
-            stock_clean_df["Product_Name"]
+            stock_df["SKU"],
+            stock_df["Product_Name"]
         ))
 
         logger.info(f"Creating Warehouse_Name lookup: {len(stock_lookup)} SKUs")
@@ -324,14 +493,21 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None, courier_
         logger.warning("Stock file has no Product_Name column, using N/A")
         final_df["Warehouse_Name"] = "N/A"
 
+    # Merge item counts
     final_df = pd.merge(final_df, order_item_counts, on="Order_Number")
+
     # Merge final stock levels to the main dataframe
     final_df = pd.merge(final_df, final_stock_levels, on="SKU", how="left")
     final_df["Final_Stock"] = final_df["Final_Stock"].fillna(
         final_df["Stock"]
     )  # If an item was not fulfilled, its final stock is its initial stock
+
+    # Add Order_Type (Single/Multi)
     final_df["Order_Type"] = np.where(final_df["item_count"] > 1, "Multi", "Single")
+
+    # Fill missing stock with 0
     final_df["Stock"] = final_df["Stock"].fillna(0)
+
     # Use Shipping_Method with underscore (internal name)
     if "Shipping_Method" in final_df.columns:
         final_df["Shipping_Provider"] = final_df["Shipping_Method"].apply(
@@ -339,13 +515,24 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None, courier_
         )
     else:
         final_df["Shipping_Provider"] = "Unknown"
+
+    # Map fulfillment results
     final_df["Order_Fulfillment_Status"] = final_df["Order_Number"].map(fulfillment_results)
+
     # Use Shipping_Country with underscore (internal name)
     if "Shipping_Country" in final_df.columns:
-        final_df["Destination_Country"] = np.where(final_df["Shipping_Provider"] == "DHL", final_df["Shipping_Country"], "")
+        final_df["Destination_Country"] = np.where(
+            final_df["Shipping_Provider"] == "DHL",
+            final_df["Shipping_Country"],
+            ""
+        )
     else:
         final_df["Destination_Country"] = ""
-    final_df["System_note"] = np.where(final_df["Order_Number"].isin(history_df["Order_Number"]), "Repeat", "")
+
+    # Detect repeated orders - VECTORIZED
+    final_df["System_note"] = _detect_repeated_orders(final_df, history_df)
+
+    # Initialize additional columns
     final_df["Stock_Alert"] = ""  # Initialize the column
     final_df["Status_Note"] = ""  # Initialize column for user-defined rule tags
 
@@ -356,30 +543,19 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None, courier_
     final_df["Internal_Tags"] = "[]"
 
     # Migrate Packaging_Tags to Internal_Tags if it exists
-    if "Packaging_Tags" in final_df.columns:
-        from shopify_tool.tag_manager import add_tag
+    final_df = _migrate_packaging_tags(final_df)
 
-        logger.info("Migrating Packaging_Tags to Internal_Tags")
-        for idx, row in final_df.iterrows():
-            packaging_tag = row["Packaging_Tags"]
-            if pd.notna(packaging_tag) and packaging_tag != "":
-                # Add packaging tag to Internal_Tags
-                final_df.loc[idx, "Internal_Tags"] = add_tag(
-                    final_df.loc[idx, "Internal_Tags"],
-                    str(packaging_tag)
-                )
-        logger.info("Packaging_Tags migration completed")
-
+    # Select and order output columns
     output_columns = [
         "Order_Number",
         "Order_Type",
         "SKU",
         "Product_Name",
-        "Warehouse_Name",  # NEW: From stock file
+        "Warehouse_Name",  # From stock file
         "Quantity",
         "Stock",
         "Final_Stock",
-        "Source",  # NEW: "Order" or "Manual"
+        "Source",  # "Order" or "Manual"
         "Stock_Alert",
         "Order_Fulfillment_Status",
         "Shipping_Provider",
@@ -389,7 +565,7 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None, courier_
         "Notes",
         "System_note",
         "Status_Note",
-        "Internal_Tags",  # NEW: Structured tagging system
+        "Internal_Tags",  # Structured tagging system
     ]
     if "Total_Price" in final_df.columns:
         # Insert 'Total_Price' into the list at a specific position for consistent column order.
@@ -400,6 +576,31 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None, courier_
     # This prevents errors if a column is unexpectedly missing.
     final_output_columns = [col for col in output_columns if col in final_df.columns]
     final_df = final_df[final_output_columns].copy()  # Use .copy() to avoid SettingWithCopyWarning
+
+    logger.debug(f"Final DataFrame: {len(final_df)} rows, {len(final_df.columns)} columns")
+    return final_df
+
+
+def _generate_summary_reports(
+    final_df: pd.DataFrame
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Generate summary reports for fulfilled and missing items.
+
+    Creates two summary DataFrames:
+    1. Summary of items that will be fulfilled (from fulfillable orders)
+    2. Summary of items that are truly missing (required > initial stock)
+
+    Args:
+        final_df: Complete analyzed DataFrame
+
+    Returns:
+        Tuple of (summary_present_df, summary_missing_df)
+
+    Format:
+        Both DataFrames have columns: ["Name", "SKU", "Total Quantity"]
+    """
+    logger.debug("Phase 7/7: Generating summary reports...")
 
     # --- Summary Reports Generation ---
     present_df = final_df[final_df["Order_Fulfillment_Status"] == "Fulfillable"].copy()
@@ -438,10 +639,209 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None, courier_
     else:
         summary_missing_df = pd.DataFrame(columns=["Name", "SKU", "Total Quantity"])
 
-    # --- Statistics Calculation ---
-    stats = recalculate_statistics(final_df)
+    logger.debug(f"Summary present: {len(summary_present_df)} SKUs")
+    logger.debug(f"Summary missing: {len(summary_missing_df)} SKUs")
 
-    return final_df, summary_present_df, summary_missing_df, stats
+    return summary_present_df, summary_missing_df
+
+
+def _generalize_shipping_method(method, courier_mappings=None):
+    """Standardizes raw shipping method names to a consistent format.
+
+    Takes a raw shipping method string, converts it to lowercase, and maps it
+    to a standardized provider name using either the provided courier_mappings
+    or hardcoded fallback rules.
+
+    The function supports two courier_mappings formats:
+    1. New format (preferred):
+       {"DHL": {"patterns": ["dhl", "dhl express"]}, "DPD": {"patterns": ["dpd"]}}
+    2. Legacy format (for backward compatibility):
+       {"dhl": "DHL", "dpd": "DPD"}
+
+    If the method is not recognized, it returns a title-cased version of the
+    input. Handles NaN values by returning 'Unknown'.
+
+    Args:
+        method (str | float): The raw shipping method from the orders file.
+            Can be a float (NaN) for empty values.
+        courier_mappings (dict, optional): Dictionary mapping courier patterns to
+            standardized courier codes. If None or empty, uses hardcoded fallback
+            rules for backward compatibility.
+
+    Returns:
+        str: The standardized shipping provider name.
+
+    Examples:
+        >>> _generalize_shipping_method("dhl express", {"DHL": {"patterns": ["dhl"]}})
+        'DHL'
+        >>> _generalize_shipping_method("custom courier", {})
+        'Custom Courier'
+        >>> _generalize_shipping_method(None)
+        'Unknown'
+    """
+    # Handle NaN and empty values
+    if pd.isna(method):
+        return "Unknown"
+    method_str = str(method)
+    if not method_str.strip():
+        return "Unknown"
+
+    method_lower = method_str.lower()
+
+    # If courier_mappings provided and not empty, use dynamic mapping
+    if courier_mappings:
+        # Check if new format (dict of dicts with "patterns" key)
+        # or legacy format (simple dict mapping)
+        for courier_code, mapping_data in courier_mappings.items():
+            if isinstance(mapping_data, dict):
+                # New format: {"DHL": {"patterns": ["dhl", "dhl express"]}}
+                patterns = mapping_data.get("patterns", [])
+                for pattern in patterns:
+                    if pattern.lower() in method_lower:
+                        return courier_code
+            else:
+                # Legacy format: {"dhl": "DHL"}
+                # Check if the pattern (key) is in the method
+                if courier_code.lower() in method_lower:
+                    return mapping_data
+    else:
+        # Fallback to hardcoded rules for backward compatibility
+        if "dhl" in method_lower:
+            return "DHL"
+        if "dpd" in method_lower:
+            return "DPD"
+        if "international shipping" in method_lower:
+            return "PostOne"
+
+    # If no match found, return title-cased version
+    return method_str.title()
+
+
+def run_analysis(stock_df, orders_df, history_df, column_mappings=None, courier_mappings=None):
+    """
+    Main analysis engine for order fulfillment simulation.
+
+    Orchestrates complete analysis workflow through 7 specialized phases:
+    1. Data cleaning and preparation
+    2. Order prioritization (multi-item first strategy)
+    3. Stock allocation simulation
+    4. Final stock calculations
+    5. Repeated orders detection
+    6. Results merging to final DataFrame
+    7. Summary statistics generation
+
+    Algorithm:
+    - Prioritizes multi-item orders for maximum completion rate
+    - Simulates stock allocation in priority sequence
+    - Tracks repeated orders against history
+    - Provides comprehensive fulfillment analytics
+
+    This function operates purely on DataFrames and does not perform any
+    file I/O.
+
+    Args:
+        stock_df (pd.DataFrame): DataFrame with stock levels for each SKU.
+            Column names will be mapped according to column_mappings['stock'].
+        orders_df (pd.DataFrame): DataFrame with all order line items.
+            Column names will be mapped according to column_mappings['orders'].
+        history_df (pd.DataFrame): DataFrame with previously fulfilled order
+            numbers. Requires an 'Order_Number' column.
+        column_mappings (dict, optional): Dictionary with 'orders' and 'stock' keys,
+            each containing a mapping of CSV column names to internal standard names.
+            Example: {"orders": {"Name": "Order_Number", "Lineitem sku": "SKU"},
+                     "stock": {"Артикул": "SKU", "Наличност": "Stock"}}
+            If None, uses default Shopify/Bulgarian mappings for backward compatibility.
+        courier_mappings (dict, optional): Dictionary mapping courier patterns to
+            standardized courier codes. Supports two formats:
+            1. New: {"DHL": {"patterns": ["dhl", "dhl express"]}}
+            2. Legacy: {"dhl": "DHL"}
+            If None or empty, uses hardcoded fallback rules for backward compatibility.
+
+    Returns:
+        tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
+            A tuple containing four elements:
+            - final_df (pd.DataFrame): The main DataFrame with detailed results
+              for every line item, including the calculated
+              'Order_Fulfillment_Status'.
+            - summary_present_df (pd.DataFrame): A summary of all SKUs that
+              will be fulfilled, aggregated by quantity.
+            - summary_missing_df (pd.DataFrame): A summary of SKUs in
+              unfulfillable orders that were out of stock.
+            - stats (dict): A dictionary containing key statistics about the
+              fulfillment analysis (e.g., total orders completed).
+
+    Raises:
+        ValueError: If data validation fails
+        KeyError: If required columns missing
+
+    Example:
+        >>> final_df, present, missing, stats = run_analysis(
+        ...     stock_df=stock,
+        ...     orders_df=orders,
+        ...     history_df=history
+        ... )
+    """
+    logger.info("=" * 60)
+    logger.info("STARTING ORDER FULFILLMENT ANALYSIS")
+    logger.info("=" * 60)
+
+    try:
+        # Phase 1: Clean and prepare data
+        logger.info("Phase 1/7: Data cleaning and preparation")
+        orders_clean, stock_clean = _clean_and_prepare_data(
+            orders_df, stock_df, column_mappings
+        )
+
+        # Phase 2: Prioritize orders
+        logger.info("Phase 2/7: Order prioritization (multi-item first)")
+        prioritized_orders = _prioritize_orders(orders_clean)
+
+        # Phase 3: Simulate stock allocation
+        logger.info("Phase 3/7: Stock allocation simulation")
+        fulfillment_results = _simulate_stock_allocation(
+            orders_clean, stock_clean, prioritized_orders
+        )
+
+        # Phase 4: Calculate final stock
+        logger.info("Phase 4/7: Final stock calculations")
+        final_stock = _calculate_final_stock(
+            stock_clean, fulfillment_results, orders_clean
+        )
+
+        # Phase 5: Already handled in Phase 6 (_detect_repeated_orders is called there)
+        # Phase 6: Merge all results
+        logger.info("Phase 5/7: Merging results to final DataFrame")
+        order_item_counts = orders_clean.groupby("Order_Number").size().rename("item_count")
+        final_df = _merge_results_to_dataframe(
+            orders_clean, stock_clean, order_item_counts, final_stock,
+            fulfillment_results, history_df, courier_mappings
+        )
+
+        # Phase 7: Generate summary reports
+        logger.info("Phase 6/7: Generating summary reports")
+        summary_present_df, summary_missing_df = _generate_summary_reports(final_df)
+
+        # Phase 8: Calculate statistics
+        logger.info("Phase 7/7: Calculating statistics")
+        stats = recalculate_statistics(final_df)
+
+        logger.info("=" * 60)
+        logger.info("ANALYSIS COMPLETED SUCCESSFULLY")
+        logger.info(f"Total Orders Completed: {stats['total_orders_completed']}")
+        logger.info(f"Total Orders Not Completed: {stats['total_orders_not_completed']}")
+        logger.info("=" * 60)
+
+        return final_df, summary_present_df, summary_missing_df, stats
+
+    except ValueError as e:
+        logger.error(f"Validation error during analysis: {e}")
+        raise
+    except KeyError as e:
+        logger.error(f"Missing required column: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error during analysis: {e}", exc_info=True)
+        raise
 
 
 def recalculate_statistics(df):
