@@ -235,6 +235,559 @@ def validate_csv_headers(file_path, required_columns, delimiter=","):
         return False, [f"An unexpected error occurred: {e}"]
 
 
+def _validate_and_prepare_inputs(
+    stock_file_path: Optional[str],
+    orders_file_path: Optional[str],
+    output_dir_path: str,
+    client_id: Optional[str],
+    session_manager: Optional[Any],
+    session_path: Optional[str]
+) -> Tuple[bool, Optional[str], str, Optional[str]]:
+    """Validates inputs and prepares session/working paths.
+
+    Determines whether to use session-based or legacy workflow mode,
+    creates or validates session directory, and copies input files
+    to session if needed.
+
+    Args:
+        stock_file_path: Path to stock CSV file or None for test mode
+        orders_file_path: Path to orders CSV file or None for test mode
+        output_dir_path: Legacy output directory path
+        client_id: Client identifier for session mode
+        session_manager: SessionManager instance for session mode
+        session_path: Existing session path or None to create new
+
+    Returns:
+        Tuple of (use_session_mode, working_path, error_message, session_path)
+        where error_message is None on success
+
+    Raises:
+        Exception: Propagated from session operations
+    """
+    logger.debug("Validating and preparing inputs...")
+
+    # Determine if using session-based workflow
+    use_session_mode = session_manager is not None and client_id is not None
+
+    # Handle session path based on workflow mode
+    if use_session_mode:
+        # If session_path not provided, create a new session
+        if session_path is None:
+            try:
+                logger.info(f"Creating new session for client: {client_id}")
+                session_path = session_manager.create_session(client_id)
+                logger.info(f"Session created at: {session_path}")
+            except Exception as e:
+                error_msg = f"Failed to create session: {e}"
+                logger.error(error_msg, exc_info=True)
+                raise ValueError(error_msg)
+
+        working_path = session_path
+        logger.info(f"Using session-based workflow for client: {client_id}")
+        logger.info(f"Session path: {working_path}")
+    else:
+        # Legacy mode: use output_dir_path
+        working_path = output_dir_path
+        logger.debug("Using legacy workflow mode")
+
+    # Copy input files to session if in session mode
+    if use_session_mode and stock_file_path and orders_file_path:
+        try:
+            # Copy input files to session/input/
+            input_dir = session_manager.get_input_dir(working_path)
+
+            # Copy with standardized names
+            orders_dest = Path(input_dir) / "orders_export.csv"
+            stock_dest = Path(input_dir) / "inventory.csv"
+
+            logger.info(f"Copying orders file to: {orders_dest}")
+            shutil.copy2(orders_file_path, orders_dest)
+
+            logger.info(f"Copying stock file to: {stock_dest}")
+            shutil.copy2(stock_file_path, stock_dest)
+
+            # Update session info with input file names
+            session_manager.update_session_info(working_path, {
+                "orders_file": "orders_export.csv",
+                "stock_file": "inventory.csv"
+            })
+
+            logger.info("Input files copied to session directory")
+        except Exception as e:
+            error_msg = f"Failed to setup session: {e}"
+            logger.error(error_msg, exc_info=True)
+            raise ValueError(error_msg)
+
+    return use_session_mode, working_path, None, session_path
+
+
+def _load_and_validate_files(
+    stock_file_path: Optional[str],
+    orders_file_path: Optional[str],
+    stock_delimiter: str,
+    orders_delimiter: str,
+    config: dict
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Loads and validates CSV files.
+
+    Loads stock and orders CSV files, applies proper encoding and
+    dtype specifications for SKU columns, and validates required
+    columns are present.
+
+    Args:
+        stock_file_path: Path to stock CSV or None for test mode
+        orders_file_path: Path to orders CSV or None for test mode
+        stock_delimiter: Delimiter for stock file
+        orders_delimiter: Delimiter for orders file
+        config: Configuration dict containing column_mappings and test data
+
+    Returns:
+        Tuple of (orders_df, stock_df)
+
+    Raises:
+        FileNotFoundError: If input files don't exist
+        pd.errors.ParserError: If CSV parsing fails
+        UnicodeDecodeError: If encoding is incorrect
+        ValueError: If validation fails
+    """
+    logger.info("Loading data files...")
+
+    if stock_file_path is not None and orders_file_path is not None:
+        # Normalize paths to handle UNC paths from network shares correctly
+        stock_file_path = _normalize_unc_path(stock_file_path)
+        orders_file_path = _normalize_unc_path(orders_file_path)
+
+        if not os.path.exists(stock_file_path) or not os.path.exists(orders_file_path):
+            raise FileNotFoundError("One or both input files were not found.")
+
+        # Get dtype specifications to force SKU columns to string
+        column_mappings = config.get("column_mappings", {})
+        stock_dtype = _get_sku_dtype_dict(column_mappings, "stock")
+        orders_dtype = _get_sku_dtype_dict(column_mappings, "orders")
+
+        # Load stock file with error handling
+        try:
+            logger.info(f"Reading stock file from normalized path: {stock_file_path}")
+            stock_df = pd.read_csv(
+                stock_file_path,
+                delimiter=stock_delimiter,
+                encoding='utf-8-sig',
+                dtype=stock_dtype
+            )
+            logger.info(f"Stock data loaded: {len(stock_df)} rows, {len(stock_df.columns)} columns")
+        except pd.errors.ParserError as e:
+            error_msg = (
+                f"Failed to parse stock file. The file may have incorrect delimiter.\n"
+                f"Current delimiter: '{stock_delimiter}'\n"
+                f"Error: {str(e)}"
+            )
+            logger.error(error_msg)
+            raise
+        except UnicodeDecodeError as e:
+            error_msg = (
+                f"Failed to read stock file due to encoding issue.\n"
+                f"Please ensure file is UTF-8 encoded.\n"
+                f"Error: {str(e)}"
+            )
+            logger.error(error_msg)
+            raise
+        except Exception as e:
+            logger.error(f"Failed to load stock file: {str(e)}")
+            raise
+
+        # Load orders file with error handling
+        try:
+            logger.info(f"Reading orders file from normalized path: {orders_file_path}")
+            orders_df = pd.read_csv(
+                orders_file_path,
+                delimiter=orders_delimiter,
+                encoding='utf-8-sig',
+                dtype=orders_dtype
+            )
+            logger.info(f"Orders data loaded: {len(orders_df)} rows, {len(orders_df.columns)} columns")
+        except pd.errors.ParserError as e:
+            error_msg = (
+                f"Failed to parse orders file. The file may have incorrect delimiter.\n"
+                f"Current delimiter: '{orders_delimiter}'\n"
+                f"Error: {str(e)}"
+            )
+            logger.error(error_msg)
+            raise
+        except UnicodeDecodeError as e:
+            error_msg = (
+                f"Failed to read orders file due to encoding issue.\n"
+                f"Please ensure file is UTF-8 encoded.\n"
+                f"Error: {str(e)}"
+            )
+            logger.error(error_msg)
+            raise
+        except Exception as e:
+            logger.error(f"Failed to load orders file: {str(e)}")
+            raise
+    else:
+        # For testing: allow passing DataFrames directly
+        stock_df = config.get("test_stock_df")
+        orders_df = config.get("test_orders_df")
+
+    logger.info("Data loaded successfully.")
+
+    # Validate dataframes
+    validation_errors = _validate_dataframes(orders_df, stock_df, config)
+    if validation_errors:
+        error_message = "\n".join(validation_errors)
+        logger.error(f"Validation Error: {error_message}")
+        raise ValueError(error_message)
+
+    return orders_df, stock_df
+
+
+def _load_history_data(
+    stock_file_path: Optional[str],
+    orders_file_path: Optional[str],
+    client_id: Optional[str],
+    profile_manager: Optional[Any],
+    config: dict
+) -> pd.DataFrame:
+    """Loads fulfillment history from appropriate storage location.
+
+    Determines the correct history file path based on whether profile_manager
+    is available (server-based storage) or fallback to local storage.
+    Handles various error conditions gracefully.
+
+    Args:
+        stock_file_path: Path to stock file (None indicates test mode)
+        orders_file_path: Path to orders file (None indicates test mode)
+        client_id: Client identifier for server-based storage
+        profile_manager: ProfileManager instance for server-based storage
+        config: Configuration dict (may contain test_history_df)
+
+    Returns:
+        DataFrame with history data (may be empty if no history exists)
+
+    Raises:
+        Does not raise - returns empty DataFrame on errors
+    """
+    logger.info("Loading fulfillment history...")
+
+    # Determine history file location
+    if profile_manager and client_id:
+        # Server-based storage in client directory
+        client_dir = profile_manager.get_client_directory(client_id)
+        history_path = client_dir / "fulfillment_history.csv"
+        logger.info(f"Using server-based history: {history_path}")
+    else:
+        # Fallback to local storage for tests/compatibility
+        history_path = get_persistent_data_path("fulfillment_history.csv")
+        logger.warning("Using local history fallback (no profile manager)")
+
+    # Load history
+    if stock_file_path is not None and orders_file_path is not None:
+        try:
+            if isinstance(history_path, Path):
+                history_path_str = str(history_path)
+            else:
+                history_path_str = history_path
+
+            # Force SKU column to string to prevent dtype issues
+            history_dtype = {"SKU": str} if "SKU" in pd.read_csv(
+                history_path_str, nrows=0, encoding='utf-8-sig'
+            ).columns else {}
+            history_df = pd.read_csv(history_path_str, encoding='utf-8-sig', dtype=history_dtype)
+            logger.info(f"Loaded {len(history_df)} records from fulfillment history: {history_path}")
+
+            # Apply SKU normalization if SKU column exists
+            if not history_df.empty and "SKU" in history_df.columns:
+                history_df["SKU"] = history_df["SKU"].apply(normalize_sku)
+                logger.debug("Applied SKU normalization to history data")
+        except FileNotFoundError:
+            history_df = pd.DataFrame(columns=["Order_Number", "Execution_Date"])
+            logger.info("No history file found. Starting with empty history.")
+        except pd.errors.ParserError as e:
+            logger.warning(f"Failed to parse history file: {e}")
+            history_df = pd.DataFrame(columns=["Order_Number", "Execution_Date"])
+        except UnicodeDecodeError as e:
+            logger.warning(f"Encoding error in history file: {e}")
+            history_df = pd.DataFrame(columns=["Order_Number", "Execution_Date"])
+        except Exception as e:
+            logger.warning(f"Could not load history file: {e}")
+            history_df = pd.DataFrame(columns=["Order_Number", "Execution_Date"])
+    else:
+        # Test mode
+        history_df = config.get("test_history_df", pd.DataFrame({"Order_Number": []}))
+
+    return history_df
+
+
+def _run_analysis_and_rules(
+    orders_df: pd.DataFrame,
+    stock_df: pd.DataFrame,
+    history_df: pd.DataFrame,
+    config: dict
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
+    """Runs analysis simulation and applies business rules.
+
+    Executes the core fulfillment analysis, applies low stock alerts,
+    and processes custom tagging rules from configuration.
+
+    Args:
+        orders_df: Orders DataFrame
+        stock_df: Stock DataFrame
+        history_df: History DataFrame
+        config: Configuration dict with column_mappings, courier_mappings, rules, settings
+
+    Returns:
+        Tuple of (final_df, summary_present_df, summary_missing_df, stats)
+
+    Raises:
+        Exception: Propagated from analysis.run_analysis()
+    """
+    logger.info("Running fulfillment simulation...")
+
+    # Get column mappings from config and pass to analysis
+    column_mappings = config.get("column_mappings", {})
+    # Add set_decoders to column_mappings for set expansion
+    if not isinstance(column_mappings, dict):
+        column_mappings = {}
+    column_mappings["set_decoders"] = config.get("set_decoders", {})
+    logger.debug(f"Using column mappings: {column_mappings}")
+
+    # Get courier mappings from config
+    courier_mappings = config.get("courier_mappings", {})
+    logger.debug(f"Using courier mappings: {courier_mappings}")
+
+    # Run core analysis
+    final_df, summary_present_df, summary_missing_df, stats = analysis.run_analysis(
+        stock_df, orders_df, history_df, column_mappings, courier_mappings
+    )
+    logger.info("Analysis computation complete.")
+
+    # Debug logging: Verify DataFrame structure
+    logger.debug(f"Analysis result columns: {list(final_df.columns)}")
+    logger.debug(f"DataFrame shape: {final_df.shape}")
+    if not final_df.empty:
+        logger.debug(f"Sample row (first): {final_df.iloc[0].to_dict()}")
+    if "Order_Fulfillment_Status" in final_df.columns:
+        status_counts = final_df["Order_Fulfillment_Status"].value_counts().to_dict()
+        logger.debug(f"Order_Fulfillment_Status distribution: {status_counts}")
+    else:
+        logger.error("CRITICAL: Order_Fulfillment_Status column is missing from analysis result!")
+
+    # Add stock alerts based on config
+    low_stock_threshold = config.get("settings", {}).get("low_stock_threshold")
+    if low_stock_threshold is not None and "Final_Stock" in final_df.columns:
+        logger.info(f"Applying low stock threshold: < {low_stock_threshold}")
+        final_df["Stock_Alert"] = np.where(
+            final_df["Final_Stock"] < low_stock_threshold,
+            "Low Stock",
+            ""
+        )
+
+    # Apply the rule engine
+    rules = config.get("rules", [])
+    if rules:
+        logger.info("Applying rule engine...")
+        engine = RuleEngine(rules)
+        final_df = engine.apply(final_df)
+        logger.info("Rule engine application complete.")
+
+    return final_df, summary_present_df, summary_missing_df, stats
+
+
+def _save_results_and_reports(
+    final_df: pd.DataFrame,
+    summary_present_df: pd.DataFrame,
+    summary_missing_df: pd.DataFrame,
+    stats: dict,
+    history_df: pd.DataFrame,
+    stock_file_path: Optional[str],
+    orders_file_path: Optional[str],
+    use_session_mode: bool,
+    working_path: str,
+    output_dir_path: str,
+    session_manager: Optional[Any],
+    client_id: Optional[str],
+    profile_manager: Optional[Any]
+) -> Tuple[str, Optional[str]]:
+    """Saves all analysis results, reports, and updates history.
+
+    Saves Excel report with analysis results, creates analysis_data.json
+    for Packing Tool integration, saves session state files, updates
+    session info, and updates fulfillment history.
+
+    Args:
+        final_df: Final analysis DataFrame
+        summary_present_df: Summary of fulfillable items
+        summary_missing_df: Summary of missing items
+        stats: Statistics dictionary
+        history_df: Current history DataFrame
+        stock_file_path: Path to stock file (None for test mode)
+        orders_file_path: Path to orders file (None for test mode)
+        use_session_mode: Whether using session-based workflow
+        working_path: Working directory (session or output path)
+        output_dir_path: Legacy output directory
+        session_manager: SessionManager instance
+        client_id: Client identifier
+        profile_manager: ProfileManager instance
+
+    Returns:
+        Tuple of (primary_output_path, secondary_output_path)
+        In session mode: (session_path, None)
+        In legacy mode: (excel_path, None)
+        In test mode: (None, None)
+
+    Raises:
+        Exception: Propagated from file I/O operations
+    """
+    # Skip file operations in test mode
+    if stock_file_path is None or orders_file_path is None:
+        logger.debug("Test mode: skipping file save operations")
+        return None, None
+
+    logger.info("Saving analysis report to Excel...")
+
+    # Determine output directory based on mode
+    if use_session_mode:
+        # Session mode: save to session/analysis/
+        analysis_dir = session_manager.get_analysis_dir(working_path)
+        output_file_path = str(Path(analysis_dir) / "fulfillment_analysis.xlsx")
+        logger.info(f"Session mode: saving to {output_file_path}")
+    else:
+        # Legacy mode: save to specified output_dir_path
+        if not os.path.exists(output_dir_path):
+            os.makedirs(output_dir_path)
+        output_file_path = os.path.join(output_dir_path, "fulfillment_analysis.xlsx")
+
+    # Save Excel report with multiple sheets
+    with pd.ExcelWriter(output_file_path, engine="xlsxwriter") as writer:
+        final_df.to_excel(writer, sheet_name="fulfillment_analysis", index=False)
+        summary_present_df.to_excel(writer, sheet_name="Summary_Present", index=False)
+        summary_missing_df.to_excel(writer, sheet_name="Summary_Missing", index=False)
+
+        workbook = writer.book
+        report_info_sheet = workbook.add_worksheet("Report Info")
+        generation_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        report_info_sheet.write("A1", "Report Generated On:")
+        report_info_sheet.write("B1", generation_time)
+        report_info_sheet.set_column("A:B", 25)
+
+        worksheet = writer.sheets["fulfillment_analysis"]
+        highlight_format = workbook.add_format({"bg_color": "#FFC7CE", "font_color": "#9C0006"})
+        for idx, col in enumerate(final_df):
+            max_len = max((final_df[col].astype(str).map(len).max(), len(str(col)))) + 2
+            worksheet.set_column(idx, idx, max_len)
+        for row_num, status in enumerate(final_df["Order_Fulfillment_Status"]):
+            if status == "Not Fulfillable":
+                worksheet.set_row(row_num + 1, None, highlight_format)
+    logger.info(f"Excel report saved to '{output_file_path}'")
+
+    # Save initial state files (current_state.pkl, current_state.xlsx, analysis_stats.json)
+    if use_session_mode:
+        try:
+            logger.info("Saving initial session state files...")
+
+            # Define file paths
+            current_state_pkl = Path(analysis_dir) / "current_state.pkl"
+            current_state_xlsx = Path(analysis_dir) / "current_state.xlsx"
+            stats_json = Path(analysis_dir) / "analysis_stats.json"
+
+            # Save DataFrame to pickle (fast loading)
+            logger.info(f"Saving current_state.pkl: {current_state_pkl}")
+            final_df.to_pickle(current_state_pkl)
+
+            # Save DataFrame to Excel (backup, human-readable)
+            logger.info(f"Saving current_state.xlsx: {current_state_xlsx}")
+            final_df.to_excel(current_state_xlsx, index=False)
+
+            # Save statistics to JSON
+            logger.info(f"Saving analysis_stats.json: {stats_json}")
+            with open(stats_json, 'w', encoding='utf-8') as f:
+                json.dump(stats, f, indent=2, ensure_ascii=False)
+
+            logger.info("Initial session state files saved successfully")
+
+        except Exception as e:
+            logger.error(f"Failed to save initial session state: {e}", exc_info=True)
+            # Continue with the workflow even if initial state save fails
+
+    # Session mode: Export analysis_data.json and update session_info
+    if use_session_mode:
+        try:
+            logger.info("Exporting analysis_data.json for Packing Tool integration...")
+            analysis_data = _create_analysis_data_for_packing(final_df)
+
+            # Save analysis_data.json
+            analysis_data_path = Path(analysis_dir) / "analysis_data.json"
+            with open(analysis_data_path, 'w', encoding='utf-8') as f:
+                json.dump(analysis_data, f, indent=2, ensure_ascii=False)
+
+            logger.info(f"analysis_data.json saved to: {analysis_data_path}")
+
+            # Update session_info.json with analysis results and statistics
+            session_manager.update_session_info(working_path, {
+                "analysis_completed": True,
+                "analysis_completed_at": datetime.now().isoformat(),
+                "total_orders": analysis_data["total_orders"],
+                "fulfillable_orders": analysis_data["fulfillable_orders"],
+                "not_fulfillable_orders": analysis_data["not_fulfillable_orders"],
+                "analysis_report_path": "analysis/analysis_report.xlsx",
+                "statistics": {
+                    "total_orders": len(final_df["Order_Number"].unique()),
+                    "total_items": len(final_df),
+                    "packing_lists_count": 0,
+                    "packing_lists": []
+                }
+            })
+
+            logger.info("Session info updated with analysis results and statistics")
+
+        except Exception as e:
+            logger.error(f"Failed to export analysis data: {e}", exc_info=True)
+            # Continue with the workflow even if export fails
+
+    # Update fulfillment history
+    logger.info("Updating fulfillment history...")
+    newly_fulfilled = final_df[final_df["Order_Fulfillment_Status"] == "Fulfillable"][
+        ["Order_Number"]
+    ].drop_duplicates()
+
+    if not newly_fulfilled.empty:
+        newly_fulfilled["Execution_Date"] = datetime.now().strftime("%Y-%m-%d")
+        updated_history = pd.concat([history_df, newly_fulfilled]).drop_duplicates(
+            subset=["Order_Number"], keep="last"
+        )
+
+        # Determine history path (same logic as load)
+        if profile_manager and client_id:
+            client_dir = profile_manager.get_client_directory(client_id)
+            history_path = client_dir / "fulfillment_history.csv"
+        else:
+            history_path = get_persistent_data_path("fulfillment_history.csv")
+
+        # Save updated history
+        try:
+            # Ensure parent directory exists
+            if isinstance(history_path, Path):
+                history_path.parent.mkdir(parents=True, exist_ok=True)
+                history_path_str = str(history_path)
+            else:
+                history_path_str = history_path
+                parent_dir = os.path.dirname(history_path_str)
+                if parent_dir:
+                    os.makedirs(parent_dir, exist_ok=True)
+
+            updated_history.to_csv(history_path_str, index=False)
+            logger.info(f"History updated and saved to: {history_path} ({len(newly_fulfilled)} new records)")
+        except Exception as e:
+            logger.error(f"Failed to save history: {e}")
+            # Don't fail the entire analysis if history save fails
+
+    # Return appropriate path based on mode
+    if use_session_mode:
+        return working_path, None
+    else:
+        return output_file_path, None
+
+
 def run_full_analysis(
     stock_file_path,
     orders_file_path,
@@ -249,24 +802,27 @@ def run_full_analysis(
 ):
     """Orchestrates the entire fulfillment analysis process.
 
-    This function serves as the main entry point for the core analysis logic.
-    It performs the following steps:
-    1. Loads stock and order data from CSV files.
-    2. Validates that the data contains the required columns.
-    3. Loads historical fulfillment data.
-    4. Runs the fulfillment simulation to determine order statuses.
-    5. Applies stock alerts and custom tagging rules.
-    6. Saves a detailed analysis report to an Excel file, including summaries.
-    7. Updates the fulfillment history with newly fulfilled orders.
+    This function serves as the main orchestration point for the analysis workflow,
+    delegating to specialized sub-functions for validation, loading, processing,
+    analysis, and saving.
 
-    New Session-Based Workflow (when session_manager and client_id are provided):
-    1. Creates new session OR uses provided session_path
-       - If session_path is None: automatically creates new session
-       - If session_path provided: uses existing session (GUI workflow)
-    2. Copies input files to session/input/
-    3. Saves analysis results to session/analysis/
-    4. Exports analysis_data.json for Packing Tool integration
-    5. Updates session_info.json with results
+    Workflow Steps:
+    1. Validate inputs and prepare session/working paths
+    2. Load and validate CSV files
+    3. Load fulfillment history
+    4. Run analysis simulation and apply business rules
+    5. Save results, reports, and update history
+
+    Session-Based Workflow (when session_manager and client_id provided):
+    - Creates new session OR uses provided session_path
+    - Copies input files to session/input/
+    - Saves analysis results to session/analysis/
+    - Exports analysis_data.json for Packing Tool integration
+    - Updates session_info.json with results
+
+    Legacy Workflow:
+    - Saves results to specified output_dir_path
+    - Maintains backward compatibility
 
     Args:
         stock_file_path (str | None): Path to the stock data CSV file. Can be
@@ -300,363 +856,85 @@ def run_full_analysis(
     """
     logger.info("--- Starting Full Analysis Process ---")
 
-    # Determine if using session-based workflow
-    use_session_mode = session_manager is not None and client_id is not None
+    try:
+        # Step 1: Validate and prepare inputs
+        logger.info("Step 1: Validating and preparing inputs...")
+        use_session_mode, working_path, _, session_path = _validate_and_prepare_inputs(
+            stock_file_path,
+            orders_file_path,
+            output_dir_path,
+            client_id,
+            session_manager,
+            session_path
+        )
 
-    # Handle session path based on workflow mode
-    if use_session_mode:
-        # If session_path not provided, create a new session
-        if session_path is None:
-            try:
-                logger.info(f"Creating new session for client: {client_id}")
-                session_path = session_manager.create_session(client_id)
-                logger.info(f"Session created at: {session_path}")
-            except Exception as e:
-                error_msg = f"Failed to create session: {e}"
-                logger.error(error_msg, exc_info=True)
-                return False, error_msg, None, None
+        # Step 2: Load and validate files
+        logger.info("Step 2: Loading and validating CSV files...")
+        orders_df, stock_df = _load_and_validate_files(
+            stock_file_path,
+            orders_file_path,
+            stock_delimiter,
+            orders_delimiter,
+            config
+        )
 
-        working_path = session_path
-        logger.info(f"Using session-based workflow for client: {client_id}")
-        logger.info(f"Session path: {working_path}")
-    else:
-        # Legacy mode: use output_dir_path
-        working_path = output_dir_path
+        # Step 3: Load history data
+        logger.info("Step 3: Loading fulfillment history...")
+        history_df = _load_history_data(
+            stock_file_path,
+            orders_file_path,
+            client_id,
+            profile_manager,
+            config
+        )
 
-    if use_session_mode:
-        try:
+        # Step 4: Run analysis and apply rules
+        logger.info("Step 4: Running analysis and applying rules...")
+        final_df, summary_present_df, summary_missing_df, stats = _run_analysis_and_rules(
+            orders_df,
+            stock_df,
+            history_df,
+            config
+        )
 
-            # Copy input files to session/input/
-            if stock_file_path and orders_file_path:
-                input_dir = session_manager.get_input_dir(working_path)
+        # Step 5: Save results and reports
+        logger.info("Step 5: Saving results and reports...")
+        primary_path, _ = _save_results_and_reports(
+            final_df,
+            summary_present_df,
+            summary_missing_df,
+            stats,
+            history_df,
+            stock_file_path,
+            orders_file_path,
+            use_session_mode,
+            working_path,
+            output_dir_path,
+            session_manager,
+            client_id,
+            profile_manager
+        )
 
-                # Copy with standardized names
-                orders_dest = Path(input_dir) / "orders_export.csv"
-                stock_dest = Path(input_dir) / "inventory.csv"
+        # Return success
+        logger.info("Analysis completed successfully!")
+        return True, primary_path, final_df, stats
 
-                logger.info(f"Copying orders file to: {orders_dest}")
-                shutil.copy2(orders_file_path, orders_dest)
-
-                logger.info(f"Copying stock file to: {stock_dest}")
-                shutil.copy2(stock_file_path, stock_dest)
-
-                # Update session info with input file names
-                session_manager.update_session_info(working_path, {
-                    "orders_file": "orders_export.csv",
-                    "stock_file": "inventory.csv"
-                })
-
-                logger.info("Input files copied to session directory")
-        except Exception as e:
-            error_msg = f"Failed to setup session: {e}"
-            logger.error(error_msg, exc_info=True)
-            return False, error_msg, None, None
-
-    # 1. Load data
-    logger.info("Step 1: Loading data files...")
-    if stock_file_path is not None and orders_file_path is not None:
-        # Normalize paths to handle UNC paths from network shares correctly
-        stock_file_path = _normalize_unc_path(stock_file_path)
-        orders_file_path = _normalize_unc_path(orders_file_path)
-
-        if not os.path.exists(stock_file_path) or not os.path.exists(orders_file_path):
-            return False, "One or both input files were not found.", None, None
-
-        # Get dtype specifications to force SKU columns to string
-        column_mappings = config.get("column_mappings", {})
-        stock_dtype = _get_sku_dtype_dict(column_mappings, "stock")
-        orders_dtype = _get_sku_dtype_dict(column_mappings, "orders")
-
-        # Load stock file with error handling
-        try:
-            logger.info(f"Reading stock file from normalized path: {stock_file_path}")
-            stock_df = pd.read_csv(stock_file_path, delimiter=stock_delimiter, encoding='utf-8-sig', dtype=stock_dtype)
-            logger.info(f"Stock data loaded: {len(stock_df)} rows, {len(stock_df.columns)} columns")
-        except pd.errors.ParserError as e:
-            error_msg = (
-                f"Failed to parse stock file. The file may have incorrect delimiter.\n"
-                f"Current delimiter: '{stock_delimiter}'\n"
-                f"Error: {str(e)}"
-            )
-            logger.error(error_msg)
-            return False, error_msg, None, None
-        except UnicodeDecodeError as e:
-            error_msg = (
-                f"Failed to read stock file due to encoding issue.\n"
-                f"Please ensure file is UTF-8 encoded.\n"
-                f"Error: {str(e)}"
-            )
-            logger.error(error_msg)
-            return False, error_msg, None, None
-        except Exception as e:
-            error_msg = f"Failed to load stock file: {str(e)}"
-            logger.error(error_msg)
-            return False, error_msg, None, None
-
-        # Load orders file with error handling
-        try:
-            logger.info(f"Reading orders file from normalized path: {orders_file_path}")
-            orders_df = pd.read_csv(orders_file_path, delimiter=orders_delimiter, encoding='utf-8-sig', dtype=orders_dtype)
-            logger.info(f"Orders data loaded: {len(orders_df)} rows, {len(orders_df.columns)} columns")
-        except pd.errors.ParserError as e:
-            error_msg = (
-                f"Failed to parse orders file. The file may have incorrect delimiter.\n"
-                f"Current delimiter: '{orders_delimiter}'\n"
-                f"Error: {str(e)}"
-            )
-            logger.error(error_msg)
-            return False, error_msg, None, None
-        except UnicodeDecodeError as e:
-            error_msg = (
-                f"Failed to read orders file due to encoding issue.\n"
-                f"Please ensure file is UTF-8 encoded.\n"
-                f"Error: {str(e)}"
-            )
-            logger.error(error_msg)
-            return False, error_msg, None, None
-        except Exception as e:
-            error_msg = f"Failed to load orders file: {str(e)}"
-            logger.error(error_msg)
-            return False, error_msg, None, None
-    else:
-        # For testing: allow passing DataFrames directly
-        stock_df = config.get("test_stock_df")
-        orders_df = config.get("test_orders_df")
-        history_df = config.get("test_history_df", pd.DataFrame({"Order_Number": []}))
-    logger.info("Data loaded successfully.")
-
-    # Validate dataframes
-    validation_errors = _validate_dataframes(orders_df, stock_df, config)
-    if validation_errors:
-        error_message = "\n".join(validation_errors)
-        logger.error(f"Validation Error: {error_message}")
-        return False, error_message, None, None
-
-    # NEW: Use server-based history storage
-    # Determine history file location
-    if profile_manager and client_id:
-        # Server-based storage in client directory
-        client_dir = profile_manager.get_client_directory(client_id)
-        history_path = client_dir / "fulfillment_history.csv"
-        logger.info(f"Using server-based history: {history_path}")
-    else:
-        # Fallback to local storage for tests/compatibility
-        history_path = get_persistent_data_path("fulfillment_history.csv")
-        logger.warning("Using local history fallback (no profile manager)")
-
-    # Load history
-    if stock_file_path is not None and orders_file_path is not None:
-        try:
-            if isinstance(history_path, Path):
-                history_path_str = str(history_path)
-            else:
-                history_path_str = history_path
-
-            # Force SKU column to string to prevent dtype issues
-            history_dtype = {"SKU": str} if "SKU" in pd.read_csv(history_path_str, nrows=0, encoding='utf-8-sig').columns else {}
-            history_df = pd.read_csv(history_path_str, encoding='utf-8-sig', dtype=history_dtype)
-            logger.info(f"Loaded {len(history_df)} records from fulfillment history: {history_path}")
-
-            # Apply SKU normalization if SKU column exists
-            if not history_df.empty and "SKU" in history_df.columns:
-                history_df["SKU"] = history_df["SKU"].apply(normalize_sku)
-                logger.debug("Applied SKU normalization to history data")
-        except FileNotFoundError:
-            history_df = pd.DataFrame(columns=["Order_Number", "Execution_Date"])
-            logger.info("No history file found. Starting with empty history.")
-        except pd.errors.ParserError as e:
-            logger.warning(f"Failed to parse history file: {e}")
-            history_df = pd.DataFrame(columns=["Order_Number", "Execution_Date"])
-        except UnicodeDecodeError as e:
-            logger.warning(f"Encoding error in history file: {e}")
-            history_df = pd.DataFrame(columns=["Order_Number", "Execution_Date"])
-        except Exception as e:
-            logger.warning(f"Could not load history file: {e}")
-            history_df = pd.DataFrame(columns=["Order_Number", "Execution_Date"])
-
-    # 2. Run analysis (computation only)
-    logger.info("Step 2: Running fulfillment simulation...")
-    # Get column mappings from config and pass to analysis
-    column_mappings = config.get("column_mappings", {})
-    # Add set_decoders to column_mappings for set expansion
-    if not isinstance(column_mappings, dict):
-        column_mappings = {}
-    column_mappings["set_decoders"] = config.get("set_decoders", {})
-    logger.debug(f"Using column mappings: {column_mappings}")
-    # Get courier mappings from config
-    courier_mappings = config.get("courier_mappings", {})
-    logger.debug(f"Using courier mappings: {courier_mappings}")
-    final_df, summary_present_df, summary_missing_df, stats = analysis.run_analysis(
-        stock_df, orders_df, history_df, column_mappings, courier_mappings
-    )
-    logger.info("Analysis computation complete.")
-
-    # Debug logging: Verify DataFrame structure
-    logger.debug(f"Analysis result columns: {list(final_df.columns)}")
-    logger.debug(f"DataFrame shape: {final_df.shape}")
-    if not final_df.empty:
-        logger.debug(f"Sample row (first): {final_df.iloc[0].to_dict()}")
-    if "Order_Fulfillment_Status" in final_df.columns:
-        status_counts = final_df["Order_Fulfillment_Status"].value_counts().to_dict()
-        logger.debug(f"Order_Fulfillment_Status distribution: {status_counts}")
-    else:
-        logger.error("CRITICAL: Order_Fulfillment_Status column is missing from analysis result!")
-
-    # 2.5. Add stock alerts based on config
-    low_stock_threshold = config.get("settings", {}).get("low_stock_threshold")
-    if low_stock_threshold is not None and "Final_Stock" in final_df.columns:
-        logger.info(f"Applying low stock threshold: < {low_stock_threshold}")
-        final_df["Stock_Alert"] = np.where(final_df["Final_Stock"] < low_stock_threshold, "Low Stock", "")
-
-    # 2.6. Apply the new rule engine
-    rules = config.get("rules", [])
-    if rules:
-        logger.info("Applying new rule engine...")
-        engine = RuleEngine(rules)
-        final_df = engine.apply(final_df)
-        logger.info("Rule engine application complete.")
-
-    # 3. Save Excel report (skip in test mode)
-    if stock_file_path is not None and orders_file_path is not None:
-        logger.info("Step 3: Saving analysis report to Excel...")
-
-        # Determine output directory based on mode
-        if use_session_mode:
-            # Session mode: save to session/analysis/
-            analysis_dir = session_manager.get_analysis_dir(working_path)
-            output_file_path = str(Path(analysis_dir) / "fulfillment_analysis.xlsx")
-            logger.info(f"Session mode: saving to {output_file_path}")
-        else:
-            # Legacy mode: save to specified output_dir_path
-            if not os.path.exists(output_dir_path):
-                os.makedirs(output_dir_path)
-            output_file_path = os.path.join(output_dir_path, "fulfillment_analysis.xlsx")
-
-        with pd.ExcelWriter(output_file_path, engine="xlsxwriter") as writer:
-            final_df.to_excel(writer, sheet_name="fulfillment_analysis", index=False)
-            summary_present_df.to_excel(writer, sheet_name="Summary_Present", index=False)
-            summary_missing_df.to_excel(writer, sheet_name="Summary_Missing", index=False)
-
-            workbook = writer.book
-            report_info_sheet = workbook.add_worksheet("Report Info")
-            generation_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            report_info_sheet.write("A1", "Report Generated On:")
-            report_info_sheet.write("B1", generation_time)
-            report_info_sheet.set_column("A:B", 25)
-
-            worksheet = writer.sheets["fulfillment_analysis"]
-            highlight_format = workbook.add_format({"bg_color": "#FFC7CE", "font_color": "#9C0006"})
-            for idx, col in enumerate(final_df):
-                max_len = max((final_df[col].astype(str).map(len).max(), len(str(col)))) + 2
-                worksheet.set_column(idx, idx, max_len)
-            for row_num, status in enumerate(final_df["Order_Fulfillment_Status"]):
-                if status == "Not Fulfillable":
-                    worksheet.set_row(row_num + 1, None, highlight_format)
-        logger.info(f"Excel report saved to '{output_file_path}'")
-
-        # Save initial state files (current_state.pkl, current_state.xlsx, analysis_stats.json)
-        # This allows modifications to be tracked from the start
-        if use_session_mode:
-            try:
-                logger.info("Saving initial session state files...")
-
-                # Define file paths
-                current_state_pkl = Path(analysis_dir) / "current_state.pkl"
-                current_state_xlsx = Path(analysis_dir) / "current_state.xlsx"
-                stats_json = Path(analysis_dir) / "analysis_stats.json"
-
-                # Save DataFrame to pickle (fast loading)
-                logger.info(f"Saving current_state.pkl: {current_state_pkl}")
-                final_df.to_pickle(current_state_pkl)
-
-                # Save DataFrame to Excel (backup, human-readable)
-                logger.info(f"Saving current_state.xlsx: {current_state_xlsx}")
-                final_df.to_excel(current_state_xlsx, index=False)
-
-                # Save statistics to JSON
-                logger.info(f"Saving analysis_stats.json: {stats_json}")
-                with open(stats_json, 'w', encoding='utf-8') as f:
-                    json.dump(stats, f, indent=2, ensure_ascii=False)
-
-                logger.info("Initial session state files saved successfully")
-
-            except Exception as e:
-                logger.error(f"Failed to save initial session state: {e}", exc_info=True)
-                # Continue with the workflow even if initial state save fails
-
-        # 3.5. Session mode: Export analysis_data.json and update session_info
-        if use_session_mode:
-            try:
-                logger.info("Exporting analysis_data.json for Packing Tool integration...")
-                analysis_data = _create_analysis_data_for_packing(final_df)
-
-                # Save analysis_data.json
-                analysis_data_path = Path(analysis_dir) / "analysis_data.json"
-                with open(analysis_data_path, 'w', encoding='utf-8') as f:
-                    json.dump(analysis_data, f, indent=2, ensure_ascii=False)
-
-                logger.info(f"analysis_data.json saved to: {analysis_data_path}")
-
-                # Update session_info.json with analysis results and statistics
-                session_manager.update_session_info(working_path, {
-                    "analysis_completed": True,
-                    "analysis_completed_at": datetime.now().isoformat(),
-                    "total_orders": analysis_data["total_orders"],
-                    "fulfillable_orders": analysis_data["fulfillable_orders"],
-                    "not_fulfillable_orders": analysis_data["not_fulfillable_orders"],
-                    "analysis_report_path": "analysis/analysis_report.xlsx",
-                    "statistics": {
-                        "total_orders": len(final_df["Order_Number"].unique()),
-                        "total_items": len(final_df),
-                        "packing_lists_count": 0,  # Updated when packing lists generated
-                        "packing_lists": []
-                    }
-                })
-
-                logger.info("Session info updated with analysis results and statistics")
-
-            except Exception as e:
-                logger.error(f"Failed to export analysis data: {e}", exc_info=True)
-                # Continue with the workflow even if export fails
-
-        # 4. Update history
-        logger.info("Step 4: Updating fulfillment history...")
-        newly_fulfilled = final_df[final_df["Order_Fulfillment_Status"] == "Fulfillable"][
-            ["Order_Number"]
-        ].drop_duplicates()
-        if not newly_fulfilled.empty:
-            newly_fulfilled["Execution_Date"] = datetime.now().strftime("%Y-%m-%d")
-            updated_history = pd.concat([history_df, newly_fulfilled]).drop_duplicates(
-                subset=["Order_Number"], keep="last"
-            )
-
-            # Save updated history (path already determined above)
-            try:
-                # Ensure parent directory exists
-                if isinstance(history_path, Path):
-                    history_path.parent.mkdir(parents=True, exist_ok=True)
-                    history_path_str = str(history_path)
-                else:
-                    history_path_str = history_path
-                    # Create parent directory if needed
-                    parent_dir = os.path.dirname(history_path_str)
-                    if parent_dir:
-                        os.makedirs(parent_dir, exist_ok=True)
-
-                updated_history.to_csv(history_path_str, index=False)
-                logger.info(f"History updated and saved to: {history_path} ({len(newly_fulfilled)} new records)")
-            except Exception as e:
-                logger.error(f"Failed to save history: {e}")
-                # Don't fail the entire analysis if history save fails
-
-        # Return appropriate path based on mode
-        if use_session_mode:
-            return True, working_path, final_df, stats
-        else:
-            return True, output_file_path, final_df, stats
-    else:
-        # For tests, just return the DataFrames
-        return True, None, final_df, stats
+    except FileNotFoundError as e:
+        error_msg = f"File not found: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return False, error_msg, None, None
+    except ValueError as e:
+        error_msg = f"Validation error: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return False, error_msg, None, None
+    except pd.errors.ParserError as e:
+        error_msg = f"CSV parsing error: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return False, error_msg, None, None
+    except Exception as e:
+        error_msg = f"Analysis failed: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return False, error_msg, None, None
 
 
 def create_packing_list_report(

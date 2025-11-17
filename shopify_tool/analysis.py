@@ -1,5 +1,9 @@
 import pandas as pd
 import numpy as np
+from typing import Tuple, Dict, List, Optional
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def _generalize_shipping_method(method, courier_mappings=None):
