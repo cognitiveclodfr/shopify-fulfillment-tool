@@ -6,7 +6,7 @@ through the window, which is a common UX issue in dense forms.
 """
 
 from PySide6.QtWidgets import QComboBox
-from PySide6.QtCore import QEvent
+from PySide6.QtCore import QEvent, Qt
 import logging
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ class WheelIgnoreComboBox(QComboBox):
         """
         super().__init__(parent)
         # Enable focus policy to ensure proper keyboard navigation
-        self.setFocusPolicy(self.StrongFocus)
+        self.setFocusPolicy(Qt.StrongFocus)
 
     def wheelEvent(self, event):
         """
