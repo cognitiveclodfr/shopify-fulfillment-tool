@@ -10,6 +10,7 @@ from . import analysis, packing_lists, stock_export
 from .rules import RuleEngine
 from .utils import get_persistent_data_path
 from .csv_utils import normalize_sku
+from .session_manager import SessionManagerError
 import numpy as np
 
 SYSTEM_TAGS = ["Repeat", "Priority", "Error"]
@@ -115,8 +116,38 @@ def _create_analysis_data_for_packing(final_df: pd.DataFrame) -> Dict[str, Any]:
 
         return analysis_data
 
+    except KeyError as e:
+        logger.error(f"Missing required column in DataFrame for packing analysis: {e}")
+        return {
+            "analyzed_at": datetime.now().isoformat(),
+            "total_orders": 0,
+            "fulfillable_orders": 0,
+            "not_fulfillable_orders": 0,
+            "orders": [],
+            "error": f"Missing required column: {e}"
+        }
+    except (ValueError, TypeError) as e:
+        logger.error(f"Invalid data type in DataFrame for packing analysis: {e}")
+        return {
+            "analyzed_at": datetime.now().isoformat(),
+            "total_orders": 0,
+            "fulfillable_orders": 0,
+            "not_fulfillable_orders": 0,
+            "orders": [],
+            "error": f"Invalid data type: {e}"
+        }
+    except AttributeError as e:
+        logger.error(f"Invalid DataFrame object for packing analysis: {e}")
+        return {
+            "analyzed_at": datetime.now().isoformat(),
+            "total_orders": 0,
+            "fulfillable_orders": 0,
+            "not_fulfillable_orders": 0,
+            "orders": [],
+            "error": f"Invalid DataFrame: {e}"
+        }
     except Exception as e:
-        logger.error(f"Failed to create analysis data for packing: {e}", exc_info=True)
+        logger.error(f"Unexpected error creating analysis data for packing: {e}", exc_info=True)
         return {
             "analyzed_at": datetime.now().isoformat(),
             "total_orders": 0,
@@ -277,8 +308,12 @@ def _validate_and_prepare_inputs(
                 logger.info(f"Creating new session for client: {client_id}")
                 session_path = session_manager.create_session(client_id)
                 logger.info(f"Session created at: {session_path}")
-            except Exception as e:
-                error_msg = f"Failed to create session: {e}"
+            except SessionManagerError as e:
+                error_msg = f"Failed to create session for client {client_id}: {e}"
+                logger.error(error_msg, exc_info=True)
+                raise ValueError(error_msg)
+            except (OSError, PermissionError) as e:
+                error_msg = f"File system error creating session for client {client_id}: {e}"
                 logger.error(error_msg, exc_info=True)
                 raise ValueError(error_msg)
 
@@ -313,8 +348,20 @@ def _validate_and_prepare_inputs(
             })
 
             logger.info("Input files copied to session directory")
-        except Exception as e:
-            error_msg = f"Failed to setup session: {e}"
+        except FileNotFoundError as e:
+            error_msg = f"Input file not found during session setup: {e}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        except PermissionError as e:
+            error_msg = f"Permission denied copying files to session directory: {e}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        except SessionManagerError as e:
+            error_msg = f"Session manager error during setup: {e}"
+            logger.error(error_msg, exc_info=True)
+            raise ValueError(error_msg)
+        except OSError as e:
+            error_msg = f"File system error during session setup (disk full or invalid path?): {e}"
             logger.error(error_msg, exc_info=True)
             raise ValueError(error_msg)
 
@@ -383,6 +430,14 @@ def _load_and_validate_files(
             )
             logger.error(error_msg)
             raise
+        except FileNotFoundError as e:
+            error_msg = f"Stock file not found at path: {stock_file_path}"
+            logger.error(error_msg)
+            raise
+        except PermissionError as e:
+            error_msg = f"Permission denied reading stock file: {stock_file_path}"
+            logger.error(error_msg)
+            raise
         except UnicodeDecodeError as e:
             error_msg = (
                 f"Failed to read stock file due to encoding issue.\n"
@@ -391,8 +446,12 @@ def _load_and_validate_files(
             )
             logger.error(error_msg)
             raise
+        except pd.errors.ParserError as e:
+            error_msg = f"Failed to parse stock CSV file (corrupted or invalid format): {e}"
+            logger.error(error_msg)
+            raise
         except Exception as e:
-            logger.error(f"Failed to load stock file: {str(e)}")
+            logger.error(f"Unexpected error loading stock file {stock_file_path}: {e}", exc_info=True)
             raise
 
         # Load orders file with error handling
@@ -413,6 +472,14 @@ def _load_and_validate_files(
             )
             logger.error(error_msg)
             raise
+        except FileNotFoundError as e:
+            error_msg = f"Orders file not found at path: {orders_file_path}"
+            logger.error(error_msg)
+            raise
+        except PermissionError as e:
+            error_msg = f"Permission denied reading orders file: {orders_file_path}"
+            logger.error(error_msg)
+            raise
         except UnicodeDecodeError as e:
             error_msg = (
                 f"Failed to read orders file due to encoding issue.\n"
@@ -421,8 +488,12 @@ def _load_and_validate_files(
             )
             logger.error(error_msg)
             raise
+        except pd.errors.ParserError as e:
+            error_msg = f"Failed to parse orders CSV file (corrupted or invalid format): {e}"
+            logger.error(error_msg)
+            raise
         except Exception as e:
-            logger.error(f"Failed to load orders file: {str(e)}")
+            logger.error(f"Unexpected error loading orders file {orders_file_path}: {e}", exc_info=True)
             raise
     else:
         # For testing: allow passing DataFrames directly
@@ -705,8 +776,14 @@ def _save_results_and_reports(
 
             logger.info("Initial session state files saved successfully")
 
+        except PermissionError as e:
+            logger.error(f"Permission denied saving session state files: {e}")
+            # Continue with the workflow even if initial state save fails
+        except OSError as e:
+            logger.error(f"File system error saving session state (disk full or invalid path?): {e}")
+            # Continue with the workflow even if initial state save fails
         except Exception as e:
-            logger.error(f"Failed to save initial session state: {e}", exc_info=True)
+            logger.error(f"Unexpected error saving initial session state: {e}", exc_info=True)
             # Continue with the workflow even if initial state save fails
 
     # Session mode: Export analysis_data.json and update session_info
@@ -740,8 +817,17 @@ def _save_results_and_reports(
 
             logger.info("Session info updated with analysis results and statistics")
 
+        except PermissionError as e:
+            logger.error(f"Permission denied exporting analysis data: {e}")
+            # Continue with the workflow even if export fails
+        except OSError as e:
+            logger.error(f"File system error exporting analysis data (disk full or invalid path?): {e}")
+            # Continue with the workflow even if export fails
+        except SessionManagerError as e:
+            logger.error(f"Session manager error updating session info: {e}", exc_info=True)
+            # Continue with the workflow even if export fails
         except Exception as e:
-            logger.error(f"Failed to export analysis data: {e}", exc_info=True)
+            logger.error(f"Unexpected error exporting analysis data: {e}", exc_info=True)
             # Continue with the workflow even if export fails
 
     # Update fulfillment history

@@ -11,6 +11,7 @@ from shopify_tool import core
 from shopify_tool.analysis import toggle_order_fulfillment
 from shopify_tool import packing_lists
 from shopify_tool import stock_export
+from shopify_tool.session_manager import SessionManagerError
 from gui.settings_window_pyside import SettingsWindow
 from gui.report_selection_dialog import ReportSelectionDialog
 
@@ -92,12 +93,26 @@ class ActionsHandler(QObject):
                 f"You can now load Orders and Stock files."
             )
 
-        except Exception as e:
-            self.log.error(f"Failed to create new session: {e}", exc_info=True)
+        except SessionManagerError as e:
+            self.log.error(f"Session manager error creating session: {e}", exc_info=True)
             QMessageBox.critical(
                 self.mw,
                 "Session Error",
-                f"Could not create a new session.\n\nError: {e}"
+                f"Could not create a new session.\n\n{e}"
+            )
+        except (OSError, PermissionError) as e:
+            self.log.error(f"File system error creating session: {e}")
+            QMessageBox.critical(
+                self.mw,
+                "File System Error",
+                f"Could not create session due to file system error.\n\n{e}"
+            )
+        except Exception as e:
+            self.log.error(f"Unexpected error creating new session: {e}", exc_info=True)
+            QMessageBox.critical(
+                self.mw,
+                "Unexpected Error",
+                f"An unexpected error occurred.\n\nError: {e}"
             )
 
     def run_analysis(self):

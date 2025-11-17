@@ -184,7 +184,8 @@ class SessionBrowserWidget(QWidget):
                 try:
                     dt = datetime.fromisoformat(created_at)
                     created_str = dt.strftime("%Y-%m-%d %H:%M")
-                except:
+                except (ValueError, TypeError) as e:
+                    # Invalid datetime format, use original string
                     created_str = created_at
             else:
                 created_str = ""
