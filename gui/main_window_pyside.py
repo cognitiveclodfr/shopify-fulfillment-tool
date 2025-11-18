@@ -25,6 +25,7 @@ from gui.actions_handler import ActionsHandler
 from gui.client_selector_widget import ClientSelectorWidget
 from gui.session_browser_widget import SessionBrowserWidget
 from gui.profile_manager_dialog import ProfileManagerDialog
+from gui.tag_management_panel import TagManagementPanel
 
 
 class MainWindow(QMainWindow):
@@ -341,6 +342,110 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'undo_button'):
             self.undo_button.setEnabled(True)
             self.undo_button.setToolTip(f"Undo: Add Internal Tag: {tag} (Ctrl+Z)")
+
+    def remove_internal_tag_from_order(self, order_number, tag):
+        """Remove an Internal Tag from all items in an order.
+
+        Args:
+            order_number: Order number to remove tag from
+            tag: Tag to remove
+        """
+        from shopify_tool.tag_manager import remove_tag
+
+        # Ensure Internal_Tags column exists
+        if "Internal_Tags" not in self.analysis_results_df.columns:
+            return
+
+        # Get affected rows (all items in the order) BEFORE modification
+        mask = self.analysis_results_df["Order_Number"] == order_number
+        affected_rows_before = self.analysis_results_df[mask].copy()
+
+        # Update tags for all items in the order
+        current_tags = self.analysis_results_df.loc[mask, "Internal_Tags"]
+        new_tags = current_tags.apply(lambda t: remove_tag(t, tag))
+        self.analysis_results_df.loc[mask, "Internal_Tags"] = new_tags
+
+        # Record operation for undo (AFTER modification)
+        self.undo_manager.record_operation(
+            operation_type="remove_internal_tag",
+            description=f"Remove Internal Tag: {tag} from order {order_number}",
+            params={
+                "order_number": order_number,
+                "tag": tag
+            },
+            affected_rows_before=affected_rows_before
+        )
+
+        # Save state and update UI
+        self.save_session_state()
+        self._update_all_views()
+        self.log_activity("Internal Tag", f"Removed '{tag}' from order {order_number}")
+
+        # Update undo button
+        if hasattr(self, 'undo_button'):
+            self.undo_button.setEnabled(True)
+            self.undo_button.setToolTip(f"Undo: Remove Internal Tag: {tag} (Ctrl+Z)")
+
+        # Update tag panel if visible
+        if hasattr(self, 'tag_management_panel') and self.tag_management_panel.isVisible():
+            self.on_selection_changed_for_tags()
+
+    def on_selection_changed_for_tags(self):
+        """Update tag management panel when table selection changes."""
+        if not hasattr(self, 'tag_management_panel') or not self.tag_management_panel.isVisible():
+            return
+
+        if self.analysis_results_df is None or self.analysis_results_df.empty:
+            self.tag_management_panel.set_selected_order(None, "[]")
+            return
+
+        # Get selected rows
+        selected_indexes = self.tableView.selectionModel().selectedRows()
+        if not selected_indexes:
+            self.tag_management_panel.set_selected_order(None, "[]")
+            return
+
+        # Get first selected row
+        source_index = self.proxy_model.mapToSource(selected_indexes[0])
+        row = source_index.row()
+
+        if row < 0 or row >= len(self.analysis_results_df):
+            self.tag_management_panel.set_selected_order(None, "[]")
+            return
+
+        # Get order number and current tags
+        order_number = self.analysis_results_df.iloc[row]["Order_Number"]
+        current_tags = self.analysis_results_df.iloc[row].get("Internal_Tags", "[]")
+
+        self.tag_management_panel.set_selected_order(order_number, current_tags)
+
+    def toggle_tag_panel(self):
+        """Toggle tag management panel visibility."""
+        if not hasattr(self, 'tag_management_panel'):
+            return
+
+        if self.tag_management_panel.isVisible():
+            self.tag_management_panel.hide()
+            self.toggle_tags_panel_btn.setChecked(False)
+        else:
+            self.tag_management_panel.show()
+            self.toggle_tags_panel_btn.setChecked(True)
+
+            # Load predefined tags from config
+            if self.active_profile_config:
+                tag_categories = self.active_profile_config.get("tag_categories", {})
+                self.tag_management_panel.load_predefined_tags(tag_categories)
+
+            # Update panel with current selection
+            self.on_selection_changed_for_tags()
+
+            # Connect table selection changed signal if not already connected
+            if hasattr(self, 'tableView') and hasattr(self.tableView, 'selectionModel'):
+                try:
+                    self.tableView.selectionModel().selectionChanged.disconnect(self.on_selection_changed_for_tags)
+                except:
+                    pass  # Not connected yet
+                self.tableView.selectionModel().selectionChanged.connect(self.on_selection_changed_for_tags)
 
     def update_session_info_label(self):
         """Update global header session info label."""

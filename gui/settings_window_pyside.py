@@ -196,6 +196,56 @@ class SettingsWindow(QDialog):
         row_widget.deleteLater()
         ref_list.remove(ref_dict)
 
+    def get_available_rule_fields(self):
+        """Get all available fields for rules from DataFrame + common fields.
+
+        Returns a list of field names including:
+        - Common order-level fields (shown first)
+        - Common product fields
+        - Common shipping fields
+        - All other DataFrame columns (dynamically discovered)
+        - Separators (disabled items starting with "---")
+        """
+        # Common fields (shown first with separators)
+        common_fields = [
+            "--- COMMON ORDER FIELDS ---",
+            "Order_Number",
+            "Order_Type",
+            "item_count",
+            "total_quantity",
+            "--- COMMON PRODUCT FIELDS ---",
+            "SKU",
+            "Product_Name",
+            "Quantity",
+            "Stock",
+            "Final_Stock",
+            "--- COMMON SHIPPING FIELDS ---",
+            "Shipping_Provider",
+            "Shipping_Method",
+            "Destination_Country",
+        ]
+
+        # Get ALL columns from DataFrame
+        if self.analysis_df is not None and not self.analysis_df.empty:
+            all_columns = sorted(self.analysis_df.columns.tolist())
+
+            # Filter out internal columns (starting with _) and already listed common fields
+            custom_columns = [
+                col for col in all_columns
+                if not col.startswith('_')
+                and col not in common_fields  # Avoid duplicates
+            ]
+
+            # Combine: common fields first, then separator, then custom
+            if custom_columns:
+                return common_fields + [
+                    "--- OTHER AVAILABLE FIELDS ---"
+                ] + custom_columns
+            else:
+                return common_fields
+
+        return common_fields  # Fallback to common only
+
     def create_general_tab(self):
         """Creates the 'General Settings' tab."""
         tab = QWidget()
@@ -401,8 +451,11 @@ class SettingsWindow(QDialog):
         row_layout = QHBoxLayout()
         field_combo = WheelIgnoreComboBox()
 
+        # Get dynamic fields from analysis DataFrame
+        available_fields = self.get_available_rule_fields()
+
         # Add fields with separators disabled
-        for field in self.CONDITION_FIELDS:
+        for field in available_fields:
             if field.startswith("---"):
                 # Add separator as disabled item
                 field_combo.addItem(field)
@@ -427,7 +480,7 @@ class SettingsWindow(QDialog):
             field_combo.setCurrentText(initial_field)
         elif not initial_field:
             # Set to first non-separator field
-            for i, field in enumerate(self.CONDITION_FIELDS):
+            for i, field in enumerate(available_fields):
                 if not field.startswith("---"):
                     field_combo.setCurrentIndex(i)
                     break

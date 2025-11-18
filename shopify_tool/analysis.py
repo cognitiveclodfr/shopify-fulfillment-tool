@@ -260,21 +260,35 @@ def _simulate_stock_allocation(
         required_quantities = order_items.groupby("SKU")["Quantity"].sum()
 
         can_fulfill_order = True
+        unfulfillable_reasons = []
+
         for sku, required_qty in required_quantities.items():
-            if required_qty > live_stock.get(sku, 0):
+            available = live_stock.get(sku, 0)
+            if available == 0:
+                unfulfillable_reasons.append(f"{sku}: Out of stock")
                 can_fulfill_order = False
-                break
+            elif required_qty > available:
+                unfulfillable_reasons.append(
+                    f"{sku}: Insufficient stock (need {int(required_qty)}, have {int(available)})"
+                )
+                can_fulfill_order = False
 
         # Update fulfillment status and deduct stock if fulfillable
         if can_fulfill_order:
-            fulfillment_results[order_number] = "Fulfillable"
+            fulfillment_results[order_number] = {
+                "fulfillable": True,
+                "reason": ""
+            }
             # Deduct stock - VECTORIZED operation
             for sku, qty in required_quantities.items():
                 live_stock[sku] -= qty
         else:
-            fulfillment_results[order_number] = "Not Fulfillable"
+            fulfillment_results[order_number] = {
+                "fulfillable": False,
+                "reason": "; ".join(unfulfillable_reasons)
+            }
 
-    fulfillable_count = sum(1 for status in fulfillment_results.values() if status == "Fulfillable")
+    fulfillable_count = sum(1 for result in fulfillment_results.values() if result.get("fulfillable", False))
     logger.debug(f"Fulfillable: {fulfillable_count}/{len(fulfillment_results)} orders")
 
     return fulfillment_results
@@ -308,8 +322,8 @@ def _calculate_final_stock(
     live_stock = pd.Series(stock_df.Stock.values, index=stock_df.SKU).to_dict()
 
     # Replay fulfillment to calculate final stock
-    for order_number, status in fulfillment_results.items():
-        if status == "Fulfillable":
+    for order_number, result in fulfillment_results.items():
+        if result.get("fulfillable", False):
             # Get items for this order
             order_items = orders_df[orders_df["Order_Number"] == order_number]
             # Deduct stock - VECTORIZED groupby
@@ -517,7 +531,15 @@ def _merge_results_to_dataframe(
         final_df["Shipping_Provider"] = "Unknown"
 
     # Map fulfillment results
-    final_df["Order_Fulfillment_Status"] = final_df["Order_Number"].map(fulfillment_results)
+    # Extract status from the new dict structure
+    def get_fulfillment_status(order_number):
+        result = fulfillment_results.get(order_number, {})
+        if isinstance(result, dict):
+            return "Fulfillable" if result.get("fulfillable", False) else "Not Fulfillable"
+        # Backward compatibility: if result is a string
+        return result
+
+    final_df["Order_Fulfillment_Status"] = final_df["Order_Number"].map(get_fulfillment_status)
 
     # Use Shipping_Country with underscore (internal name)
     if "Shipping_Country" in final_df.columns:
@@ -531,6 +553,25 @@ def _merge_results_to_dataframe(
 
     # Detect repeated orders - VECTORIZED
     final_df["System_note"] = _detect_repeated_orders(final_df, history_df)
+
+    # Add unfulfillable reasons to System_note
+    def add_fulfillment_reason(row):
+        order_number = row["Order_Number"]
+        result = fulfillment_results.get(order_number, {})
+
+        if isinstance(result, dict) and not result.get("fulfillable", True):
+            reason = result.get("reason", "Unknown reason")
+            existing_note = row["System_note"]
+
+            # Append reason to existing note
+            if pd.notna(existing_note) and existing_note != "":
+                return f"{existing_note}; Cannot fulfill: {reason}"
+            else:
+                return f"Cannot fulfill: {reason}"
+
+        return row["System_note"]
+
+    final_df["System_note"] = final_df.apply(add_fulfillment_reason, axis=1)
 
     # Initialize additional columns
     final_df["Stock_Alert"] = ""  # Initialize the column
