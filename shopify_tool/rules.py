@@ -38,13 +38,39 @@ OPERATOR_MAP = {
 
 
 def _op_equals(series_val, rule_val):
-    """Returns True where the series value equals the rule value."""
-    return series_val == rule_val
+    """Returns True where the series value equals the rule value.
+
+    Handles numeric comparisons by converting rule_val to numeric if series is numeric.
+    """
+    # If series is numeric, try to convert rule_val to numeric for comparison
+    if pd.api.types.is_numeric_dtype(series_val):
+        try:
+            rule_val_numeric = pd.to_numeric(rule_val, errors='raise')
+            return series_val == rule_val_numeric
+        except (ValueError, TypeError):
+            # If conversion fails, use string comparison
+            return series_val.astype(str) == str(rule_val)
+    else:
+        # For non-numeric series, use direct comparison
+        return series_val == rule_val
 
 
 def _op_not_equals(series_val, rule_val):
-    """Returns True where the series value does not equal the rule value."""
-    return series_val != rule_val
+    """Returns True where the series value does not equal the rule value.
+
+    Handles numeric comparisons by converting rule_val to numeric if series is numeric.
+    """
+    # If series is numeric, try to convert rule_val to numeric for comparison
+    if pd.api.types.is_numeric_dtype(series_val):
+        try:
+            rule_val_numeric = pd.to_numeric(rule_val, errors='raise')
+            return series_val != rule_val_numeric
+        except (ValueError, TypeError):
+            # If conversion fails, use string comparison
+            return series_val.astype(str) != str(rule_val)
+    else:
+        # For non-numeric series, use direct comparison
+        return series_val != rule_val
 
 
 def _op_contains(series_val, rule_val):
@@ -318,6 +344,13 @@ class RuleEngine:
             op_func = globals()[op_func_name]
 
             logger.info(f"[RULE ENGINE] Evaluating condition: {field} {operator} {value}")
+
+            # Log data types and sample values
+            logger.info(f"[RULE ENGINE] Field '{field}' dtype: {df[field].dtype}")
+            logger.info(f"[RULE ENGINE] Rule value type: {type(value).__name__}, value: {repr(value)}")
+            unique_vals = df[field].dropna().unique()[:5]
+            logger.info(f"[RULE ENGINE] Sample values in '{field}': {list(unique_vals)}")
+
             result = op_func(df[field], value)
             matches_count = result.sum()
             logger.info(f"[RULE ENGINE] Condition matched {matches_count} rows")
