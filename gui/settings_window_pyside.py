@@ -206,6 +206,9 @@ class SettingsWindow(QDialog):
         - All other DataFrame columns (dynamically discovered)
         - Separators (disabled items starting with "---")
         """
+        import logging
+        logger = logging.getLogger(__name__)
+
         # Common fields (shown first with separators)
         common_fields = [
             "--- COMMON ORDER FIELDS ---",
@@ -228,13 +231,19 @@ class SettingsWindow(QDialog):
         # Get ALL columns from DataFrame
         if self.analysis_df is not None and not self.analysis_df.empty:
             all_columns = sorted(self.analysis_df.columns.tolist())
+            logger.info(f"[RULE ENGINE] DataFrame has {len(all_columns)} columns: {all_columns[:10]}...")
 
             # Filter out internal columns (starting with _) and already listed common fields
+            # But keep separators for checking
+            common_field_names = [f for f in common_fields if not f.startswith("---")]
+
             custom_columns = [
                 col for col in all_columns
                 if not col.startswith('_')
-                and col not in common_fields  # Avoid duplicates
+                and col not in common_field_names  # Avoid duplicates
             ]
+
+            logger.info(f"[RULE ENGINE] Found {len(custom_columns)} custom columns")
 
             # Combine: common fields first, then separator, then custom
             if custom_columns:
@@ -243,6 +252,8 @@ class SettingsWindow(QDialog):
                 ] + custom_columns
             else:
                 return common_fields
+        else:
+            logger.warning(f"[RULE ENGINE] No analysis_df available (is None: {self.analysis_df is None})")
 
         return common_fields  # Fallback to common only
 

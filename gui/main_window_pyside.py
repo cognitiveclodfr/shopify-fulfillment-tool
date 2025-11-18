@@ -520,6 +520,9 @@ class MainWindow(QMainWindow):
             self.stock_export_button_tab2.setEnabled(reports_enabled)
         if hasattr(self, 'add_product_button_tab2'):
             self.add_product_button_tab2.setEnabled(has_analysis)
+        # Tags Manager button
+        if hasattr(self, 'toggle_tags_panel_btn'):
+            self.toggle_tags_panel_btn.setEnabled(has_analysis)
 
         # Open Session Folder button (enabled when session exists)
         if hasattr(self, 'open_session_folder_button'):
