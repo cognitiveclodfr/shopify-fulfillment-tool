@@ -343,6 +343,19 @@ class MainWindow(QMainWindow):
             self.undo_button.setEnabled(True)
             self.undo_button.setToolTip(f"Undo: Add Internal Tag: {tag} (Ctrl+Z)")
 
+    def add_internal_tag_to_order(self, order_number, tag):
+        """Add an Internal Tag to all items in an order (public interface).
+
+        Args:
+            order_number: Order number to tag
+            tag: Tag to add
+        """
+        self._add_internal_tag(order_number, tag)
+
+        # Update tag panel if visible
+        if hasattr(self, 'tag_management_panel') and self.tag_management_panel.isVisible():
+            self.on_selection_changed_for_tags()
+
     def remove_internal_tag_from_order(self, order_number, tag):
         """Remove an Internal Tag from all items in an order.
 
