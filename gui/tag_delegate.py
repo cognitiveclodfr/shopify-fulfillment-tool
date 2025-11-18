@@ -16,12 +16,19 @@ class TagDelegate(QStyledItemDelegate):
         self.tag_categories = tag_categories
 
     def paint(self, painter, option, index):
-        """Paint tags as colored badges."""
+        """Paint tags as colored badges while respecting row background color."""
+        # FIRST: Paint row background color from model
+        # This ensures Fulfillable (green) / Not Fulfillable (red) shows through
+        bg_color = index.data(Qt.BackgroundRole)
+        if bg_color:
+            painter.fillRect(option.rect, bg_color)
+
+        # Get tags to render
         tags_value = index.data(Qt.DisplayRole)
         tags = parse_tags(tags_value)
 
         if not tags:
-            # No tags - render empty
+            # No tags - just show background color
             return
 
         painter.save()

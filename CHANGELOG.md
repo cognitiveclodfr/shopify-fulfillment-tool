@@ -7,6 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.8.1] - 2025-11-18 - UX Improvements & Enhancements
+
+### 🎯 Key Improvements
+
+#### Priority 0 - Critical UX: Silent Success Messages
+- **Removed blocking success dialogs** for report generation
+  - Replaced with 5-second status bar messages
+  - No more interruption when generating multiple reports
+  - Error dialogs still show (important to keep)
+  - **Impact**: Much smoother batch operation workflow
+
+#### Priority 1 - High: Dynamic Rule Engine Fields
+- **Rule Engine now discovers ALL DataFrame columns**
+  - Previously limited to ~20 hardcoded fields
+  - Now shows all columns from loaded CSV files
+  - Custom client columns automatically available
+  - Stock-related fields (Stock_After, Final_Stock, etc.) accessible
+  - Payment_Method, Customer_Email, etc. available
+  - **Impact**: Rules can now use ANY column from your data
+
+#### Priority 2 - Medium: Internal_Tags Improvements
+- **Fixed TagDelegate background colors**
+  - Fulfillable orders (green) now visible through tag badges
+  - Not Fulfillable orders (red) now visible through tag badges
+  - Tags render on top of colored backgrounds
+- **New Tag Management Panel**
+  - Toggleable sidebar panel (🏷️ Tags Manager button)
+  - Shows current tags for selected order
+  - Add predefined tags from config
+  - Add custom tags on-the-fly
+  - Remove tags with one click
+  - **Impact**: Much easier tag management workflow
+
+#### Priority 3 - Enhancement: Visual Order Grouping
+- **OrderGroupDelegate for visual borders**
+  - Draws gray borders between different orders
+  - Multi-line orders now visually grouped
+  - Works with sorting and filtering
+  - **Impact**: Much easier to read multi-line orders
+- **Detailed unfulfillable reasons**
+  - System_note now shows WHY orders can't be fulfilled
+  - Shows specific SKU issues
+  - Shows exact stock shortages (need X, have Y)
+  - **Impact**: Much easier to diagnose stock issues
+
+### 📁 Files Changed
+
+#### Modified
+- `gui/actions_handler.py` - Silent success messages
+- `gui/settings_window_pyside.py` - Dynamic rule fields
+- `gui/tag_delegate.py` - Respect row background color
+- `gui/main_window_pyside.py` - Tag panel integration + methods
+- `gui/ui_manager.py` - Tag panel UI integration + OrderGroupDelegate
+- `shopify_tool/analysis.py` - Unfulfillable reasons tracking
+
+#### New Files
+- `gui/tag_management_panel.py` - Tag management UI component
+- `gui/order_group_delegate.py` - Visual border rendering
+
+#### Version Updates
+- `gui_main.py` - Version 1.8.0 → 1.8.1
+- `shopify_tool/__init__.py` - Version 1.8.0 → 1.8.1
+
+---
+
 ## [1.8.0] - 2025-11-17 - Performance & Refactoring Release
 
 ### 🚀 Performance Improvements

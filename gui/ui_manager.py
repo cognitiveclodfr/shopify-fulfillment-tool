@@ -8,6 +8,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QKeySequence, QShortcut
 from .pandas_model import PandasModel
 from .wheel_ignore_combobox import WheelIgnoreComboBox
+from .tag_management_panel import TagManagementPanel
 
 
 class UIManager:
@@ -751,7 +752,14 @@ class UIManager:
         self.mw.proxy_model.setSourceModel(source_model)
         self.mw.tableView.setModel(self.mw.proxy_model)
 
+        # Set order group delegate for visual borders between orders
+        from gui.order_group_delegate import OrderGroupDelegate
+        if not hasattr(self.mw, 'order_group_delegate') or self.mw.order_group_delegate is None:
+            self.mw.order_group_delegate = OrderGroupDelegate(self.mw)
+        self.mw.tableView.setItemDelegate(self.mw.order_group_delegate)
+
         # Set tag delegate for Internal_Tags column if it exists
+        # This overrides the order group delegate for this specific column
         if "Internal_Tags" in main_df.columns:
             from gui.tag_delegate import TagDelegate
 
@@ -916,12 +924,30 @@ class UIManager:
         )
         layout.addWidget(self.mw.settings_button_tab2)
 
+        # Add separator
+        layout.addSpacing(20)
+
+        # Tag Management Panel toggle button
+        self.mw.toggle_tags_panel_btn = QPushButton("🏷️ Tags Manager")
+        self.mw.toggle_tags_panel_btn.setCheckable(True)
+        self.mw.toggle_tags_panel_btn.setEnabled(False)
+        self.mw.toggle_tags_panel_btn.setToolTip("Show/hide Internal Tags management panel")
+        self.mw.toggle_tags_panel_btn.clicked.connect(self.mw.toggle_tag_panel)
+        layout.addWidget(self.mw.toggle_tags_panel_btn)
+
         layout.addStretch()
 
         return widget
 
     def _create_results_table(self):
-        """Create results table for Tab 2 (Analysis Results)."""
+        """Create results table for Tab 2 (Analysis Results) with tag panel."""
+        # Create container widget with horizontal layout
+        container = QWidget()
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(5)
+
+        # Create table view
         self.mw.tableView = QTableView()
         self.mw.tableView.setSelectionBehavior(QTableView.SelectRows)
         self.mw.tableView.setSelectionMode(QTableView.ExtendedSelection)
@@ -929,7 +955,22 @@ class UIManager:
         self.mw.tableView.setSortingEnabled(True)
         self.mw.tableView.setContextMenuPolicy(Qt.CustomContextMenu)
 
-        return self.mw.tableView
+        # Add table to layout
+        layout.addWidget(self.mw.tableView, 1)  # Stretch factor: 1
+
+        # Create tag management panel
+        self.mw.tag_management_panel = TagManagementPanel(self.mw)
+        self.mw.tag_management_panel.setMaximumWidth(300)
+        self.mw.tag_management_panel.hide()  # Hidden by default
+
+        # Connect tag panel signals
+        self.mw.tag_management_panel.tag_added.connect(self.mw.add_internal_tag_to_order)
+        self.mw.tag_management_panel.tag_removed.connect(self.mw.remove_internal_tag_from_order)
+
+        # Add tag panel to layout
+        layout.addWidget(self.mw.tag_management_panel)
+
+        return container
 
     def _create_summary_bar(self):
         """Create summary bar at bottom of Tab 2."""

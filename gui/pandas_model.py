@@ -79,13 +79,16 @@ class PandasModel(QAbstractTableModel):
 
         if role == Qt.ItemDataRole.BackgroundRole:
             try:
-                # Check for system note first, as it takes precedence
+                # Check for "Repeat" in system note first (yellow highlight)
+                # Only highlight for "Repeat", not for other messages like "Cannot fulfill"
                 if (
                     "System_note" in self._dataframe.columns
                     and pd.notna(self._dataframe.iloc[row]["System_note"])
-                    and self._dataframe.iloc[row]["System_note"]
                 ):
-                    return self.colors["SystemNoteHighlight"]
+                    system_note = str(self._dataframe.iloc[row]["System_note"])
+                    # Check if it's specifically a Repeat order (not just any system note)
+                    if "Repeat" in system_note and not system_note.startswith("Cannot fulfill"):
+                        return self.colors["SystemNoteHighlight"]
 
                 # Otherwise, color based on fulfillment status
                 if "Order_Fulfillment_Status" in self._dataframe.columns:

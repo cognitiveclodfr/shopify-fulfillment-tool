@@ -641,14 +641,14 @@ class ActionsHandler(QObject):
                 self.log.info(f"Stock export created: {output_file}")
 
             # ========================================
-            # SUCCESS MESSAGE
+            # SUCCESS MESSAGE - Status bar instead of blocking dialog
             # ========================================
-            QMessageBox.information(
-                self.mw,
-                "Report Generated",
-                f"Report '{report_name}' generated successfully.\n\n"
-                f"Location: {output_file}"
+            # Show brief status message instead of blocking dialog
+            self.mw.statusBar().showMessage(
+                f"✅ Report saved: {os.path.basename(output_file)}",
+                5000  # 5 seconds
             )
+            self.log.info(f"Report generated: {output_file}")
 
             self.mw.log_activity("Report", f"Generated: {report_name}")
 

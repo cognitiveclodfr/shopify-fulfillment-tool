@@ -38,13 +38,39 @@ OPERATOR_MAP = {
 
 
 def _op_equals(series_val, rule_val):
-    """Returns True where the series value equals the rule value."""
-    return series_val == rule_val
+    """Returns True where the series value equals the rule value.
+
+    Handles numeric comparisons by converting rule_val to numeric if series is numeric.
+    """
+    # If series is numeric, try to convert rule_val to numeric for comparison
+    if pd.api.types.is_numeric_dtype(series_val):
+        try:
+            rule_val_numeric = pd.to_numeric(rule_val, errors='raise')
+            return series_val == rule_val_numeric
+        except (ValueError, TypeError):
+            # If conversion fails, use string comparison
+            return series_val.astype(str) == str(rule_val)
+    else:
+        # For non-numeric series, use direct comparison
+        return series_val == rule_val
 
 
 def _op_not_equals(series_val, rule_val):
-    """Returns True where the series value does not equal the rule value."""
-    return series_val != rule_val
+    """Returns True where the series value does not equal the rule value.
+
+    Handles numeric comparisons by converting rule_val to numeric if series is numeric.
+    """
+    # If series is numeric, try to convert rule_val to numeric for comparison
+    if pd.api.types.is_numeric_dtype(series_val):
+        try:
+            rule_val_numeric = pd.to_numeric(rule_val, errors='raise')
+            return series_val != rule_val_numeric
+        except (ValueError, TypeError):
+            # If conversion fails, use string comparison
+            return series_val.astype(str) != str(rule_val)
+    else:
+        # For non-numeric series, use direct comparison
+        return series_val != rule_val
 
 
 def _op_contains(series_val, rule_val):
@@ -135,7 +161,13 @@ class RuleEngine:
         Returns:
             pd.DataFrame: The modified DataFrame.
         """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        logger.info(f"[RULE ENGINE] Starting rule application with {len(self.rules) if self.rules else 0} rules")
+
         if not self.rules or not isinstance(self.rules, list):
+            logger.warning("[RULE ENGINE] No rules to apply")
             return df
 
         # Create columns for actions if they don't exist
@@ -145,14 +177,27 @@ class RuleEngine:
         article_rules = [r for r in self.rules if r.get("level", "article") == "article"]
         order_rules = [r for r in self.rules if r.get("level") == "order"]
 
+        logger.info(f"[RULE ENGINE] {len(article_rules)} article-level rules, {len(order_rules)} order-level rules")
+
         # Apply article-level rules (existing logic)
-        for rule in article_rules:
+        for idx, rule in enumerate(article_rules):
+            rule_name = rule.get("name", f"Rule #{idx+1}")
+            logger.info(f"[RULE ENGINE] Applying article rule: {rule_name}")
+            logger.info(f"[RULE ENGINE] Conditions: {rule.get('conditions', [])}")
+
             # Get a boolean Series indicating which rows match the conditions
             matches = self._get_matching_rows(df, rule)
 
+            matched_count = matches.sum()
+            logger.info(f"[RULE ENGINE] {matched_count} rows matched conditions")
+
             # Apply actions to the matching rows
             if matches.any():
-                self._execute_actions(df, matches, rule.get("actions", []))
+                actions = rule.get("actions", [])
+                logger.info(f"[RULE ENGINE] Executing {len(actions)} actions: {actions}")
+                self._execute_actions(df, matches, actions)
+            else:
+                logger.info(f"[RULE ENGINE] No matches, skipping actions")
 
         # Apply order-level rules (NEW)
         if order_rules and "Order_Number" in df.columns:
@@ -259,10 +304,14 @@ class RuleEngine:
                 DataFrame, where `True` indicates a row matches the rule's
                 conditions.
         """
+        import logging
+        logger = logging.getLogger(__name__)
+
         match_type = rule.get("match", "ALL").upper()
         conditions = rule.get("conditions", [])
 
         if not conditions:
+            logger.warning("[RULE ENGINE] No conditions in rule")
             return pd.Series([False] * len(df), index=df.index)
 
         # Get a boolean Series for each individual condition
@@ -274,16 +323,42 @@ class RuleEngine:
 
             # Skip separator fields (from UI)
             if field and field.startswith("---"):
+                logger.info(f"[RULE ENGINE] Skipping separator field: {field}")
                 continue
 
-            if not all([field, operator, field in df.columns, operator in OPERATOR_MAP]):
+            # Check conditions
+            if not field:
+                logger.warning(f"[RULE ENGINE] Condition missing field: {cond}")
+                continue
+            if not operator:
+                logger.warning(f"[RULE ENGINE] Condition missing operator: {cond}")
+                continue
+            if field not in df.columns:
+                logger.warning(f"[RULE ENGINE] Field '{field}' not in DataFrame columns: {list(df.columns)}")
+                continue
+            if operator not in OPERATOR_MAP:
+                logger.warning(f"[RULE ENGINE] Operator '{operator}' not in OPERATOR_MAP: {list(OPERATOR_MAP.keys())}")
                 continue
 
             op_func_name = OPERATOR_MAP[operator]
             op_func = globals()[op_func_name]
-            condition_results.append(op_func(df[field], value))
+
+            logger.info(f"[RULE ENGINE] Evaluating condition: {field} {operator} {value}")
+
+            # Log data types and sample values
+            logger.info(f"[RULE ENGINE] Field '{field}' dtype: {df[field].dtype}")
+            logger.info(f"[RULE ENGINE] Rule value type: {type(value).__name__}, value: {repr(value)}")
+            unique_vals = df[field].dropna().unique()[:5]
+            logger.info(f"[RULE ENGINE] Sample values in '{field}': {list(unique_vals)}")
+
+            result = op_func(df[field], value)
+            matches_count = result.sum()
+            logger.info(f"[RULE ENGINE] Condition matched {matches_count} rows")
+
+            condition_results.append(result)
 
         if not condition_results:
+            logger.warning("[RULE ENGINE] No valid conditions evaluated")
             return pd.Series([False] * len(df), index=df.index)
 
         # Combine the individual condition results based on the match type
