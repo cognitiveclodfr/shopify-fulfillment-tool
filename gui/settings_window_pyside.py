@@ -231,7 +231,12 @@ class SettingsWindow(QDialog):
         # Get ALL columns from DataFrame
         if self.analysis_df is not None and not self.analysis_df.empty:
             all_columns = sorted(self.analysis_df.columns.tolist())
-            logger.info(f"[RULE ENGINE] DataFrame has {len(all_columns)} columns: {all_columns[:10]}...")
+            logger.info(f"[RULE ENGINE] DataFrame has {len(all_columns)} columns")
+            logger.info(f"[RULE ENGINE] ALL COLUMNS: {all_columns}")
+
+            # Check if specific columns exist
+            logger.info(f"[RULE ENGINE] 'Stock' in columns: {'Stock' in all_columns}")
+            logger.info(f"[RULE ENGINE] 'Total_Price' in columns: {'Total_Price' in all_columns}")
 
             # Filter out internal columns (starting with _) and already listed common fields
             # But keep separators for checking
@@ -243,7 +248,7 @@ class SettingsWindow(QDialog):
                 and col not in common_field_names  # Avoid duplicates
             ]
 
-            logger.info(f"[RULE ENGINE] Found {len(custom_columns)} custom columns")
+            logger.info(f"[RULE ENGINE] Found {len(custom_columns)} custom columns: {custom_columns}")
 
             # Combine: common fields first, then separator, then custom
             if custom_columns:
