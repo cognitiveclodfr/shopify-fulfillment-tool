@@ -906,6 +906,8 @@ def recalculate_statistics(df):
             - 'couriers_stats' (list[dict] | None): A list of dictionaries,
               each representing a courier's stats, or None if no orders
               were completed.
+            - 'tags_breakdown' (dict | None): Dictionary mapping tags to counts.
+            - 'sku_summary' (list[dict] | None): List of SKU summary data.
     """
     # Validate DataFrame has required columns
     required_cols = ["Order_Fulfillment_Status", "Order_Number", "Quantity", "Shipping_Provider", "System_note"]
@@ -941,6 +943,83 @@ def recalculate_statistics(df):
             courier_stats.append(courier_data)
     # Per instructions, use null (None) if no stats are available
     stats["couriers_stats"] = courier_stats if courier_stats else None
+
+    # === NEW: Tags Breakdown ===
+    tags_breakdown = None
+    if "Internal_Tags" in df.columns:
+        try:
+            # Parse all tags from Internal_Tags column (JSON format)
+            from shopify_tool.tag_manager import parse_tags
+
+            # Collect all tags across all orders
+            all_tags = []
+            for tags_json in df["Internal_Tags"].dropna():
+                tags = parse_tags(tags_json)  # Returns list of tag strings
+                all_tags.extend(tags)
+
+            # Count occurrences
+            from collections import Counter
+            tag_counts = Counter(all_tags)
+
+            # Convert to sorted dict (by count, descending)
+            tags_breakdown = dict(sorted(
+                tag_counts.items(),
+                key=lambda x: x[1],
+                reverse=True
+            ))
+
+            import logging
+            logger = logging.getLogger("ShopifyToolLogger")
+            logger.info(f"Tags breakdown calculated: {len(tags_breakdown)} unique tags")
+
+        except Exception as e:
+            import logging
+            logger = logging.getLogger("ShopifyToolLogger")
+            logger.error(f"Failed to calculate tags breakdown: {e}", exc_info=True)
+            tags_breakdown = None
+
+    # === NEW: SKU Summary ===
+    sku_summary = None
+    try:
+        # Create a helper column for fulfillable quantity
+        df_temp = df.copy()
+        df_temp["Fulfillable_Qty"] = df_temp.apply(
+            lambda row: row["Quantity"] if row["Order_Fulfillment_Status"] == "Fulfillable" else 0,
+            axis=1
+        )
+
+        # Group by SKU and aggregate
+        sku_groups = df_temp.groupby("SKU").agg({
+            "Quantity": "sum",  # Total quantity across all orders
+            "Product_Name": "first",  # Product name (should be same for all rows)
+            "Warehouse_Name": "first",  # Warehouse name from stock
+            "Fulfillable_Qty": "sum"  # Sum of fulfillable quantities
+        }).reset_index()
+
+        # Rename columns for clarity
+        sku_groups.columns = ["SKU", "Total_Quantity", "Product_Name", "Warehouse_Name", "Fulfillable_Items"]
+
+        # Calculate not fulfillable items
+        sku_groups["Not_Fulfillable_Items"] = sku_groups["Total_Quantity"] - sku_groups["Fulfillable_Items"]
+
+        # Sort by total quantity (descending)
+        sku_groups = sku_groups.sort_values("Total_Quantity", ascending=False)
+
+        # Convert to list of dicts
+        sku_summary = sku_groups.to_dict("records")
+
+        import logging
+        logger = logging.getLogger("ShopifyToolLogger")
+        logger.info(f"SKU summary calculated: {len(sku_summary)} unique SKUs")
+
+    except Exception as e:
+        import logging
+        logger = logging.getLogger("ShopifyToolLogger")
+        logger.error(f"Failed to calculate SKU summary: {e}", exc_info=True)
+        sku_summary = None
+
+    stats["tags_breakdown"] = tags_breakdown
+    stats["sku_summary"] = sku_summary
 
     return stats
 
