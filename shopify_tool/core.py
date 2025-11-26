@@ -92,9 +92,14 @@ def _create_analysis_data_for_packing(final_df: pd.DataFrame) -> Dict[str, Any]:
 
             # Add all items in the order
             for _, row in group.iterrows():
+                # Use Warehouse_Name (from stock file) with fallback to Product_Name
+                warehouse_name = row.get("Warehouse_Name", "")
+                if not warehouse_name or warehouse_name == "N/A":
+                    warehouse_name = row.get("Product_Name", "")
+
                 item_data = {
                     "sku": str(row.get("SKU", "")),
-                    "product_name": str(row.get("Product_Name", "")),
+                    "product_name": str(warehouse_name),
                     "quantity": int(row.get("Quantity", 0))
                 }
                 order_data["items"].append(item_data)

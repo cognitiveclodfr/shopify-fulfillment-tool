@@ -21,12 +21,13 @@ def test_create_analysis_json(tmp_path):
     # Create actions handler
     handler = ActionsHandler(mw)
 
-    # Create test DataFrame
+    # Create test DataFrame with Warehouse_Name
     df = pd.DataFrame(
         {
             "Order_Number": ["A1", "A1", "A2"],
             "SKU": ["SKU-001", "SKU-002", "SKU-003"],
             "Product_Name": ["Product 1", "Product 2", "Product 3"],
+            "Warehouse_Name": ["Склад Продукт 1", "Склад Продукт 2", "N/A"],
             "Quantity": [2, 1, 3],
             "Order_Fulfillment_Status": ["Fulfillable", "Fulfillable", "Fulfillable"],
             "Order_Type": ["Regular", "Regular", "Priority"],
@@ -58,19 +59,25 @@ def test_create_analysis_json(tmp_path):
     assert order_a1["tags"] == ["tag1", "tag2"]
     assert len(order_a1["items"]) == 2
 
-    # Check items in first order
+    # Check items in first order - should use Warehouse_Name
     item_1 = next(i for i in order_a1["items"] if i["sku"] == "SKU-001")
-    assert item_1["product_name"] == "Product 1"
+    assert item_1["product_name"] == "Склад Продукт 1"  # ✅ Warehouse_Name used
     assert item_1["quantity"] == 2
     assert item_1["stock_status"] == "Fulfillable"
 
-    # Check second order
+    item_2 = next(i for i in order_a1["items"] if i["sku"] == "SKU-002")
+    assert item_2["product_name"] == "Склад Продукт 2"  # ✅ Warehouse_Name used
+
+    # Check second order - Warehouse_Name is "N/A", should fallback to Product_Name
     order_a2 = next(o for o in result["orders"] if o["order_number"] == "A2")
     assert order_a2["order_type"] == "Priority"
     assert order_a2["courier"] == "PostOne"
     assert order_a2["destination"] == "US"
     assert order_a2["tags"] == ["tag3"]
     assert len(order_a2["items"]) == 1
+
+    item_3 = order_a2["items"][0]
+    assert item_3["product_name"] == "Product 3"  # ✅ Fallback to Product_Name
 
 
 @patch('gui.actions_handler.packing_lists')
