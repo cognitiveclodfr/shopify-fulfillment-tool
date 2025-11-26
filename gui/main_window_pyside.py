@@ -909,12 +909,13 @@ class MainWindow(QMainWindow):
         for key, label in self.stats_labels.items():
             label.setText(str(self.analysis_stats.get(key, "N/A")))
 
-        # Clear previous stats
+        # === Clear previous courier stats ===
         while self.courier_stats_layout.count():
             child = self.courier_stats_layout.takeAt(0)
             if child.widget():
                 child.widget().deleteLater()
 
+        # === Display Courier Stats ===
         courier_stats = self.analysis_stats.get("couriers_stats")
         if courier_stats:
             # Re-create headers and data
@@ -929,6 +930,67 @@ class MainWindow(QMainWindow):
                 self.courier_stats_layout.addWidget(QLabel(str(stats.get("repeated_orders_found", "N/A"))), i, 2)
         else:
             self.courier_stats_layout.addWidget(QLabel("No courier stats available."), 0, 0)
+
+        # === NEW: Clear previous tags stats ===
+        if hasattr(self, 'tags_stats_layout'):
+            while self.tags_stats_layout.count():
+                child = self.tags_stats_layout.takeAt(0)
+                if child.widget():
+                    child.widget().deleteLater()
+
+        # === NEW: Display Tags Breakdown ===
+        tags_breakdown = self.analysis_stats.get("tags_breakdown")
+        if tags_breakdown and len(tags_breakdown) > 0:
+            # Header
+            tag_header = QLabel("Tag")
+            tag_header.setStyleSheet("font-weight: bold;")
+            count_header = QLabel("Count")
+            count_header.setStyleSheet("font-weight: bold;")
+            self.tags_stats_layout.addWidget(tag_header, 0, 0)
+            self.tags_stats_layout.addWidget(count_header, 0, 1)
+
+            # Data rows
+            for row_idx, (tag, count) in enumerate(tags_breakdown.items(), start=1):
+                self.tags_stats_layout.addWidget(QLabel(tag), row_idx, 0)
+                self.tags_stats_layout.addWidget(QLabel(str(count)), row_idx, 1)
+        else:
+            self.tags_stats_layout.addWidget(QLabel("No tags data available."), 0, 0)
+
+        # === NEW: Clear previous SKU stats ===
+        if hasattr(self, 'sku_stats_layout'):
+            while self.sku_stats_layout.count():
+                child = self.sku_stats_layout.takeAt(0)
+                if child.widget():
+                    child.widget().deleteLater()
+
+        # === NEW: Display SKU Summary (Top 20) ===
+        sku_summary = self.analysis_stats.get("sku_summary")
+        if sku_summary and len(sku_summary) > 0:
+            # Header
+            headers = ["SKU", "Warehouse Name", "Total Qty", "Fulfillable", "Not Fulfillable"]
+            for col_idx, header_text in enumerate(headers):
+                header_label = QLabel(header_text)
+                header_label.setStyleSheet("font-weight: bold;")
+                self.sku_stats_layout.addWidget(header_label, 0, col_idx)
+
+            # Data rows (limit to top 20 for performance)
+            for row_idx, sku_data in enumerate(sku_summary[:20], start=1):
+                self.sku_stats_layout.addWidget(QLabel(sku_data.get("SKU", "N/A")), row_idx, 0)
+                warehouse_name = sku_data.get("Warehouse_Name", "N/A")
+                if warehouse_name == "N/A" or warehouse_name == "" or pd.isna(warehouse_name):
+                    warehouse_name = sku_data.get("Product_Name", "N/A")
+                self.sku_stats_layout.addWidget(QLabel(str(warehouse_name)), row_idx, 1)
+                self.sku_stats_layout.addWidget(QLabel(str(sku_data.get("Total_Quantity", 0))), row_idx, 2)
+                self.sku_stats_layout.addWidget(QLabel(str(sku_data.get("Fulfillable_Items", 0))), row_idx, 3)
+                self.sku_stats_layout.addWidget(QLabel(str(sku_data.get("Not_Fulfillable_Items", 0))), row_idx, 4)
+
+            # Add note if more than 20 SKUs
+            if len(sku_summary) > 20:
+                note = QLabel(f"Showing top 20 of {len(sku_summary)} SKUs")
+                note.setStyleSheet("font-style: italic; color: gray;")
+                self.sku_stats_layout.addWidget(note, 21, 0, 1, 5)
+        else:
+            self.sku_stats_layout.addWidget(QLabel("No SKU data available."), 0, 0)
 
     def _clear_statistics_view(self):
         """Clear statistics display when no analysis results."""
@@ -947,6 +1009,26 @@ class MainWindow(QMainWindow):
             placeholder = QLabel("No analysis data available.")
             placeholder.setStyleSheet("color: gray; font-style: italic;")
             self.courier_stats_layout.addWidget(placeholder, 0, 0)
+
+        # === NEW: Clear tags stats layout ===
+        if hasattr(self, 'tags_stats_layout'):
+            while self.tags_stats_layout.count():
+                child = self.tags_stats_layout.takeAt(0)
+                if child.widget():
+                    child.widget().deleteLater()
+            placeholder = QLabel("No tags data available.")
+            placeholder.setStyleSheet("color: gray; font-style: italic;")
+            self.tags_stats_layout.addWidget(placeholder, 0, 0)
+
+        # === NEW: Clear SKU stats layout ===
+        if hasattr(self, 'sku_stats_layout'):
+            while self.sku_stats_layout.count():
+                child = self.sku_stats_layout.takeAt(0)
+                if child.widget():
+                    child.widget().deleteLater()
+            placeholder = QLabel("No SKU data available.")
+            placeholder.setStyleSheet("color: gray; font-style: italic;")
+            self.sku_stats_layout.addWidget(placeholder, 0, 0)
 
     def log_activity(self, op_type, desc):
         """Adds a new entry to the 'Activity Log' table in the UI.
