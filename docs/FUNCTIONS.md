@@ -1036,6 +1036,139 @@ df.loc[final_matches, "Status_Note"] += " SKU_EXCLUDED"
 
 ---
 
+### Order-Level Field Methods
+
+#### `RuleEngine._check_has_sku(order_df, sku_value, operator)`
+
+**Purpose**: Check if order contains SKU matching the condition.
+
+**Location**: `shopify_tool/rules.py:531`
+
+**Parameters**:
+| Name | Type | Description |
+|------|------|-------------|
+| `order_df` | pd.DataFrame | DataFrame rows for single order |
+| `sku_value` | str | Value to match against SKUs |
+| `operator` | str | String operator (equals, starts with, contains, etc.) |
+
+**Returns**: `bool` - True if ANY SKU in order matches condition
+
+**Supported Operators**:
+- `equals` - Exact match
+- `does not equal` - Not equal
+- `contains` - SKU contains substring
+- `does not contain` - SKU does not contain substring
+- `starts with` - SKU starts with prefix
+- `ends with` - SKU ends with suffix
+- `is empty` - SKU is null or empty
+- `is not empty` - SKU is not null and not empty
+
+**Algorithm**:
+```python
+def _check_has_sku(order_df, sku_value, operator="equals"):
+    # 1. Validate inputs
+    if "SKU" not in order_df.columns or not sku_value:
+        return False
+
+    # 2. Get SKU series from order
+    sku_series = order_df["SKU"]
+
+    # 3. Map operator to function
+    operator_map = {
+        "equals": _op_equals,
+        "starts with": _op_starts_with,
+        "contains": _op_contains,
+        # ... other operators
+    }
+
+    # 4. Apply operator function
+    op_func = operator_map[operator]
+    result_series = op_func(sku_series, sku_value)
+
+    # 5. Return True if ANY SKU matches
+    return result_series.any()
+```
+
+**Examples**:
+
+**Example 1: Exact Match**
+```python
+# Check if order has specific SKU
+has_specific = _check_has_sku(order_df, "01-FACE-1001", "equals")
+# Returns True if order contains SKU "01-FACE-1001"
+```
+
+**Example 2: Prefix Match**
+```python
+# Check if order has SKU starting with "01-"
+has_box_sku = _check_has_sku(order_df, "01-", "starts with")
+# Returns True if order contains any SKU starting with "01-"
+# e.g., "01-FACE-1001", "01-ADD-5001", etc.
+```
+
+**Example 3: Substring Match**
+```python
+# Check if order has any mask SKU
+has_mask = _check_has_sku(order_df, "02-FACE-", "contains")
+# Returns True if order contains any SKU with "02-FACE-" in it
+```
+
+**Use Cases**:
+
+**Packaging Detection**:
+```python
+# Rule: Orders with SKUs starting with "01-" use boxes
+rules = [{
+    "name": "Box Items Only",
+    "level": "order",
+    "conditions": [
+        {"field": "has_sku", "operator": "starts with", "value": "01-"}
+    ],
+    "actions": [
+        {"type": "ADD_ORDER_TAG", "value": "BOX_ONLY"}
+    ]
+}]
+```
+
+**Mixed Order Detection**:
+```python
+# Rule: Orders with both "01-" and "02-" SKUs are mixed
+rules = [{
+    "name": "Mixed Packaging",
+    "level": "order",
+    "match": "ALL",
+    "conditions": [
+        {"field": "has_sku", "operator": "starts with", "value": "01-"},
+        {"field": "has_sku", "operator": "starts with", "value": "02-"}
+    ],
+    "actions": [
+        {"type": "ADD_ORDER_TAG", "value": "MIXED"}
+    ]
+}]
+```
+
+**Negative Matching**:
+```python
+# Rule: Orders without specific SKUs
+rules = [{
+    "name": "No Masks",
+    "level": "order",
+    "conditions": [
+        {"field": "has_sku", "operator": "does not contain", "value": "02-FACE-"}
+    ],
+    "actions": [
+        {"type": "ADD_ORDER_TAG", "value": "NO_MASKS"}
+    ]
+}]
+```
+
+**Backward Compatibility**:
+- Default operator is "equals" for existing rules
+- Existing rules without operator parameter continue to work
+- Unknown operators fallback to "equals" with warning log
+
+---
+
 ### Operator Functions
 
 All operators return `pd.Series[bool]`.

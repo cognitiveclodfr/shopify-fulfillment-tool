@@ -476,12 +476,16 @@ class RuleEngine:
                 # Calculate order-level metric
                 calc_method_name = self.ORDER_LEVEL_FIELDS[field]
                 calc_method = getattr(self, calc_method_name)
-                field_value = calc_method(order_df, value if field == "has_sku" else None)
+
+                # Pass operator for has_sku
+                if field == "has_sku":
+                    field_value = calc_method(order_df, value, operator)
+                else:
+                    field_value = calc_method(order_df, None)
 
                 # Apply operator (convert to scalar comparison)
                 if field == "has_sku":
-                    # For has_sku, the method returns True/False directly
-                    # operator is ignored - just use the boolean result
+                    # For has_sku, the method already applies the operator and returns True/False
                     result = field_value
                 elif operator == "equals":
                     result = (field_value == value)
@@ -528,8 +532,40 @@ class RuleEngine:
             return order_df["Quantity"].sum()
         return 0
 
-    def _check_has_sku(self, order_df, sku_value):
-        """Check if order contains specific SKU."""
-        if "SKU" in order_df.columns and sku_value:
-            return (order_df["SKU"] == sku_value).any()
-        return False
+    def _check_has_sku(self, order_df, sku_value, operator="equals"):
+        """Check if order contains SKU matching the condition.
+
+        Args:
+            order_df: DataFrame rows for single order
+            sku_value: Value to match against
+            operator: String operator (equals, starts with, contains, etc.)
+
+        Returns:
+            bool: True if any SKU in order matches condition
+        """
+        if "SKU" not in order_df.columns or not sku_value:
+            return False
+
+        sku_series = order_df["SKU"]
+
+        # Map operator to function
+        operator_map = {
+            "equals": _op_equals,
+            "does not equal": _op_not_equals,
+            "contains": _op_contains,
+            "does not contain": _op_not_contains,
+            "starts with": _op_starts_with,
+            "ends with": _op_ends_with,
+            "is empty": _op_is_empty,
+            "is not empty": _op_is_not_empty,
+        }
+
+        if operator not in operator_map:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"[RULE ENGINE] Unknown operator '{operator}' for has_sku, using 'equals'")
+            operator = "equals"
+
+        op_func = operator_map[operator]
+        result_series = op_func(sku_series, sku_value)
+        return result_series.any()  # True if ANY SKU matches

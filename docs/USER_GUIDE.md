@@ -563,6 +563,33 @@ Condition: SKU equals "SHIPPING-PROTECT"
 Action: EXCLUDE_FROM_REPORT
 ```
 
+**Example 4: Identify Packaging Type by SKU Prefix**
+```yaml
+Rule Name: "Box Items Only"
+Level: order
+Condition: has_sku starts with "01-"
+Action: ADD_ORDER_TAG = "BOX_ONLY"
+
+Rule Name: "Bag Items Only"
+Level: order
+Condition: has_sku starts with "02-FACE-"
+Action: ADD_ORDER_TAG = "BAG_ONLY"
+
+Rule Name: "Mixed Packaging"
+Level: order
+Match: ALL
+Conditions:
+  - has_sku starts with "01-"
+  - has_sku starts with "02-"
+Action: ADD_ORDER_TAG = "MIXED"
+```
+
+**Why use order-level rules with has_sku?**
+- **Packaging Detection**: Identify what type of packaging is needed based on SKU patterns
+- **Mixed Orders**: Detect orders that need multiple packaging types
+- **Workflow Automation**: Route orders to appropriate packing stations
+- **Inventory Planning**: Track which product types are selling together
+
 
 #### Managing Rules
 

@@ -200,29 +200,32 @@ class SettingsWindow(QDialog):
         """Get all available fields for rules from DataFrame + common fields.
 
         Returns a list of field names including:
-        - Common order-level fields (shown first)
-        - Common product fields
-        - Common shipping fields
+        - Order-level fields (shown first)
+        - Common article-level fields
         - All other DataFrame columns (dynamically discovered)
         - Separators (disabled items starting with "---")
         """
         import logging
         logger = logging.getLogger(__name__)
 
-        # Common fields (shown first with separators)
-        common_fields = [
-            "--- COMMON ORDER FIELDS ---",
-            "Order_Number",
-            "Order_Type",
+        # Start with order-level fields (these are ALWAYS available)
+        order_level_fields = [
+            "--- ORDER-LEVEL FIELDS ---",
             "item_count",
             "total_quantity",
-            "--- COMMON PRODUCT FIELDS ---",
+            "has_sku",
+        ]
+
+        # Common article-level fields
+        common_fields = [
+            "--- COMMON ARTICLE FIELDS ---",
+            "Order_Number",
+            "Order_Type",
             "SKU",
             "Product_Name",
             "Quantity",
             "Stock",
             "Final_Stock",
-            "--- COMMON SHIPPING FIELDS ---",
             "Shipping_Provider",
             "Shipping_Method",
             "Destination_Country",
@@ -250,17 +253,17 @@ class SettingsWindow(QDialog):
 
             logger.info(f"[RULE ENGINE] Found {len(custom_columns)} custom columns: {custom_columns}")
 
-            # Combine: common fields first, then separator, then custom
+            # Combine: order-level fields first, then common fields, then separator, then custom
             if custom_columns:
-                return common_fields + [
+                return order_level_fields + common_fields + [
                     "--- OTHER AVAILABLE FIELDS ---"
                 ] + custom_columns
             else:
-                return common_fields
+                return order_level_fields + common_fields
         else:
             logger.warning(f"[RULE ENGINE] No analysis_df available (is None: {self.analysis_df is None})")
 
-        return common_fields  # Fallback to common only
+        return order_level_fields + common_fields  # Fallback to order-level + common only
 
     def create_general_tab(self):
         """Creates the 'General Settings' tab."""
