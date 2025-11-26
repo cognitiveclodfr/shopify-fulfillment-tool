@@ -2,7 +2,8 @@ import logging
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, QLabel,
     QTabWidget, QGroupBox, QTableView, QPlainTextEdit, QTableWidget, QLineEdit,
-    QComboBox, QCheckBox, QRadioButton, QListWidget, QListWidgetItem, QFrame, QStyle
+    QComboBox, QCheckBox, QRadioButton, QListWidget, QListWidgetItem, QFrame, QStyle,
+    QScrollArea
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QKeySequence, QShortcut
@@ -1040,6 +1041,25 @@ class UIManager:
         courier_group = QGroupBox("🚚 Courier Statistics")
         self.mw.courier_stats_layout = QGridLayout(courier_group)
         layout.addWidget(courier_group)
+
+        # === NEW: Tags Breakdown Section ===
+        tags_group = QGroupBox("🏷️ Internal Tags Breakdown")
+        self.mw.tags_stats_layout = QGridLayout(tags_group)
+        layout.addWidget(tags_group)
+
+        # === NEW: SKU Summary Section ===
+        sku_group = QGroupBox("📦 SKU Summary (Top 20)")
+        sku_scroll = QScrollArea()
+        sku_scroll.setWidgetResizable(True)
+        sku_scroll.setMaximumHeight(400)
+
+        sku_container = QWidget()
+        self.mw.sku_stats_layout = QGridLayout(sku_container)
+        sku_scroll.setWidget(sku_container)
+
+        sku_main_layout = QVBoxLayout(sku_group)
+        sku_main_layout.addWidget(sku_scroll)
+        layout.addWidget(sku_group)
 
         layout.addStretch()
 
