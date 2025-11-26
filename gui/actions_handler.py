@@ -461,9 +461,14 @@ class ActionsHandler(QObject):
         for order_num, group in df.groupby('Order_Number'):
             items = []
             for _, row in group.iterrows():
+                # Use Warehouse_Name (from stock file) with fallback to Product_Name
+                warehouse_name = row.get("Warehouse_Name", "")
+                if not warehouse_name or warehouse_name == "N/A":
+                    warehouse_name = row.get("Product_Name", "")
+
                 items.append({
                     "sku": str(row.get('SKU', '')),
-                    "product_name": str(row.get('Product_Name', '')),
+                    "product_name": str(warehouse_name),
                     "quantity": int(row.get('Quantity', 1)),
                     "stock_status": str(row.get('Order_Fulfillment_Status', ''))
                 })
