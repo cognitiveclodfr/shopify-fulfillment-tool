@@ -671,3 +671,143 @@ def test_mixed_actions_in_order_level_rule(order_level_sample_df):
     # Order #1003 has 1 item - should NOT match
     order_1003 = result_df[result_df["Order_Number"] == "#1003"]
     assert "LARGE_ORDER" not in order_1003.iloc[0]["Status_Note"]
+
+
+# =============================================================================
+# TESTS FOR EXTENDED HAS_SKU OPERATORS
+# =============================================================================
+
+
+def test_order_level_has_sku_starts_with():
+    """Tests has_sku with 'starts with' operator for SKU prefixes."""
+    data = {
+        "Order_Number": ["#1001", "#1001", "#1002", "#1002"],
+        "SKU": ["01-FACE-1001", "05-ADD-5001", "02-FACE-1001", "02-FACE-1002"],
+        "Status_Note": ["", "", "", ""],
+    }
+    df = pd.DataFrame(data)
+
+    rules = [
+        {
+            "name": "Box items only",
+            "level": "order",
+            "match": "ALL",
+            "conditions": [
+                {"field": "has_sku", "operator": "starts with", "value": "01-"}
+            ],
+            "actions": [
+                {"type": "ADD_ORDER_TAG", "value": "BOX_ONLY"}
+            ]
+        }
+    ]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    # Order #1001 has SKU starting with "01-", should get tag
+    order_1001 = result_df[result_df["Order_Number"] == "#1001"]
+    assert "BOX_ONLY" in order_1001.iloc[0]["Status_Note"]
+
+    # Order #1002 has only "02-" SKUs, should NOT get tag
+    order_1002 = result_df[result_df["Order_Number"] == "#1002"]
+    assert "BOX_ONLY" not in order_1002.iloc[0]["Status_Note"]
+
+
+def test_order_level_has_sku_mixed_detection():
+    """Tests detection of orders with both box and bag items."""
+    data = {
+        "Order_Number": ["#1001", "#1001", "#1002", "#1003", "#1003"],
+        "SKU": ["01-FACE-1001", "02-FACE-1001", "01-FACE-1001", "02-FACE-1001", "02-FACE-1002"],
+        "Status_Note": ["", "", "", "", ""],
+    }
+    df = pd.DataFrame(data)
+
+    rules = [
+        {
+            "name": "Mixed orders",
+            "level": "order",
+            "match": "ALL",
+            "conditions": [
+                {"field": "has_sku", "operator": "starts with", "value": "01-"},
+                {"field": "has_sku", "operator": "starts with", "value": "02-"}
+            ],
+            "actions": [
+                {"type": "ADD_ORDER_TAG", "value": "MIXED"}
+            ]
+        }
+    ]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    # Order #1001 has both 01- and 02- SKUs
+    order_1001 = result_df[result_df["Order_Number"] == "#1001"]
+    assert "MIXED" in order_1001.iloc[0]["Status_Note"]
+
+    # Order #1002 has only 01- SKUs
+    order_1002 = result_df[result_df["Order_Number"] == "#1002"]
+    assert "MIXED" not in order_1002.iloc[0]["Status_Note"]
+
+    # Order #1003 has only 02- SKUs
+    order_1003 = result_df[result_df["Order_Number"] == "#1003"]
+    assert "MIXED" not in order_1003.iloc[0]["Status_Note"]
+
+
+def test_order_level_has_sku_negative_operators():
+    """Tests has_sku with negative operators."""
+    data = {
+        "Order_Number": ["#1001", "#1001", "#1002"],
+        "SKU": ["01-FACE-1001", "02-FACE-1001", "03-OTHER-001"],
+        "Status_Note": ["", "", ""],
+    }
+    df = pd.DataFrame(data)
+
+    rules = [
+        {
+            "name": "No mask items",
+            "level": "order",
+            "match": "ALL",
+            "conditions": [
+                {"field": "has_sku", "operator": "does not contain", "value": "02-FACE-"}
+            ],
+            "actions": [
+                {"type": "ADD_ORDER_TAG", "value": "NO_MASKS"}
+            ]
+        }
+    ]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    # Order #1001 has 02-FACE- SKU, should NOT get tag
+    order_1001 = result_df[result_df["Order_Number"] == "#1001"]
+    assert "NO_MASKS" not in order_1001.iloc[0]["Status_Note"]
+
+    # Order #1002 has no 02-FACE- SKU, should get tag
+    order_1002 = result_df[result_df["Order_Number"] == "#1002"]
+    assert "NO_MASKS" in order_1002.iloc[0]["Status_Note"]
+
+
+def test_ui_field_selector_includes_order_level_fields():
+    """Tests that get_available_rule_fields includes order-level fields."""
+    from gui.settings_window_pyside import SettingsWindow
+
+    # Create minimal test setup
+    window = SettingsWindow(
+        client_id="test",
+        client_config={},
+        profile_manager=None,
+        analysis_df=None
+    )
+
+    fields = window.get_available_rule_fields()
+
+    # Order-level fields must be present
+    assert "item_count" in fields
+    assert "total_quantity" in fields
+    assert "has_sku" in fields
+
+    # Should appear before article-level fields
+    item_count_idx = fields.index("item_count")
+    sku_idx = fields.index("SKU")
+    assert item_count_idx < sku_idx
