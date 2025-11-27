@@ -541,7 +541,9 @@ class RuleEngine:
             operator: String operator (equals, starts with, contains, etc.)
 
         Returns:
-            bool: True if any SKU in order matches condition
+            bool: True if condition matches
+                  - For positive operators (equals, contains, starts with): True if ANY SKU matches
+                  - For negative operators (does not equal, does not contain): True if ALL SKUs match (i.e., NONE have the value)
         """
         if "SKU" not in order_df.columns or not sku_value:
             return False
@@ -568,4 +570,11 @@ class RuleEngine:
 
         op_func = operator_map[operator]
         result_series = op_func(sku_series, sku_value)
-        return result_series.any()  # True if ANY SKU matches
+
+        # For negative operators, ALL SKUs must match (i.e., NONE have the unwanted value)
+        # For positive operators, ANY SKU can match
+        negative_operators = ["does not equal", "does not contain"]
+        if operator in negative_operators:
+            return result_series.all()  # True if ALL SKUs don't have the value (i.e., NONE have it)
+        else:
+            return result_series.any()  # True if ANY SKU matches
