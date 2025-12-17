@@ -674,6 +674,87 @@ Most clients have pre-configured packing lists:
 [Screenshot placeholder: Packing list configuration in settings]
 ```
 
+#### Fulfillment Status Filter (Advanced)
+
+**What is it?**
+
+By default, packing lists and stock exports include only **"Fulfillable"** orders. The fulfillment status filter allows you to customize which orders appear in reports based on their fulfillment status.
+
+**Available Options:**
+
+| Filter Configuration | What it does |
+|---------------------|-------------|
+| **Enabled: Yes, Status: "Fulfillable"** | Default - Only fulfillable orders (backward compatible) |
+| **Enabled: Yes, Status: "Not Fulfillable"** | Only non-fulfillable orders (for troubleshooting) |
+| **Enabled: No** | All orders regardless of fulfillment status |
+| **Enabled: Yes, Status: ["Fulfillable", "Partial"]** | Multiple statuses (OR logic) |
+
+**Common Use Cases:**
+
+**Use Case 1: Troubleshooting Orders**
+```json
+{
+  "name": "Problem Orders Report",
+  "output_filename": "not_fulfillable.xlsx",
+  "fulfillment_status_filter": {
+    "enabled": true,
+    "status": "Not Fulfillable"
+  }
+}
+```
+Generate a report showing only orders that CANNOT be fulfilled to identify issues.
+
+**Use Case 2: All Orders Report**
+```json
+{
+  "name": "Complete Inventory Report",
+  "output_filename": "all_orders.xlsx",
+  "fulfillment_status_filter": {
+    "enabled": false
+  }
+}
+```
+Generate a comprehensive report including all orders regardless of fulfillment status.
+
+**Use Case 3: Multiple Statuses**
+```json
+{
+  "name": "Active Orders",
+  "output_filename": "active.xlsx",
+  "fulfillment_status_filter": {
+    "enabled": true,
+    "status": ["Fulfillable", "Partial"]
+  }
+}
+```
+Include orders with multiple fulfillment statuses.
+
+**Configuration in Client Settings:**
+
+To configure fulfillment status filtering for a report:
+
+1. Open Client Settings → Packing Lists (or Stock Exports) tab
+2. Select existing report or create new one
+3. In the JSON configuration, add `fulfillment_status_filter` section:
+   ```json
+   {
+     "name": "Your Report Name",
+     "output_filename": "report.xlsx",
+     "filters": [...],
+     "fulfillment_status_filter": {
+       "enabled": true,
+       "status": "Fulfillable"
+     }
+   }
+   ```
+4. Save configuration
+
+**⚠️ Important Notes:**
+- If `fulfillment_status_filter` is NOT specified, the default behavior is **Fulfillable only** (backward compatible)
+- This filter applies to both XLSX reports and JSON exports
+- Combines with other filters (e.g., courier filters) using AND logic
+- Stock exports aggregate quantities by SKU after filtering
+
 #### Understanding Packing List Format
 
 **Excel Output (for humans):**

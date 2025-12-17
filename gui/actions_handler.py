@@ -406,18 +406,39 @@ class ActionsHandler(QObject):
         )
         dialog.exec()
 
-    def _apply_filters(self, df, filters):
+    def _apply_filters(self, df, filters, config=None):
         """Apply filters from report config to DataFrame.
 
         Args:
             df: DataFrame to filter
             filters: List of filter dicts with 'field', 'operator', 'value'
+            config: Optional report config dict with fulfillment_status_filter
 
         Returns:
             Filtered DataFrame
         """
         filtered_df = df.copy()
 
+        # Apply fulfillment status filter first (if config provided)
+        if config:
+            fulfillment_cfg = config.get("fulfillment_status_filter", {})
+            enabled = fulfillment_cfg.get("enabled", True)  # Default: enabled
+
+            if enabled:
+                status = fulfillment_cfg.get("status", "Fulfillable")  # Default: Fulfillable
+
+                # Support single status or list of statuses
+                if isinstance(status, list):
+                    # Multiple statuses with OR logic
+                    filtered_df = filtered_df[filtered_df["Order_Fulfillment_Status"].isin(status)]
+                else:
+                    # Single status
+                    filtered_df = filtered_df[filtered_df["Order_Fulfillment_Status"] == status]
+        else:
+            # Backward compatibility: default to Fulfillable if no config provided
+            filtered_df = filtered_df[filtered_df["Order_Fulfillment_Status"] == "Fulfillable"]
+
+        # Apply additional filters
         for filt in filters:
             field = filt.get("field")
             operator = filt.get("operator")
@@ -585,7 +606,8 @@ class ActionsHandler(QObject):
                     output_file=output_file,
                     report_name=report_name,
                     filters=filters,
-                    exclude_skus=exclude_skus
+                    exclude_skus=exclude_skus,
+                    config=report_config
                 )
 
                 self.log.info(f"Packing list XLSX created: {output_file}")
@@ -597,8 +619,8 @@ class ActionsHandler(QObject):
                 json_path = str(output_dir / json_filename)
 
                 try:
-                    # Apply filters to get data for JSON
-                    filtered_df = self._apply_filters(self.mw.analysis_results_df, filters)
+                    # Apply filters to get data for JSON (including fulfillment status filter from config)
+                    filtered_df = self._apply_filters(self.mw.analysis_results_df, filters, report_config)
 
                     # ========================================
                     # Apply exclude_skus to DataFrame for JSON (same as XLSX)
@@ -640,7 +662,8 @@ class ActionsHandler(QObject):
                     analysis_df=self.mw.analysis_results_df,
                     output_file=output_file,
                     report_name=report_name,
-                    filters=filters
+                    filters=filters,
+                    config=report_config
                 )
 
                 self.log.info(f"Stock export created: {output_file}")

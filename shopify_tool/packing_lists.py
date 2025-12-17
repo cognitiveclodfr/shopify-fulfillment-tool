@@ -7,7 +7,45 @@ from .csv_utils import normalize_sku, normalize_sku_for_matching
 logger = logging.getLogger("ShopifyToolLogger")
 
 
-def create_packing_list(analysis_df, output_file, report_name="Packing List", filters=None, exclude_skus=None):
+def _build_fulfillment_filter(config):
+    """
+    Build fulfillment status filter query from configuration.
+
+    Args:
+        config: Report configuration dict
+
+    Returns:
+        List of query parts (empty if no filter needed)
+
+    Examples:
+        >>> _build_fulfillment_filter({"fulfillment_status_filter": {"enabled": True, "status": "Fulfillable"}})
+        ["Order_Fulfillment_Status == 'Fulfillable'"]
+
+        >>> _build_fulfillment_filter({"fulfillment_status_filter": {"enabled": False}})
+        []
+
+        >>> _build_fulfillment_filter({"fulfillment_status_filter": {"enabled": True, "status": ["Fulfillable", "Partial"]}})
+        ["Order_Fulfillment_Status in ['Fulfillable', 'Partial']"]
+    """
+    # Get config with backward-compatible defaults
+    fulfillment_cfg = config.get("fulfillment_status_filter", {})
+    enabled = fulfillment_cfg.get("enabled", True)  # Default: enabled
+
+    if not enabled:
+        return []  # No filter
+
+    status = fulfillment_cfg.get("status", "Fulfillable")  # Default: Fulfillable
+
+    # Support single status or list of statuses
+    if isinstance(status, list):
+        # Multiple statuses with OR logic
+        return [f"Order_Fulfillment_Status in {status}"]
+    else:
+        # Single status
+        return [f"Order_Fulfillment_Status == '{status}'"]
+
+
+def create_packing_list(analysis_df, output_file, report_name="Packing List", filters=None, exclude_skus=None, config=None):
     """Creates a versatile, formatted packing list in an Excel .xlsx file.
 
     This function takes the main analysis DataFrame and generates a packing list
@@ -15,8 +53,9 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
     warehouse picking and formatted for clarity.
 
     Key steps in the process:
-    1.  **Filtering**: It filters the main DataFrame to include only 'Fulfillable'
-        orders that match the provided filter criteria (e.g., by shipping provider).
+    1.  **Filtering**: It filters the main DataFrame based on fulfillment status
+        (configurable via config) and any additional filter criteria
+        (e.g., by shipping provider). By default, filters to 'Fulfillable' orders.
     2.  **Exclusion**: It can exclude specific SKUs from the final list, which is
         useful for items that are packed separately.
     3.  **Sorting**: The list is sorted by shipping provider, order number, and SKU
@@ -42,12 +81,15 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
             'field', 'operator', and 'value' keys. Defaults to None.
         exclude_skus (list[str], optional): A list of SKUs to exclude from the
             packing list. Defaults to None.
+        config (dict, optional): Report configuration dict containing
+            fulfillment_status_filter and other settings. Defaults to None.
     """
     try:
         logger.info(f"--- Creating report: '{report_name}' ---")
 
         # Build the query string to filter the DataFrame
-        query_parts = ["Order_Fulfillment_Status == 'Fulfillable'"]
+        # Build fulfillment filter from config (supports configurable filtering)
+        query_parts = _build_fulfillment_filter(config or {})
         if filters:
             for f in filters:
                 field = f.get("field")
@@ -67,8 +109,13 @@ def create_packing_list(analysis_df, output_file, report_name="Packing List", fi
 
                 query_parts.append(f"`{field}` {operator} {formatted_value}")
 
-        full_query = " & ".join(query_parts)
-        filtered_orders = analysis_df.query(full_query).copy()
+        # Apply query only if there are filter conditions
+        if query_parts:
+            full_query = " & ".join(query_parts)
+            filtered_orders = analysis_df.query(full_query).copy()
+        else:
+            # No filters - use entire DataFrame
+            filtered_orders = analysis_df.copy()
 
         # Exclude specified SKUs if any are provided
         if exclude_skus and not filtered_orders.empty:
