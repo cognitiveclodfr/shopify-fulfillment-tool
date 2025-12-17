@@ -787,6 +787,47 @@ class SettingsWindow(QDialog):
         form_layout.addRow("Name:", name_edit)
         form_layout.addRow("Output Filename:", filename_edit)
         form_layout.addRow("Exclude SKUs (comma-separated):", exclude_skus_edit)
+
+        # Fulfillment Status Filter section
+        fulfillment_group = QGroupBox("Fulfillment Status Filter")
+        fulfillment_layout = QFormLayout()
+
+        # Get existing config or set defaults
+        ff_config = config.get("fulfillment_status_filter", {"enabled": True, "status": "Fulfillable"})
+
+        # Enabled checkbox
+        ff_enabled_checkbox = QComboBox()
+        ff_enabled_checkbox.addItems(["Yes", "No"])
+        ff_enabled_checkbox.setCurrentText("Yes" if ff_config.get("enabled", True) else "No")
+        fulfillment_layout.addRow("Filter Enabled:", ff_enabled_checkbox)
+
+        # Status selection
+        ff_status_combo = QComboBox()
+        ff_status_combo.addItems(["Fulfillable", "Not Fulfillable", "All (No Filter)"])
+
+        # Set current value
+        current_status = ff_config.get("status", "Fulfillable")
+        if isinstance(current_status, list):
+            ff_status_combo.setCurrentText("All (No Filter)")  # For now, treat lists as "All"
+        elif current_status == "Fulfillable":
+            ff_status_combo.setCurrentText("Fulfillable")
+        elif current_status == "Not Fulfillable":
+            ff_status_combo.setCurrentText("Not Fulfillable")
+        else:
+            ff_status_combo.setCurrentText("Fulfillable")
+
+        fulfillment_layout.addRow("Status:", ff_status_combo)
+
+        # Help text
+        help_label = QLabel("• Fulfillable: Only fulfillable orders (default)\n"
+                          "• Not Fulfillable: Only non-fulfillable orders\n"
+                          "• All: Include all orders regardless of status")
+        help_label.setStyleSheet("color: gray; font-size: 10px;")
+        fulfillment_layout.addRow(help_label)
+
+        fulfillment_group.setLayout(fulfillment_layout)
+        form_layout.addRow(fulfillment_group)
+
         pl_layout.addLayout(form_layout)
         filters_box = QGroupBox("Filters")
         filters_layout = QVBoxLayout(filters_box)
@@ -805,6 +846,8 @@ class SettingsWindow(QDialog):
             "exclude_skus": exclude_skus_edit,
             "filters_layout": filters_rows_layout,
             "filters": [],
+            "ff_enabled": ff_enabled_checkbox,
+            "ff_status": ff_status_combo,
         }
         self.packing_list_widgets.append(widget_refs)
         add_filter_btn.clicked.connect(
@@ -945,6 +988,47 @@ class SettingsWindow(QDialog):
         filename_edit = QLineEdit(config.get("output_filename", ""))
         form_layout.addRow("Name:", name_edit)
         form_layout.addRow("Output Filename:", filename_edit)
+
+        # Fulfillment Status Filter section
+        fulfillment_group = QGroupBox("Fulfillment Status Filter")
+        fulfillment_layout = QFormLayout()
+
+        # Get existing config or set defaults
+        ff_config = config.get("fulfillment_status_filter", {"enabled": True, "status": "Fulfillable"})
+
+        # Enabled checkbox
+        ff_enabled_checkbox = QComboBox()
+        ff_enabled_checkbox.addItems(["Yes", "No"])
+        ff_enabled_checkbox.setCurrentText("Yes" if ff_config.get("enabled", True) else "No")
+        fulfillment_layout.addRow("Filter Enabled:", ff_enabled_checkbox)
+
+        # Status selection
+        ff_status_combo = QComboBox()
+        ff_status_combo.addItems(["Fulfillable", "Not Fulfillable", "All (No Filter)"])
+
+        # Set current value
+        current_status = ff_config.get("status", "Fulfillable")
+        if isinstance(current_status, list):
+            ff_status_combo.setCurrentText("All (No Filter)")  # For now, treat lists as "All"
+        elif current_status == "Fulfillable":
+            ff_status_combo.setCurrentText("Fulfillable")
+        elif current_status == "Not Fulfillable":
+            ff_status_combo.setCurrentText("Not Fulfillable")
+        else:
+            ff_status_combo.setCurrentText("Fulfillable")
+
+        fulfillment_layout.addRow("Status:", ff_status_combo)
+
+        # Help text
+        help_label = QLabel("• Fulfillable: Only fulfillable orders (default)\n"
+                          "• Not Fulfillable: Only non-fulfillable orders\n"
+                          "• All: Include all orders regardless of status")
+        help_label.setStyleSheet("color: gray; font-size: 10px;")
+        fulfillment_layout.addRow(help_label)
+
+        fulfillment_group.setLayout(fulfillment_layout)
+        form_layout.addRow(fulfillment_group)
+
         se_layout.addLayout(form_layout)
         filters_box = QGroupBox("Filters")
         filters_layout = QVBoxLayout(filters_box)
@@ -962,6 +1046,8 @@ class SettingsWindow(QDialog):
             "filename": filename_edit,
             "filters_layout": filters_rows_layout,
             "filters": [],
+            "ff_enabled": ff_enabled_checkbox,
+            "ff_status": ff_status_combo,
         }
         self.stock_export_widgets.append(widget_refs)
         add_filter_btn.clicked.connect(
@@ -1518,11 +1604,24 @@ class SettingsWindow(QDialog):
                 if exclude_skus_text:
                     exclude_skus = [s.strip() for s in exclude_skus_text.split(',') if s.strip()]
 
+                # Build fulfillment_status_filter
+                ff_enabled = pl_w["ff_enabled"].currentText() == "Yes"
+                ff_status_text = pl_w["ff_status"].currentText()
+
+                # Map UI text to config value
+                if ff_status_text == "All (No Filter)":
+                    fulfillment_filter = {"enabled": False}
+                elif ff_status_text == "Not Fulfillable":
+                    fulfillment_filter = {"enabled": True, "status": "Not Fulfillable"}
+                else:  # "Fulfillable"
+                    fulfillment_filter = {"enabled": True, "status": "Fulfillable"}
+
                 new_packing_lists.append({
                     "name": pl_w["name"].text(),
                     "output_filename": pl_w["filename"].text(),
                     "filters": filters,
                     "exclude_skus": exclude_skus,
+                    "fulfillment_status_filter": fulfillment_filter,
                 })
 
             self.config_data["packing_list_configs"] = new_packing_lists
@@ -1548,10 +1647,23 @@ class SettingsWindow(QDialog):
                         "value": val,
                     })
 
+                # Build fulfillment_status_filter
+                ff_enabled = se_w["ff_enabled"].currentText() == "Yes"
+                ff_status_text = se_w["ff_status"].currentText()
+
+                # Map UI text to config value
+                if ff_status_text == "All (No Filter)":
+                    fulfillment_filter = {"enabled": False}
+                elif ff_status_text == "Not Fulfillable":
+                    fulfillment_filter = {"enabled": True, "status": "Not Fulfillable"}
+                else:  # "Fulfillable"
+                    fulfillment_filter = {"enabled": True, "status": "Fulfillable"}
+
                 new_stock_exports.append({
                     "name": se_w["name"].text(),
                     "output_filename": se_w["filename"].text(),
                     "filters": filters,
+                    "fulfillment_status_filter": fulfillment_filter,
                 })
 
             self.config_data["stock_export_configs"] = new_stock_exports
