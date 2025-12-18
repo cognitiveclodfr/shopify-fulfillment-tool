@@ -796,13 +796,13 @@ class SettingsWindow(QDialog):
         ff_config = config.get("fulfillment_status_filter", {"enabled": True, "status": "Fulfillable"})
 
         # Enabled checkbox
-        ff_enabled_checkbox = QComboBox()
+        ff_enabled_checkbox = WheelIgnoreComboBox()
         ff_enabled_checkbox.addItems(["Yes", "No"])
         ff_enabled_checkbox.setCurrentText("Yes" if ff_config.get("enabled", True) else "No")
         fulfillment_layout.addRow("Filter Enabled:", ff_enabled_checkbox)
 
         # Status selection
-        ff_status_combo = QComboBox()
+        ff_status_combo = WheelIgnoreComboBox()
         ff_status_combo.addItems(["Fulfillable", "Not Fulfillable", "All (No Filter)"])
 
         # Set current value
@@ -997,13 +997,13 @@ class SettingsWindow(QDialog):
         ff_config = config.get("fulfillment_status_filter", {"enabled": True, "status": "Fulfillable"})
 
         # Enabled checkbox
-        ff_enabled_checkbox = QComboBox()
+        ff_enabled_checkbox = WheelIgnoreComboBox()
         ff_enabled_checkbox.addItems(["Yes", "No"])
         ff_enabled_checkbox.setCurrentText("Yes" if ff_config.get("enabled", True) else "No")
         fulfillment_layout.addRow("Filter Enabled:", ff_enabled_checkbox)
 
         # Status selection
-        ff_status_combo = QComboBox()
+        ff_status_combo = WheelIgnoreComboBox()
         ff_status_combo.addItems(["Fulfillable", "Not Fulfillable", "All (No Filter)"])
 
         # Set current value
