@@ -1627,10 +1627,22 @@ class SettingsWindow(QDialog):
                 )
                 self.accept()  # Close dialog
             else:
+                # Calculate config size for diagnostic info
+                import json
+                config_size = len(json.dumps(self.config_data, ensure_ascii=False))
+                num_sets = len(self.config_data.get("set_decoders", {}))
+
                 QMessageBox.critical(
                     self,
                     "Save Error",
-                    "Failed to save settings to server.\nPlease check server connection."
+                    f"Failed to save settings to server.\n\n"
+                    f"Configuration size: {config_size:,} bytes\n"
+                    f"Number of sets: {num_sets}\n\n"
+                    f"Possible causes:\n"
+                    f"• File is locked by another user\n"
+                    f"• Network connection issue\n"
+                    f"• Insufficient permissions\n\n"
+                    f"Please wait a few seconds and try again."
                 )
 
         except ValueError as e:
