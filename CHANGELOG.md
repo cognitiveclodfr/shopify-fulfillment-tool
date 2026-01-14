@@ -7,6 +7,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.9.1] - 2026-01-14 - Critical File Locking Fix
+
+### 🔥 Critical Fixes
+
+#### **CRITICAL**: Fixed Windows file locking mechanism
+- **Previously**: Locked only 1 byte instead of entire file
+  - Caused save failures for large configurations (70+ sets, ~27KB)
+  - File could be corrupted if two users saved simultaneously
+- **Now**: Correctly locks entire file based on actual size
+  - Pre-serializes JSON to determine exact file size
+  - Locks entire file before writing
+  - Uses `flush()` and `fsync()` to ensure data is written to disk
+  - **Impact**: Configurations with 70+ sets (27KB+) now save reliably
+  - **Files**: `shopify_tool/profile_manager.py:860-896`
+
+### ⚡ Performance & Reliability Improvements
+
+#### **HIGH**: Increased retry parameters for network filesystem reliability
+- **Retry attempts**: 5 → 10 (doubled for network latency tolerance)
+- **Retry delay**: 0.5s → 1.0s (better handling of temporary locks)
+- **Total timeout**: 2.5s → 10s (4x improvement)
+- **Impact**: Much more resilient to network file server delays
+- **Files**: `shopify_tool/profile_manager.py:696-697`
+
+#### **HIGH**: Enhanced error messages in Settings window
+- Now shows diagnostic information on save failure:
+  - Configuration size (bytes)
+  - Number of sets
+  - Possible causes (file locked, network issue, permissions)
+  - Troubleshooting hints
+- **Impact**: Users can better understand and resolve save failures
+- **Files**: `gui/settings_window_pyside.py:1630-1634`
+
+#### **MEDIUM**: Added detailed performance logging
+- Logs before save: config size, number of sets
+- Logs on success: elapsed time, attempt number
+- Logs on retry: attempt number, reason for failure
+- Logs on final failure: full diagnostic info
+- **Impact**: Much easier to diagnose save issues in production
+- **Files**: `shopify_tool/profile_manager.py:665-724`
+
+### 🔧 Technical Details
+
+#### File Locking Implementation (`_save_with_windows_lock`)
+```python
+# Before (INCORRECT - locks only 1 byte):
+msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+
+# After (CORRECT - locks entire file):
+json_str = json.dumps(data, indent=2, ensure_ascii=False)
+file_size = len(json_str.encode('utf-8'))
+msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, file_size)
+f.write(json_str)
+f.flush()
+os.fsync(f.fileno())
+msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, file_size)
+```
+
+#### Retry Logic Improvements
+- Lock size now dynamically scales with file size
+- Better logging at each retry attempt
+- More informative error messages on final failure
+- Network latency tolerance improved from 2.5s to 10s
+
+### ✅ Backward Compatibility
+- All changes are backward compatible
+- No data migration required
+- Existing configurations work without modification
+- Changes localized to `profile_manager.py` and `settings_window_pyside.py`
+
+---
+
 ## [1.8.1] - 2025-11-18 - UX Improvements & Enhancements
 
 ### 🎯 Key Improvements

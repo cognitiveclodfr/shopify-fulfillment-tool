@@ -693,8 +693,19 @@ class ProfileManager:
         config["last_updated"] = datetime.now().isoformat()
         config["updated_by"] = os.environ.get('COMPUTERNAME', 'Unknown')
 
-        max_retries = 5
-        retry_delay = 0.5
+        # Calculate config size and metrics for logging
+        start_time = time.perf_counter()
+        json_str = json.dumps(config, indent=2, ensure_ascii=False)
+        config_size = len(json_str.encode('utf-8'))
+        num_sets = len(config.get('set_decoders', {}))
+
+        logger.info(
+            f"Saving config for CLIENT_{client_id}: "
+            f"{config_size:,} bytes, {num_sets} sets"
+        )
+
+        max_retries = 10  # Increased from 5 for network filesystem reliability
+        retry_delay = 1.0  # Increased from 0.5s (total timeout: 10s)
 
         for attempt in range(max_retries):
             try:
@@ -709,18 +720,41 @@ class ProfileManager:
                     cache_key = f"shopify_{client_id}"
                     self._config_cache.pop(cache_key, None)
 
-                    logger.info(f"Shopify config saved for CLIENT_{client_id}")
+                    elapsed_ms = (time.perf_counter() - start_time) * 1000
+                    logger.info(
+                        f"Config saved successfully for CLIENT_{client_id} "
+                        f"in {elapsed_ms:.2f}ms (attempt {attempt + 1}/{max_retries})"
+                    )
                     return True
+                else:
+                    # File lock failed, retry
+                    if attempt < max_retries - 1:
+                        logger.warning(
+                            f"Save failed (attempt {attempt + 1}/{max_retries}), "
+                            f"retrying in {retry_delay}s: File is locked"
+                        )
+                        time.sleep(retry_delay)
 
             except (IOError, OSError) as e:
                 if attempt < max_retries - 1:
-                    logger.warning(f"File locked, retry {attempt + 1}/{max_retries}")
+                    logger.warning(
+                        f"Save failed (attempt {attempt + 1}/{max_retries}), "
+                        f"retrying in {retry_delay}s: {e}"
+                    )
                     time.sleep(retry_delay)
                 else:
+                    logger.error(
+                        f"Save failed after {max_retries} attempts, "
+                        f"config size: {config_size:,} bytes, {num_sets} sets"
+                    )
                     raise ProfileManagerError(
                         f"Configuration is locked by another user. Please try again."
                     )
 
+        logger.error(
+            f"Save failed after {max_retries} attempts, "
+            f"config size: {config_size:,} bytes, {num_sets} sets"
+        )
         return False
 
     # --- Set/Bundle Management Methods ---
@@ -858,7 +892,7 @@ class ProfileManager:
         return success
 
     def _save_with_windows_lock(self, file_path: Path, data: Dict) -> bool:
-        """Save file with Windows file locking.
+        """Save file with Windows file locking (locks entire file).
 
         Args:
             file_path (Path): Path to file
@@ -873,24 +907,43 @@ class ProfileManager:
         temp_path = file_path.with_suffix('.tmp')
 
         try:
+            # Pre-serialize to know exact size
+            json_str = json.dumps(data, indent=2, ensure_ascii=False)
+            file_size = len(json_str.encode('utf-8'))
+
+            logger.debug(f"Attempting to save config, size: {file_size:,} bytes")
+
             with open(temp_path, 'w', encoding='utf-8') as f:
-                # Try to acquire exclusive lock
+                # Try to acquire exclusive lock for entire file
                 try:
-                    msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
-                except IOError:
+                    # Ensure file position is at start before locking
+                    f.seek(0)
+                    msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, file_size)
+                    logger.debug(f"Lock acquired for {file_size:,} bytes")
+                except IOError as e:
+                    logger.warning(f"Lock failed: {e}")
                     return False
 
                 try:
-                    json.dump(data, f, indent=2, ensure_ascii=False)
+                    # Write pre-serialized JSON
+                    f.write(json_str)
+                    f.flush()
+                    os.fsync(f.fileno())  # Force write to disk
+                    logger.debug(f"File written and flushed successfully")
                 finally:
-                    msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+                    # Unlock with same size - must seek to start first
+                    f.seek(0)
+                    msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, file_size)
+                    logger.debug(f"Lock released")
 
             # Atomic move
+            logger.debug(f"Renaming {temp_path.name} → {file_path.name}")
             shutil.move(str(temp_path), str(file_path))
+            logger.debug(f"Config saved successfully: {file_path.name}")
             return True
 
         except Exception as e:
-            logger.error(f"Failed to save with Windows lock: {e}")
+            logger.error(f"Failed to save with Windows lock: {e}", exc_info=True)
             if temp_path.exists():
                 temp_path.unlink()
             return False
