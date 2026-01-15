@@ -15,80 +15,92 @@ from shopify_tool import analysis
 
 
 def test_repeat_detection_with_1_day_window():
-    """Test that only yesterday's orders are marked as repeat with 1-day window."""
+    """Test that orders executed >= 1 day ago are marked as repeat with 1-day window."""
     orders_df = pd.DataFrame({
         "Order_Number": ["#1001", "#1002", "#1003"],
         "SKU": ["SKU-A", "SKU-B", "SKU-C"]
     })
 
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-    week_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+    today = datetime.now().strftime("%Y-%m-%d")
 
     history_df = pd.DataFrame({
         "Order_Number": ["#1001", "#1002"],
-        "Execution_Date": [yesterday, week_ago]
+        "Execution_Date": [yesterday, today]  # yesterday and today
     })
 
-    # Test with 1 day window
+    # Test with 1 day window: mark as Repeat if >= 1 day passed
     result = analysis._detect_repeated_orders(orders_df, history_df, repeat_window_days=1)
 
-    # Only #1001 should be marked as Repeat (within 1 day)
+    # #1001 (yesterday) should be Repeat (1 day passed)
+    # #1002 (today) should NOT be Repeat (0 days passed)
+    # #1003 not in history → NOT Repeat
     assert (result == "Repeat").sum() == 1, "Only 1 order should be repeat"
-    assert result.iloc[0] == "Repeat", "#1001 should be repeat"
-    assert result.iloc[1] == "", "#1002 should NOT be repeat (>1 day ago)"
+    assert result.iloc[0] == "Repeat", "#1001 (yesterday) should be repeat"
+    assert result.iloc[1] == "", "#1002 (today) should NOT be repeat"
     assert result.iloc[2] == "", "#1003 should NOT be repeat (not in history)"
 
 
 def test_repeat_detection_with_7_day_window():
-    """Test that 7-day window includes week-old orders."""
+    """Test that orders executed >= 7 days ago are marked as repeat."""
     orders_df = pd.DataFrame({
-        "Order_Number": ["#1001", "#1002", "#1003"],
-        "SKU": ["SKU-A", "SKU-B", "SKU-C"]
+        "Order_Number": ["#1001", "#1002", "#1003", "#1004"],
+        "SKU": ["SKU-A", "SKU-B", "SKU-C", "SKU-D"]
     })
 
-    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-    week_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+    days_6_ago = (datetime.now() - timedelta(days=6)).strftime("%Y-%m-%d")
+    days_7_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+    days_8_ago = (datetime.now() - timedelta(days=8)).strftime("%Y-%m-%d")
     month_ago = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
 
     history_df = pd.DataFrame({
-        "Order_Number": ["#1001", "#1002", "#1003"],
-        "Execution_Date": [yesterday, week_ago, month_ago]
+        "Order_Number": ["#1001", "#1002", "#1003", "#1004"],
+        "Execution_Date": [days_6_ago, days_7_ago, days_8_ago, month_ago]
     })
 
-    # Test with 7 day window
+    # Test with 7 day window: mark as Repeat if >= 7 days passed
     result = analysis._detect_repeated_orders(orders_df, history_df, repeat_window_days=7)
 
-    # #1001 and #1002 should be marked (within 7 days)
-    assert (result == "Repeat").sum() == 2, "2 orders should be repeat"
-    assert result.iloc[0] == "Repeat", "#1001 should be repeat"
-    assert result.iloc[1] == "Repeat", "#1002 should be repeat"
-    assert result.iloc[2] == "", "#1003 should NOT be repeat (>7 days)"
+    # #1001 (6 days ago) should NOT be Repeat (< 7 days)
+    # #1002 (7 days ago) should be Repeat (>= 7 days)
+    # #1003 (8 days ago) should be Repeat (>= 7 days)
+    # #1004 (30 days ago) should be Repeat (>= 7 days)
+    assert (result == "Repeat").sum() == 3, "3 orders should be repeat"
+    assert result.iloc[0] == "", "#1001 (6 days ago) should NOT be repeat"
+    assert result.iloc[1] == "Repeat", "#1002 (7 days ago) should be repeat"
+    assert result.iloc[2] == "Repeat", "#1003 (8 days ago) should be repeat"
+    assert result.iloc[3] == "Repeat", "#1004 (30 days ago) should be repeat"
 
 
 def test_repeat_detection_with_30_day_window():
-    """Test that 30-day window includes month-old orders."""
+    """Test that orders executed >= 30 days ago are marked as repeat."""
     orders_df = pd.DataFrame({
-        "Order_Number": ["#1001", "#1002", "#1003"],
-        "SKU": ["SKU-A", "SKU-B", "SKU-C"]
+        "Order_Number": ["#1001", "#1002", "#1003", "#1004"],
+        "SKU": ["SKU-A", "SKU-B", "SKU-C", "SKU-D"]
     })
 
-    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-    week_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
-    month_ago = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+    days_29_ago = (datetime.now() - timedelta(days=29)).strftime("%Y-%m-%d")
+    days_30_ago = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+    days_31_ago = (datetime.now() - timedelta(days=31)).strftime("%Y-%m-%d")
+    days_60_ago = (datetime.now() - timedelta(days=60)).strftime("%Y-%m-%d")
 
     history_df = pd.DataFrame({
-        "Order_Number": ["#1001", "#1002", "#1003"],
-        "Execution_Date": [yesterday, week_ago, month_ago]
+        "Order_Number": ["#1001", "#1002", "#1003", "#1004"],
+        "Execution_Date": [days_29_ago, days_30_ago, days_31_ago, days_60_ago]
     })
 
-    # Test with 30 day window
+    # Test with 30 day window: mark as Repeat if >= 30 days passed
     result = analysis._detect_repeated_orders(orders_df, history_df, repeat_window_days=30)
 
-    # All 3 should be marked (within 30 days)
-    assert (result == "Repeat").sum() == 3, "All 3 orders should be repeat"
-    assert result.iloc[0] == "Repeat"
-    assert result.iloc[1] == "Repeat"
-    assert result.iloc[2] == "Repeat"
+    # #1001 (29 days ago) should NOT be Repeat (< 30 days)
+    # #1002 (30 days ago) should be Repeat (>= 30 days)
+    # #1003 (31 days ago) should be Repeat (>= 30 days)
+    # #1004 (60 days ago) should be Repeat (>= 30 days)
+    assert (result == "Repeat").sum() == 3, "3 orders should be repeat"
+    assert result.iloc[0] == "", "#1001 (29 days ago) should NOT be repeat"
+    assert result.iloc[1] == "Repeat", "#1002 (30 days ago) should be repeat"
+    assert result.iloc[2] == "Repeat", "#1003 (31 days ago) should be repeat"
+    assert result.iloc[3] == "Repeat", "#1004 (60 days ago) should be repeat"
 
 
 def test_repeat_detection_backward_compatibility():
@@ -163,11 +175,13 @@ def test_repeat_detection_with_mixed_date_formats():
         "Execution_Date": [yesterday, yesterday_alt, week_ago]
     })
 
-    # Test with 2 day window (should catch both yesterday formats)
-    result = analysis._detect_repeated_orders(orders_df, history_df, repeat_window_days=2)
+    # Test with 1 day window: should catch yesterday (>= 1 day ago)
+    result = analysis._detect_repeated_orders(orders_df, history_df, repeat_window_days=1)
 
-    # At least #1001 should be marked (valid ISO format)
-    assert result.iloc[0] == "Repeat"
+    # #1001 and #1002 (both yesterday in different formats) should be Repeat
+    # #1003 (week ago) should also be Repeat (>= 1 day)
+    assert (result == "Repeat").sum() >= 1, "At least 1 order should be repeat"
+    assert result.iloc[0] == "Repeat", "#1001 (yesterday, ISO format) should be repeat"
 
 
 def test_repeat_detection_integration_with_run_analysis():
@@ -185,11 +199,12 @@ def test_repeat_detection_integration_with_run_analysis():
     })
 
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    today = datetime.now().strftime("%Y-%m-%d")
     week_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
 
     history_df = pd.DataFrame({
-        "Order_Number": ["#1001", "#1002"],
-        "Execution_Date": [yesterday, week_ago]
+        "Order_Number": ["#1001", "#1002", "#1003"],
+        "Execution_Date": [yesterday, today, week_ago]
     })
 
     column_mappings = {
@@ -205,31 +220,34 @@ def test_repeat_detection_integration_with_run_analysis():
         }
     }
 
-    # Test with 1 day window
+    # Test with 1 day window: mark as Repeat if >= 1 day passed
     final_df, _, _, _ = analysis.run_analysis(
         stock_df, orders_df, history_df, column_mappings, {},
         repeat_window_days=1
     )
 
-    # Only #1001 should have "Repeat" in System_note
+    # #1001 (yesterday) should have "Repeat" in System_note (>= 1 day)
+    # #1002 (today) should NOT have "Repeat" (0 days)
     order_1001 = final_df[final_df["Order_Number"] == "#1001"]
     order_1002 = final_df[final_df["Order_Number"] == "#1002"]
 
-    assert "Repeat" in order_1001.iloc[0]["System_note"], "#1001 should be marked as Repeat"
-    assert "Repeat" not in order_1002.iloc[0]["System_note"], "#1002 should NOT be marked as Repeat"
+    assert "Repeat" in order_1001.iloc[0]["System_note"], "#1001 (yesterday) should be marked as Repeat"
+    assert "Repeat" not in order_1002.iloc[0]["System_note"], "#1002 (today) should NOT be marked as Repeat"
 
-    # Test with 7 day window
+    # Test with 7 day window: mark as Repeat if >= 7 days passed
     final_df_7d, _, _, _ = analysis.run_analysis(
         stock_df, orders_df, history_df, column_mappings, {},
         repeat_window_days=7
     )
 
-    # Both should have "Repeat" in System_note
+    # #1001 (yesterday, 1 day) → NOT Repeat (< 7 days)
+    # #1002 (today, 0 days) → NOT Repeat (< 7 days)
+    # But #1003 (week ago, 7 days) would be Repeat if it existed in orders
     order_1001_7d = final_df_7d[final_df_7d["Order_Number"] == "#1001"]
     order_1002_7d = final_df_7d[final_df_7d["Order_Number"] == "#1002"]
 
-    assert "Repeat" in order_1001_7d.iloc[0]["System_note"]
-    assert "Repeat" in order_1002_7d.iloc[0]["System_note"]
+    assert "Repeat" not in order_1001_7d.iloc[0]["System_note"], "#1001 should NOT be Repeat (< 7 days)"
+    assert "Repeat" not in order_1002_7d.iloc[0]["System_note"], "#1002 should NOT be Repeat (< 7 days)"
 
 
 if __name__ == "__main__":

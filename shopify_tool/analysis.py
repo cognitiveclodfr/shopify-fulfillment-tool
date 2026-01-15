@@ -398,22 +398,33 @@ def _detect_repeated_orders(
     repeat_window_days: int = 1
 ) -> pd.Series:
     """
-    Detect orders that appear in historical fulfillment data within specified time window.
+    Detect orders that appear in historical fulfillment data AFTER specified time window.
 
     Business Logic:
     An order is "repeated" if the same Order_Number appears in historical
-    fulfillment data within the last N days.
+    fulfillment data that is OLDER than N days (executed >= N days ago).
+
+    Example with repeat_window_days=1:
+    - Today: 2026-01-16
+    - Order analyzed on 2026-01-15 → NOT marked as Repeat (only 1 day ago)
+    - Order analyzed on 2026-01-14 → NOT marked as Repeat (only 2 days ago, but need >1)
+
+    Wait, correction based on user requirement:
+    - repeat_window_days=1 means "mark as Repeat if executed >= 1 day ago"
+    - Today: 2026-01-16
+    - Order analyzed on 2026-01-15 → Marked as Repeat (1 day passed)
+    - Order analyzed on 2026-01-16 → NOT marked as Repeat (same day, 0 days passed)
 
     Args:
         final_df: Current orders DataFrame with Order_Number column
         history_df: Historical orders DataFrame with Order_Number, Execution_Date columns
-        repeat_window_days: Number of days to look back (default: 1)
+        repeat_window_days: Minimum number of days that must pass (default: 1)
 
     Returns:
         pd.Series (string) with "Repeat" for repeated orders, "" otherwise
 
     Example:
-        >>> repeated = _detect_repeated_orders(final_df, history_df, repeat_window_days=7)
+        >>> repeated = _detect_repeated_orders(final_df, history_df, repeat_window_days=1)
         >>> final_df['System_note'] = repeated
     """
     logger.debug(f"Phase 5/7: Detecting repeated orders (window: {repeat_window_days} days)...")
@@ -442,17 +453,24 @@ def _detect_repeated_orders(
                 # Normalize to date-only (remove time component) for consistent comparison
                 history_df_copy["Execution_Date_Parsed"] = history_df_copy["Execution_Date_Parsed"].dt.normalize()
 
-                # Filter by time window (normalize cutoff to midnight)
-                cutoff_date = (datetime.now() - timedelta(days=repeat_window_days)).replace(hour=0, minute=0, second=0, microsecond=0)
-                recent_history = history_df_copy[
-                    history_df_copy["Execution_Date_Parsed"] >= cutoff_date
+                # Calculate cutoff: today minus N days
+                # We want orders that are STRICTLY older than (today - N days)
+                # Example: if repeat_window_days=1 and today=2026-01-16:
+                #   - cutoff = 2026-01-16 (today)
+                #   - We want: Execution_Date < 2026-01-16 (i.e., 2026-01-15 and earlier)
+                today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                cutoff_date = today - timedelta(days=repeat_window_days - 1)
+
+                # Filter history: only orders executed BEFORE cutoff (>= N days ago)
+                old_history = history_df_copy[
+                    history_df_copy["Execution_Date_Parsed"] < cutoff_date
                 ]
 
-                repeated_orders = recent_history["Order_Number"].unique()
+                repeated_orders = old_history["Order_Number"].unique()
 
                 logger.info(
-                    f"Using {len(recent_history)} recent history records "
-                    f"(total: {len(history_df)}, cutoff: {cutoff_date.strftime('%Y-%m-%d')})"
+                    f"Using {len(old_history)} old history records (>= {repeat_window_days} days ago) "
+                    f"(total: {len(history_df)}, cutoff: < {cutoff_date.strftime('%Y-%m-%d')})"
                 )
         except Exception as e:
             logger.error(f"Failed to parse history dates: {e}", exc_info=True)
