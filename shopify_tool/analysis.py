@@ -70,7 +70,8 @@ def _clean_and_prepare_data(
                     "Shipping Country": "Shipping_Country",
                     "Tags": "Tags",
                     "Notes": "Notes",
-                    "Total": "Total_Price"
+                    "Total": "Total_Price",
+                    "Subtotal": "Subtotal"
                 },
                 "stock": {
                     "Артикул": "SKU",
@@ -106,6 +107,8 @@ def _clean_and_prepare_data(
         orders_df["Shipping_Country"] = orders_df["Shipping_Country"].ffill()
     if "Total_Price" in orders_df.columns:
         orders_df["Total_Price"] = orders_df["Total_Price"].ffill()
+    if "Subtotal" in orders_df.columns:
+        orders_df["Subtotal"] = orders_df["Subtotal"].ffill()
 
     # Keep only relevant columns (internal names)
     columns_to_keep = [
@@ -118,16 +121,41 @@ def _clean_and_prepare_data(
         "Tags",
         "Notes",
         "Total_Price",
+        "Subtotal",
     ]
     # Filter for existing columns only
     columns_to_keep_existing = [col for col in columns_to_keep if col in orders_df.columns]
     orders_clean_df = orders_df[columns_to_keep_existing].copy()
-    orders_clean_df = orders_clean_df.dropna(subset=["SKU"])
+
+    # Mark rows without SKU but keep them (don't drop)
+    orders_clean_df["Has_SKU"] = orders_clean_df["SKU"].notna()
+
+    # Log warning about missing SKU rows
+    missing_sku_mask = ~orders_clean_df["Has_SKU"]
+    missing_sku_count = missing_sku_mask.sum()
+
+    if missing_sku_count > 0:
+        affected_orders = orders_clean_df.loc[missing_sku_mask, "Order_Number"].unique()
+        logger.warning(
+            f"Found {missing_sku_count} order rows without SKU "
+            f"(typically shipping fees, discounts, or notes). "
+            f"Affected orders: {affected_orders.tolist()[:10]}{'...' if len(affected_orders) > 10 else ''}"
+        )
+
+        # Fill missing SKU with placeholder
+        orders_clean_df.loc[missing_sku_mask, "SKU"] = "NO_SKU"
+
+        # Add descriptive product name if missing
+        if "Product_Name" in orders_clean_df.columns:
+            orders_clean_df.loc[missing_sku_mask, "Product_Name"] = \
+                orders_clean_df.loc[missing_sku_mask, "Product_Name"].fillna("(No SKU - Shipping/Fee/Note)")
 
     # CRITICAL: Normalize SKU to standard format for consistent merging
     # This handles float artifacts (5170.0 → "5170"), whitespace, and leading zeros
+    # Skip normalization for NO_SKU placeholder
     from .csv_utils import normalize_sku
-    orders_clean_df["SKU"] = orders_clean_df["SKU"].apply(normalize_sku)
+    orders_clean_df.loc[orders_clean_df["Has_SKU"], "SKU"] = \
+        orders_clean_df.loc[orders_clean_df["Has_SKU"], "SKU"].apply(normalize_sku)
 
     # Clean stock DataFrame (internal names)
     required_stock_cols = ["SKU", "Stock"]
@@ -148,12 +176,26 @@ def _clean_and_prepare_data(
 
     # --- Set/Bundle Decoding ---
     # Expand sets into component SKUs before fulfillment simulation
+    # Skip NO_SKU items (they don't participate in set expansion)
     from .set_decoder import decode_sets_in_orders
 
     set_decoders = column_mappings.get("set_decoders", {}) if column_mappings else {}
     if set_decoders:
         logger.info(f"Decoding sets: {len(set_decoders)} definitions")
-        orders_clean_df = decode_sets_in_orders(orders_clean_df, set_decoders)
+        # Only expand sets for items with actual SKU (skip NO_SKU)
+        items_with_sku = orders_clean_df[orders_clean_df["Has_SKU"] == True].copy()
+        no_sku_items = orders_clean_df[orders_clean_df["Has_SKU"] == False].copy()
+
+        expanded_items = decode_sets_in_orders(items_with_sku, set_decoders)
+
+        # Add tracking columns to NO_SKU items for consistency
+        if not no_sku_items.empty:
+            no_sku_items["Original_SKU"] = no_sku_items["SKU"]
+            no_sku_items["Original_Quantity"] = no_sku_items["Quantity"]
+            no_sku_items["Is_Set_Component"] = False
+
+        # Combine expanded items with NO_SKU items (unchanged)
+        orders_clean_df = pd.concat([expanded_items, no_sku_items], ignore_index=True)
         logger.info(f"Orders after expansion: {len(orders_clean_df)} rows")
     else:
         # No sets defined - add tracking columns anyway for consistency
@@ -222,6 +264,8 @@ def _simulate_stock_allocation(
     4. Mark order as fulfillable/not fulfillable
     5. Deduct stock for fulfillable orders
 
+    Skips items without SKU (Has_SKU=False) as they don't consume stock.
+
     Performance:
     Uses VECTORIZED operations where possible. The main loop iterates over
     unique orders (not individual items), which is necessary for the sequential
@@ -242,13 +286,22 @@ def _simulate_stock_allocation(
     """
     logger.debug("Phase 3/7: Simulating stock allocation...")
 
+    # Filter out NO_SKU items before simulation (they don't consume stock)
+    if "Has_SKU" in orders_df.columns:
+        orders_for_simulation = orders_df[orders_df["Has_SKU"] == True].copy()
+        no_sku_count = (~orders_df["Has_SKU"]).sum()
+        if no_sku_count > 0:
+            logger.debug(f"Skipping {no_sku_count} NO_SKU items from stock simulation")
+    else:
+        orders_for_simulation = orders_df.copy()
+
     # Initialize stock tracking - VECTORIZED dict creation
     live_stock = pd.Series(stock_df.Stock.values, index=stock_df.SKU).to_dict()
     fulfillment_results = {}
 
     # Add item_count to orders for filtering
-    order_item_counts = orders_df.groupby("Order_Number").size().rename("item_count")
-    orders_with_counts = pd.merge(orders_df, order_item_counts, on="Order_Number")
+    order_item_counts = orders_for_simulation.groupby("Order_Number").size().rename("item_count")
+    orders_with_counts = pd.merge(orders_for_simulation, order_item_counts, on="Order_Number")
 
     # Iterate over prioritized orders (necessary for sequential allocation)
     for order_number in prioritized_orders["Order_Number"]:
@@ -327,8 +380,10 @@ def _calculate_final_stock(
             # Get items for this order
             order_items = orders_df[orders_df["Order_Number"] == order_number]
             # Deduct stock - VECTORIZED groupby
+            # Skip NO_SKU items (they don't consume stock)
             for sku, qty in order_items.groupby("SKU")["Quantity"].sum().items():
-                live_stock[sku] -= qty
+                if sku in live_stock:  # Only deduct if SKU exists in stock
+                    live_stock[sku] -= qty
 
     # Convert to DataFrame
     final_stock_levels = pd.Series(live_stock, name="Final_Stock").reset_index().rename(columns={"index": "SKU"})
@@ -339,45 +394,81 @@ def _calculate_final_stock(
 
 def _detect_repeated_orders(
     final_df: pd.DataFrame,
-    history_df: pd.DataFrame
+    history_df: pd.DataFrame,
+    repeat_window_days: int = 1
 ) -> pd.Series:
     """
-    Detect orders that appear in historical fulfillment data (repeated orders).
+    Detect orders that appear in historical fulfillment data within specified time window.
 
     Business Logic:
     An order is "repeated" if the same Order_Number appears in historical
-    fulfillment data.
-
-    This is used for:
-    - Special tagging (System_note = "Repeat")
-    - Reporting and analytics
-    - Courier statistics
-
-    Uses VECTORIZED operations (.isin()) instead of iterrows().
+    fulfillment data within the last N days.
 
     Args:
         final_df: Current orders DataFrame with Order_Number column
-        history_df: Historical orders DataFrame with Order_Number column
+        history_df: Historical orders DataFrame with Order_Number, Execution_Date columns
+        repeat_window_days: Number of days to look back (default: 1)
 
     Returns:
         pd.Series (string) with "Repeat" for repeated orders, "" otherwise
 
     Example:
-        >>> repeated = _detect_repeated_orders(final_df, history_df)
+        >>> repeated = _detect_repeated_orders(final_df, history_df, repeat_window_days=7)
         >>> final_df['System_note'] = repeated
     """
-    logger.debug("Phase 5/7: Detecting repeated orders...")
+    logger.debug(f"Phase 5/7: Detecting repeated orders (window: {repeat_window_days} days)...")
 
-    # VECTORIZED: Check if Order_Number exists in history
-    # This replaces iterrows() with vectorized .isin() operation
+    # Handle empty history or missing date column (backward compatibility)
+    if history_df.empty or "Execution_Date" not in history_df.columns:
+        logger.warning("History has no Execution_Date column, using full history")
+        repeated_orders = history_df["Order_Number"].unique() if not history_df.empty else []
+    else:
+        # FILTER history by date window
+        from datetime import datetime, timedelta
+
+        try:
+            # Parse dates (handle errors gracefully)
+            history_df_copy = history_df.copy()
+            history_df_copy["Execution_Date_Parsed"] = pd.to_datetime(
+                history_df_copy["Execution_Date"],
+                errors='coerce'
+            )
+
+            # Check if all dates are invalid (NaT)
+            if history_df_copy["Execution_Date_Parsed"].isna().all():
+                logger.warning("All dates in history are invalid, using full history")
+                repeated_orders = history_df["Order_Number"].unique()
+            else:
+                # Normalize to date-only (remove time component) for consistent comparison
+                history_df_copy["Execution_Date_Parsed"] = history_df_copy["Execution_Date_Parsed"].dt.normalize()
+
+                # Filter by time window (normalize cutoff to midnight)
+                cutoff_date = (datetime.now() - timedelta(days=repeat_window_days)).replace(hour=0, minute=0, second=0, microsecond=0)
+                recent_history = history_df_copy[
+                    history_df_copy["Execution_Date_Parsed"] >= cutoff_date
+                ]
+
+                repeated_orders = recent_history["Order_Number"].unique()
+
+                logger.info(
+                    f"Using {len(recent_history)} recent history records "
+                    f"(total: {len(history_df)}, cutoff: {cutoff_date.strftime('%Y-%m-%d')})"
+                )
+        except Exception as e:
+            logger.error(f"Failed to parse history dates: {e}", exc_info=True)
+            # Fallback to full history
+            repeated_orders = history_df["Order_Number"].unique()
+            logger.warning("Falling back to full history due to date parsing error")
+
+    # VECTORIZED: Check if Order_Number exists in filtered history
     repeated = np.where(
-        final_df["Order_Number"].isin(history_df["Order_Number"]),
+        final_df["Order_Number"].isin(repeated_orders),
         "Repeat",
         ""
     )
 
     repeated_count = (repeated == "Repeat").sum()
-    logger.debug(f"Found {repeated_count} repeated orders")
+    logger.debug(f"Found {repeated_count} repeated orders within {repeat_window_days} days")
 
     return pd.Series(repeated, index=final_df.index)
 
@@ -425,7 +516,8 @@ def _merge_results_to_dataframe(
     final_stock_levels: pd.DataFrame,
     fulfillment_results: Dict[str, str],
     history_df: pd.DataFrame,
-    courier_mappings: Optional[dict] = None
+    courier_mappings: Optional[dict] = None,
+    repeat_window_days: int = 1
 ) -> pd.DataFrame:
     """
     Merge all analysis results into final output DataFrame.
@@ -552,7 +644,7 @@ def _merge_results_to_dataframe(
         final_df["Destination_Country"] = ""
 
     # Detect repeated orders - VECTORIZED
-    final_df["System_note"] = _detect_repeated_orders(final_df, history_df)
+    final_df["System_note"] = _detect_repeated_orders(final_df, history_df, repeat_window_days)
 
     # Add unfulfillable reasons to System_note
     def add_fulfillment_reason(row):
@@ -572,6 +664,17 @@ def _merge_results_to_dataframe(
         return row["System_note"]
 
     final_df["System_note"] = final_df.apply(add_fulfillment_reason, axis=1)
+
+    # Mark NO_SKU orders as Not Fulfillable with explanation
+    if "Has_SKU" in final_df.columns:
+        no_sku_mask = final_df["Has_SKU"] == False
+        if no_sku_mask.any():
+            final_df.loc[no_sku_mask, "Order_Fulfillment_Status"] = "Not Fulfillable"
+            # Add NO_SKU tag to System_note
+            final_df.loc[no_sku_mask, "System_note"] = final_df.loc[no_sku_mask, "System_note"].apply(
+                lambda note: f"{note} [NO_SKU]" if pd.notna(note) and note != "" else "[NO_SKU]"
+            )
+            logger.info(f"Marked {no_sku_mask.sum()} NO_SKU items as Not Fulfillable")
 
     # Initialize additional columns
     final_df["Stock_Alert"] = ""  # Initialize the column
@@ -612,6 +715,12 @@ def _merge_results_to_dataframe(
         # Insert 'Total_Price' into the list at a specific position for consistent column order.
         # Placed after 'Quantity'.
         output_columns.insert(6, "Total_Price")
+    if "Subtotal" in final_df.columns:
+        # Insert 'Subtotal' after Total_Price (position 7)
+        output_columns.insert(7, "Subtotal")
+    if "Has_SKU" in final_df.columns:
+        # Insert 'Has_SKU' after SKU (position 3)
+        output_columns.insert(3, "Has_SKU")
 
     # Filter the list to include only columns that actually exist in the DataFrame.
     # This prevents errors if a column is unexpectedly missing.
@@ -758,7 +867,7 @@ def _generalize_shipping_method(method, courier_mappings=None):
     return method_str.title()
 
 
-def run_analysis(stock_df, orders_df, history_df, column_mappings=None, courier_mappings=None):
+def run_analysis(stock_df, orders_df, history_df, column_mappings=None, courier_mappings=None, repeat_window_days=1):
     """
     Main analysis engine for order fulfillment simulation.
 
@@ -797,6 +906,9 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None, courier_
             1. New: {"DHL": {"patterns": ["dhl", "dhl express"]}}
             2. Legacy: {"dhl": "DHL"}
             If None or empty, uses hardcoded fallback rules for backward compatibility.
+        repeat_window_days (int, optional): Number of days to look back for repeat
+            detection. Orders fulfilled within this window are marked as "Repeat".
+            Default: 1 (only yesterday's fulfillments).
 
     Returns:
         tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
@@ -855,7 +967,7 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None, courier_
         order_item_counts = orders_clean.groupby("Order_Number").size().rename("item_count")
         final_df = _merge_results_to_dataframe(
             orders_clean, stock_clean, order_item_counts, final_stock,
-            fulfillment_results, history_df, courier_mappings
+            fulfillment_results, history_df, courier_mappings, repeat_window_days
         )
 
         # Phase 7: Generate summary reports

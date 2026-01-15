@@ -79,6 +79,7 @@ class SettingsWindow(QDialog):
         "item_count",
         "total_quantity",
         "has_sku",
+        "Has_SKU",
         "--- ARTICLE-LEVEL FIELDS ---",
     ]
     CONDITION_FIELDS = ORDER_LEVEL_FIELDS + FILTERABLE_COLUMNS
@@ -327,6 +328,22 @@ class SettingsWindow(QDialog):
         )
 
         settings_layout.addRow(threshold_label, self.low_stock_edit)
+
+        # Repeat Detection Window
+        repeat_days_label = QLabel("Repeat Detection Window (days):")
+        self.repeat_days_input = QSpinBox()
+        self.repeat_days_input.setMinimum(1)
+        self.repeat_days_input.setMaximum(365)
+        self.repeat_days_input.setValue(
+            self.config_data.get("settings", {}).get("repeat_detection_days", 1)
+        )
+        self.repeat_days_input.setToolTip(
+            "Orders fulfilled within this many days are marked as 'Repeat'.\n"
+            "Default: 1 day (only yesterday's fulfillments)\n"
+            "Increase for longer detection window (e.g., 7 days, 30 days)"
+        )
+
+        settings_layout.addRow(repeat_days_label, self.repeat_days_input)
 
         main_layout.addWidget(settings_box)
 
@@ -990,7 +1007,7 @@ class SettingsWindow(QDialog):
 
         # Define required and optional fields for orders
         orders_required = ["Order_Number", "SKU", "Quantity", "Shipping_Method"]
-        orders_optional = ["Product_Name", "Shipping_Country", "Tags", "Notes", "Total_Price"]
+        orders_optional = ["Product_Name", "Shipping_Country", "Tags", "Notes", "Total_Price", "Subtotal"]
 
         # Get current mappings (v2 format)
         column_mappings = self.config_data.get("column_mappings", {})
@@ -1413,6 +1430,7 @@ class SettingsWindow(QDialog):
             self.config_data["settings"]["stock_csv_delimiter"] = self.stock_delimiter_edit.text()
             self.config_data["settings"]["orders_csv_delimiter"] = self.orders_delimiter_edit.text()
             self.config_data["settings"]["low_stock_threshold"] = int(self.low_stock_edit.text())
+            self.config_data["settings"]["repeat_detection_days"] = self.repeat_days_input.value()
 
             # ========================================
             # Rules Tab - Line Item Rules

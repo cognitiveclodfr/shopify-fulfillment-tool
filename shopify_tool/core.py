@@ -631,9 +631,13 @@ def _run_analysis_and_rules(
     courier_mappings = config.get("courier_mappings", {})
     logger.debug(f"Using courier mappings: {courier_mappings}")
 
+    # Get repeat detection window from config
+    repeat_window_days = config.get("settings", {}).get("repeat_detection_days", 1)
+
     # Run core analysis
     final_df, summary_present_df, summary_missing_df, stats = analysis.run_analysis(
-        stock_df, orders_df, history_df, column_mappings, courier_mappings
+        stock_df, orders_df, history_df, column_mappings, courier_mappings,
+        repeat_window_days=repeat_window_days
     )
     logger.info("Analysis computation complete.")
 
