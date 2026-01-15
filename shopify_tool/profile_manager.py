@@ -372,7 +372,8 @@ class ProfileManager:
                 "Shipping Country": "Shipping_Country",
                 "Tags": "Tags",
                 "Notes": "Notes",
-                "Total": "Total_Price"
+                "Total": "Total_Price",
+                "Subtotal": "Subtotal"
             },
             "stock": {
                 "Артикул": "SKU",
@@ -516,7 +517,8 @@ class ProfileManager:
                     "Shipping Country": "Shipping_Country",
                     "Tags": "Tags",
                     "Notes": "Notes",
-                    "Total": "Total_Price"
+                    "Total": "Total_Price",
+                    "Subtotal": "Subtotal"
                 },
                 "stock": {
                     "Артикул": "SKU",
@@ -543,7 +545,8 @@ class ProfileManager:
             "settings": {
                 "low_stock_threshold": 5,
                 "stock_csv_delimiter": ";",
-                "orders_csv_delimiter": ","
+                "orders_csv_delimiter": ",",
+                "repeat_detection_days": 1
             },
 
             "rules": [],

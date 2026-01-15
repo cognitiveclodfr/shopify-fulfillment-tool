@@ -128,7 +128,7 @@ def test_TC08_exact_stock_matches():
 
 
 def test_TC09_missing_lineitem_sku_is_ignored():
-    """Tests that order line items with a missing SKU are ignored."""
+    """Tests that order line items with a missing SKU are kept but marked as NO_SKU (v1.9.0+ behavior)."""
     stock = pd.DataFrame({"Артикул": ["Y"], "Име": ["Y"], "Наличност": [5]})
     orders = pd.DataFrame(
         {
@@ -142,8 +142,12 @@ def test_TC09_missing_lineitem_sku_is_ignored():
         }
     )
     final_df, _ = run_test(stock, orders)
-    # Only O1 should be present in final_df
-    assert "O2" not in final_df["Order_Number"].unique()
+    # v1.9.0+: O2 should be present but marked as NO_SKU
+    assert "O2" in final_df["Order_Number"].unique()
+    o2_row = final_df[final_df["Order_Number"] == "O2"].iloc[0]
+    assert o2_row["SKU"] == "NO_SKU"
+    assert o2_row["Order_Fulfillment_Status"] == "Not Fulfillable"
+    assert "[NO_SKU]" in o2_row["System_note"]
 
 
 def test_TC10_missing_sku_in_stock_file():
