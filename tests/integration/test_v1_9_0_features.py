@@ -102,19 +102,19 @@ def test_all_v1_9_0_features_together():
 
     # ===== Verify Feature #2: Date-based repeat detection =====
 
-    # Order #1001 was fulfilled yesterday (within 1-day window)
+    # Order #1001 was fulfilled yesterday (>= 1 day ago with 1-day window)
     order_1001_notes = order_1001["System_note"].unique()
     assert any("Repeat" in str(note) for note in order_1001_notes), \
-        "#1001 should be marked as Repeat (within 1 day)"
+        "#1001 should be marked as Repeat (>= 1 day ago)"
 
-    # Order #1002 was fulfilled 7 days ago (outside 1-day window)
+    # Order #1002 was fulfilled 7 days ago (>= 1 day ago, should be Repeat)
     order_1002 = final_df[final_df["Order_Number"] == "#1002"]
     order_1002_notes = order_1002["System_note"].unique()
-    # Should NOT have Repeat (outside window)
-    # Note: NO_SKU will have [NO_SKU], but real items shouldn't have Repeat
+    # Should have Repeat (>= 1 day ago)
+    # Note: NO_SKU will have [NO_SKU], real items should have Repeat
     real_item_1002 = order_1002[order_1002["SKU"] != "NO_SKU"]
-    assert not any("Repeat" in str(note) for note in real_item_1002["System_note"] if "[NO_SKU]" not in str(note)), \
-        "#1002 should NOT be marked as Repeat (outside 1-day window)"
+    assert any("Repeat" in str(note) for note in real_item_1002["System_note"]), \
+        "#1002 should be marked as Repeat (>= 1 day ago)"
 
 
 def test_v1_9_0_with_7_day_window():
@@ -155,15 +155,18 @@ def test_v1_9_0_with_7_day_window():
         }
     }
 
-    # Test with 7-day window (should catch both orders)
+    # Test with 7-day window
     final_df_7d, _, _, _ = analysis.run_analysis(
         stock_df, orders_df, history_df, column_mappings, {},
         repeat_window_days=7
     )
 
-    # Both orders should be marked as Repeat
-    assert "Repeat" in final_df_7d[final_df_7d["Order_Number"] == "#1001"].iloc[0]["System_note"]
-    assert "Repeat" in final_df_7d[final_df_7d["Order_Number"] == "#1002"].iloc[0]["System_note"]
+    # #1001 (yesterday, 1 day ago) should NOT be Repeat (< 7 days)
+    # #1002 (week ago, 7 days ago) should be Repeat (>= 7 days)
+    assert "Repeat" not in final_df_7d[final_df_7d["Order_Number"] == "#1001"].iloc[0]["System_note"], \
+        "#1001 (1 day ago) should NOT be Repeat with 7-day window"
+    assert "Repeat" in final_df_7d[final_df_7d["Order_Number"] == "#1002"].iloc[0]["System_note"], \
+        "#1002 (7 days ago) should be Repeat with 7-day window"
 
 
 def test_v1_9_0_backward_compatibility():
