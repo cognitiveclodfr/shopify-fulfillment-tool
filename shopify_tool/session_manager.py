@@ -49,7 +49,13 @@ class SessionManager:
     """
 
     # Session subdirectories
-    SESSION_SUBDIRS = ["input", "analysis", "packing_lists", "stock_exports"]
+    SESSION_SUBDIRS = [
+        "input",
+        "analysis",
+        "packing_lists",
+        "stock_exports",
+        "reference_labels"  # NEW: For PDF reference label processing
+    ]
 
     # Valid session statuses
     VALID_STATUSES = ["active", "completed", "abandoned", "archived"]
@@ -400,6 +406,22 @@ class SessionManager:
     def get_stock_exports_dir(self, session_path: str) -> Path:
         """Get path to session stock_exports directory."""
         return self.get_session_subdirectory(session_path, "stock_exports")
+
+    def get_reference_labels_dir(self, session_path: str) -> Path:
+        """
+        Get path to session reference_labels directory.
+
+        Args:
+            session_path: Session path
+
+        Returns:
+            Path: Path to reference_labels subdirectory
+
+        Example:
+            >>> manager.get_reference_labels_dir("Sessions/CLIENT_M/2025-01-15_1")
+            Path("Sessions/CLIENT_M/2025-01-15_1/reference_labels")
+        """
+        return self.get_session_subdirectory(session_path, "reference_labels")
 
     def session_exists(self, client_id: str, session_name: str) -> bool:
         """Check if a session exists.

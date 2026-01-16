@@ -61,22 +61,25 @@ class UIManager:
         self.mw.main_tabs.setTabPosition(QTabWidget.North)
         self.mw.main_tabs.setMovable(False)  # Prevent accidental reorder
 
-        # Create the 4 main tabs
+        # Create the 5 main tabs
         tab1 = self._create_tab1_session_setup()
         tab2 = self._create_tab2_analysis_results()
         tab3 = self._create_tab3_session_browser()
         tab4 = self._create_tab4_information()
+        tab5 = self._create_tab5_tools()  # NEW
 
         # Add tabs with icons (using QStyle built-in icons)
         file_icon = self.mw.style().standardIcon(QStyle.SP_FileIcon)
         table_icon = self.mw.style().standardIcon(QStyle.SP_FileDialogDetailedView)
         folder_icon = self.mw.style().standardIcon(QStyle.SP_DirIcon)
         info_icon = self.mw.style().standardIcon(QStyle.SP_MessageBoxInformation)
+        tools_icon = self.mw.style().standardIcon(QStyle.SP_FileDialogContentsView)  # NEW
 
         self.mw.main_tabs.addTab(tab1, file_icon, "Session Setup")
         self.mw.main_tabs.addTab(tab2, table_icon, "Analysis Results")
         self.mw.main_tabs.addTab(tab3, folder_icon, "Session Browser")
         self.mw.main_tabs.addTab(tab4, info_icon, "Information")
+        self.mw.main_tabs.addTab(tab5, tools_icon, "Tools")  # NEW
 
         # Add keyboard shortcuts for tab switching
         self._setup_tab_shortcuts()
@@ -144,12 +147,15 @@ class UIManager:
                   lambda: self.mw.main_tabs.setCurrentIndex(2))
         QShortcut(QKeySequence("Ctrl+4"), self.mw,
                   lambda: self.mw.main_tabs.setCurrentIndex(3))
+        QShortcut(QKeySequence("Ctrl+5"), self.mw,
+                  lambda: self.mw.main_tabs.setCurrentIndex(4))
 
         # Set tooltips on tabs
         self.mw.main_tabs.setTabToolTip(0, "Session setup and file loading (Ctrl+1)")
         self.mw.main_tabs.setTabToolTip(1, "View and edit analysis results (Ctrl+2)")
         self.mw.main_tabs.setTabToolTip(2, "Browse past sessions (Ctrl+3)")
         self.mw.main_tabs.setTabToolTip(3, "Statistics and logs (Ctrl+4)")
+        self.mw.main_tabs.setTabToolTip(4, "PDF processing and utilities (Ctrl+5)")
 
     def _create_tab1_session_setup(self):
         """Create Tab 1: Session Setup
@@ -1100,3 +1106,18 @@ class UIManager:
         layout.addWidget(self.mw.execution_log_edit)
 
         return tab
+
+    def _create_tab5_tools(self):
+        """Create Tab 5: Tools
+
+        Contains sub-tabs:
+        - Reference Labels: PDF processing for reference numbers
+        - Barcode Generator: Placeholder for future implementation
+
+        Returns:
+            QWidget: Tools widget with sub-tabs
+        """
+        from gui.tools_widget import ToolsWidget
+
+        self.mw.tools_widget = ToolsWidget(self.mw)
+        return self.mw.tools_widget
