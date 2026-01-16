@@ -28,3 +28,8 @@ PySide6>=6.5.0         # Qt6 for Python - cross-platform GUI framework
 # ------------------------------
 six>=1.17.0            # Python 2 and 3 compatibility utilities
 typing_extensions>=4.0.0  # Backported type hints for older Python versions
+
+# PDF Processing (Feature #4 - Reference Labels)
+# -----------------------------------------------
+pypdf>=4.0.0           # PDF reading and manipulation (formerly PyPDF2)
+reportlab>=4.0.0       # PDF generation and text overlay
