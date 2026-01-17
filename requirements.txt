@@ -33,3 +33,8 @@ typing_extensions>=4.0.0  # Backported type hints for older Python versions
 # -----------------------------------------------
 pypdf>=4.0.0           # PDF reading and manipulation (formerly PyPDF2)
 reportlab>=4.0.0       # PDF generation and text overlay
+
+# Barcode Generation (Feature #5 - Barcode Generator)
+# ----------------------------------------------------
+python-barcode>=0.15.1 # Code-128 barcode generation for warehouse labels
+Pillow>=10.0.0         # Image processing for barcode label composition

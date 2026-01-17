@@ -54,7 +54,8 @@ class SessionManager:
         "analysis",
         "packing_lists",
         "stock_exports",
-        "reference_labels"  # NEW: For PDF reference label processing
+        "reference_labels",  # For PDF reference label processing
+        "barcodes"  # NEW: For barcode labels (Feature #5)
     ]
 
     # Valid session statuses
@@ -422,6 +423,54 @@ class SessionManager:
             Path("Sessions/CLIENT_M/2025-01-15_1/reference_labels")
         """
         return self.get_session_subdirectory(session_path, "reference_labels")
+
+    def get_barcodes_dir(self, session_path: str) -> Path:
+        """
+        Get path to session barcodes directory.
+
+        Args:
+            session_path: Session path
+
+        Returns:
+            Path: Path to barcodes subdirectory
+
+        Example:
+            >>> sm.get_barcodes_dir("Sessions/CLIENT_M/2026-01-16_1")
+            Path("Sessions/CLIENT_M/2026-01-16_1/barcodes")
+        """
+        return Path(session_path) / "barcodes"
+
+    def get_packing_list_barcode_dir(self, session_path: str, packing_list_name: str) -> Path:
+        """
+        Get path to barcode directory for specific packing list.
+
+        Each packing list has its own barcode subdirectory to organize labels.
+
+        Args:
+            session_path: Session path
+            packing_list_name: Name of packing list (e.g., "DHL_Orders")
+
+        Returns:
+            Path: Path to packing list's barcode subdirectory
+
+        Example:
+            >>> sm.get_packing_list_barcode_dir("Sessions/CLIENT_M/2026-01-16_1", "DHL_Orders")
+            Path("Sessions/CLIENT_M/2026-01-16_1/barcodes/DHL_Orders")
+        """
+        return self.get_barcodes_dir(session_path) / packing_list_name
+
+    def get_barcode_history_file(self, session_path: str, packing_list_name: str) -> Path:
+        """
+        Get path to barcode history JSON file for specific packing list.
+
+        Args:
+            session_path: Session path
+            packing_list_name: Name of packing list
+
+        Returns:
+            Path: Path to barcode_history.json
+        """
+        return self.get_packing_list_barcode_dir(session_path, packing_list_name) / "barcode_history.json"
 
     def session_exists(self, client_id: str, session_name: str) -> bool:
         """Check if a session exists.
