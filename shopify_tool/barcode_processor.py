@@ -273,36 +273,57 @@ def generate_barcode_label(
         label_img.paste(barcode_img_resized, (barcode_x, barcode_y))
 
         # === STEP 4: Add text info on left side ===
-        font_small = load_font(FONT_SIZE_SMALL, bold=False)
-        font_medium = load_font(FONT_SIZE_MEDIUM, bold=False)
-        font_large = load_font(FONT_SIZE_LARGE, bold=True)
-        font_barcode_num = load_font(18, bold=True)  # Large font for barcode number
+        font_small = load_font(10, bold=False)        # For labels (SUM, COU, TAG)
+        font_medium = load_font(13, bold=False)       # For values
+        font_header = load_font(16, bold=False)       # For seq# and date
+        font_courier = load_font(18, bold=True)       # For courier (bold)
+        font_barcode_num = load_font(20, bold=True)   # Large font for barcode number
 
-        # Calculate total height of text block for vertical centering
-        line_height = 24  # Spacing between lines
-        total_text_height = 4 * line_height  # 4 lines of text
+        left_margin = 10
+        y_pos = 15  # Start from top
 
-        # Center text block vertically
-        y_start = (label_height_px - total_text_height) // 2
-        y_pos = y_start
+        # === TOP SECTION: Seq#, Courier, Date ===
+        # Line 1: Sequential number
+        draw.text((left_margin, y_pos), f"#{sequential_num}", font=font_header, fill='black')
+        y_pos += 22
 
-        # Line 1: #Seq | xCount | Country | Tag (compact, separated by │)
-        info_line = f"#{sequential_num} │ x{item_count} │ {country_display} │ {tag_display}"
-        draw.text((10, y_pos), info_line, font=font_small, fill='black')
-        y_pos += line_height
+        # Line 2: Courier (bold, larger)
+        courier_display = courier[:25] if len(courier) <= 25 else courier[:22] + "..."
+        draw.text((left_margin, y_pos), courier_display, font=font_courier, fill='black')
+        y_pos += 26
 
-        # Line 2: Order Number (truncate to fit in narrow section)
-        order_display = order_number[:22] if len(order_number) <= 22 else order_number[:19] + "..."
-        draw.text((10, y_pos), order_display, font=font_medium, fill='black')
-        y_pos += line_height
+        # Line 3: Date
+        draw.text((left_margin, y_pos), date_str, font=font_small, fill='black')
+        y_pos += 18
 
-        # Line 3: Courier (bold) - truncate if too long
-        courier_display = courier[:30] if len(courier) <= 30 else courier[:27] + "..."
-        draw.text((10, y_pos), courier_display, font=font_large, fill='black')
-        y_pos += line_height
+        # === SEPARATOR LINE ===
+        line_y = y_pos
+        draw.line([(left_margin, line_y), (INFO_SECTION_WIDTH - 10, line_y)], fill='black', width=1)
+        y_pos += 8
 
-        # Line 4: Date
-        draw.text((10, y_pos), date_str, font=font_small, fill='black')
+        # === INFO SECTIONS (3 rows with labels and values) ===
+        section_height = 22  # Height for each section
+
+        # Section 1: SUM (items count)
+        draw.text((left_margin, y_pos), "SUM:", font=font_small, fill='black')
+        draw.text((left_margin + 80, y_pos), str(item_count), font=font_medium, fill='black')
+        y_pos += section_height
+
+        # Separator line
+        draw.line([(left_margin, y_pos - 4), (INFO_SECTION_WIDTH - 10, y_pos - 4)], fill='black', width=1)
+
+        # Section 2: COU (country)
+        draw.text((left_margin, y_pos), "COU:", font=font_small, fill='black')
+        draw.text((left_margin + 80, y_pos), country_display, font=font_medium, fill='black')
+        y_pos += section_height
+
+        # Separator line
+        draw.line([(left_margin, y_pos - 4), (INFO_SECTION_WIDTH - 10, y_pos - 4)], fill='black', width=1)
+
+        # Section 3: TAG (internal tag)
+        tag_display_short = tag_display[:12] if len(tag_display) <= 12 else tag_display[:9] + "..."
+        draw.text((left_margin, y_pos), "TAG:", font=font_small, fill='black')
+        draw.text((left_margin + 80, y_pos), tag_display_short, font=font_medium, fill='black')
 
         # === Add order number below barcode (right side) ===
         # Get text size to center it
@@ -312,7 +333,7 @@ def generate_barcode_label(
 
         # Center text under barcode
         text_x = barcode_x + (barcode_target_width - text_width) // 2
-        text_y = barcode_y + barcode_target_height + 5  # 5px below barcode
+        text_y = barcode_y + barcode_target_height + 8  # 8px below barcode
 
         draw.text((text_x, text_y), barcode_num_text, font=font_barcode_num, fill='black')
 
