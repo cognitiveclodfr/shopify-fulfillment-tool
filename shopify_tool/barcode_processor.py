@@ -47,9 +47,9 @@ LABEL_HEIGHT_MM = 38
 LABEL_WIDTH_PX = int((LABEL_WIDTH_MM / 25.4) * DPI)   # 543px
 LABEL_HEIGHT_PX = int((LABEL_HEIGHT_MM / 25.4) * DPI)  # 303px
 
-# Layout zones (split design) - adjusted for better text visibility
-INFO_SECTION_WIDTH = 340  # Left side for text info (increased from 260px)
-BARCODE_SECTION_WIDTH = LABEL_WIDTH_PX - INFO_SECTION_WIDTH  # Right side for barcode (~203px)
+# Layout zones (split design) - 50/50 equal sections
+INFO_SECTION_WIDTH = 271  # Left side for text info (50% of 543px)
+BARCODE_SECTION_WIDTH = LABEL_WIDTH_PX - INFO_SECTION_WIDTH  # Right side for barcode (272px, 50%)
 BARCODE_SECTION_X = INFO_SECTION_WIDTH  # X position where barcode starts
 
 # Font sizes - reduced for long text support
@@ -153,7 +153,7 @@ def format_tags_for_barcode(internal_tag: str) -> str:
         >>> format_tags_for_barcode("URGENT-CUSTOMER-FRAGILE-GLASS")
         "URGENT-CUSTOMER"
     """
-    if not internal_tag:
+    if not internal_tag or internal_tag == 'nan' or internal_tag == 'None':
         return ""
 
     # Split by pipe and take first tag
@@ -237,8 +237,8 @@ def generate_barcode_label(
 
         writer = ImageWriter()
         writer.set_options({
-            'module_width': 0.30,    # Bar width (mm) - reduced for narrower section
-            'module_height': 15.0,   # Bar height (mm) - reduced to fit better
+            'module_width': 0.35,    # Bar width (mm) - increased for better scanning
+            'module_height': 20.0,   # Bar height (mm) - increased for taller barcode
             'dpi': dpi,
             'quiet_zone': 0,         # No quiet zone (we add manually)
             'write_text': False,     # We add text manually
@@ -258,72 +258,72 @@ def generate_barcode_label(
         label_img = Image.new('RGB', (label_width_px, label_height_px), 'white')
         draw = ImageDraw.Draw(label_img)
 
-        # Resize barcode to fit right section (more compact)
-        barcode_target_width = BARCODE_SECTION_WIDTH - 15  # More margin for safety
-        barcode_target_height = label_height_px - 40       # More top/bottom margin
+        # Resize barcode to fit right section (larger for better scanning)
+        barcode_target_width = BARCODE_SECTION_WIDTH - 20  # Small margin
+        barcode_target_height = label_height_px - 70       # Space for number below
 
         barcode_img_resized = barcode_img.resize(
             (barcode_target_width, barcode_target_height),
             Image.Resampling.LANCZOS
         )
 
-        # Paste barcode on right side (centered vertically)
-        barcode_x = BARCODE_SECTION_X + 8  # Margin from text section
-        barcode_y = (label_height_px - barcode_target_height) // 2  # Center vertically
+        # Paste barcode on right side (centered horizontally, top aligned)
+        barcode_x = BARCODE_SECTION_X + 10  # Center in right section
+        barcode_y = 10  # Top margin
         label_img.paste(barcode_img_resized, (barcode_x, barcode_y))
 
         # === STEP 4: Add text info on left side ===
-        font_small = load_font(10, bold=False)        # For labels (SUM, COU, TAG)
-        font_medium = load_font(13, bold=False)       # For values
-        font_header = load_font(16, bold=False)       # For seq# and date
-        font_courier = load_font(18, bold=True)       # For courier (bold)
-        font_barcode_num = load_font(20, bold=True)   # Large font for barcode number
+        font_small = load_font(14, bold=False)        # For labels (SUM, COU, TAG) - increased
+        font_medium = load_font(18, bold=False)       # For values - increased
+        font_header = load_font(20, bold=False)       # For seq# and date - increased
+        font_courier = load_font(24, bold=True)       # For courier (bold) - increased
+        font_barcode_num = load_font(22, bold=True)   # Large font for barcode number
 
         left_margin = 10
-        y_pos = 15  # Start from top
+        y_pos = 12  # Start from top
 
         # === TOP SECTION: Seq#, Courier, Date ===
         # Line 1: Sequential number
         draw.text((left_margin, y_pos), f"#{sequential_num}", font=font_header, fill='black')
-        y_pos += 22
+        y_pos += 28
 
         # Line 2: Courier (bold, larger)
-        courier_display = courier[:25] if len(courier) <= 25 else courier[:22] + "..."
+        courier_display = courier[:20] if len(courier) <= 20 else courier[:17] + "..."
         draw.text((left_margin, y_pos), courier_display, font=font_courier, fill='black')
-        y_pos += 26
+        y_pos += 32
 
         # Line 3: Date
         draw.text((left_margin, y_pos), date_str, font=font_small, fill='black')
-        y_pos += 18
+        y_pos += 22
 
         # === SEPARATOR LINE ===
         line_y = y_pos
-        draw.line([(left_margin, line_y), (INFO_SECTION_WIDTH - 10, line_y)], fill='black', width=1)
-        y_pos += 8
+        draw.line([(left_margin, line_y), (INFO_SECTION_WIDTH - 10, line_y)], fill='black', width=2)
+        y_pos += 12
 
         # === INFO SECTIONS (3 rows with labels and values) ===
-        section_height = 22  # Height for each section
+        section_height = 30  # Height for each section (increased for bigger fonts)
 
         # Section 1: SUM (items count)
         draw.text((left_margin, y_pos), "SUM:", font=font_small, fill='black')
-        draw.text((left_margin + 80, y_pos), str(item_count), font=font_medium, fill='black')
+        draw.text((left_margin + 90, y_pos), str(item_count), font=font_medium, fill='black')
         y_pos += section_height
 
         # Separator line
-        draw.line([(left_margin, y_pos - 4), (INFO_SECTION_WIDTH - 10, y_pos - 4)], fill='black', width=1)
+        draw.line([(left_margin, y_pos - 6), (INFO_SECTION_WIDTH - 10, y_pos - 6)], fill='black', width=1)
 
         # Section 2: COU (country)
         draw.text((left_margin, y_pos), "COU:", font=font_small, fill='black')
-        draw.text((left_margin + 80, y_pos), country_display, font=font_medium, fill='black')
+        draw.text((left_margin + 90, y_pos), country_display, font=font_medium, fill='black')
         y_pos += section_height
 
         # Separator line
-        draw.line([(left_margin, y_pos - 4), (INFO_SECTION_WIDTH - 10, y_pos - 4)], fill='black', width=1)
+        draw.line([(left_margin, y_pos - 6), (INFO_SECTION_WIDTH - 10, y_pos - 6)], fill='black', width=1)
 
         # Section 3: TAG (internal tag)
-        tag_display_short = tag_display[:12] if len(tag_display) <= 12 else tag_display[:9] + "..."
+        tag_display_short = tag_display[:10] if len(tag_display) <= 10 else tag_display[:7] + "..."
         draw.text((left_margin, y_pos), "TAG:", font=font_small, fill='black')
-        draw.text((left_margin + 80, y_pos), tag_display_short, font=font_medium, fill='black')
+        draw.text((left_margin + 90, y_pos), tag_display_short, font=font_medium, fill='black')
 
         # === Add order number below barcode (right side) ===
         # Get text size to center it
@@ -441,8 +441,17 @@ def generate_barcodes_batch(
         # Extract data from row
         order_number = str(row['Order_Number'])
         courier = str(row['Shipping_Provider'])
-        country = str(row.get('Destination_Country', ''))
-        tag = str(row.get('Internal_Tag', ''))
+
+        # Handle country (may be NaN)
+        country = str(row.get('Destination_Country', '')) if pd.notna(row.get('Destination_Country')) else ''
+
+        # Handle Internal_Tag (may be NaN or missing)
+        tag_raw = row.get('Internal_Tag', '')
+        tag = str(tag_raw) if pd.notna(tag_raw) and tag_raw else ''
+
+        # Debug: log tag value
+        if tag and tag != 'nan':
+            logger.debug(f"Order {order_number}: Internal_Tag = '{tag}'")
 
         # Get item count (number of unique items/SKUs in order)
         # Use 'item_count' column if available, otherwise fall back to 'Quantity'

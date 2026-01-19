@@ -533,9 +533,11 @@ class BarcodeGeneratorWidget(QWidget):
     def _generate_pdf_from_results(self, results):
         """Generate PDF automatically after barcode generation."""
         try:
+            from pathlib import Path
             from shopify_tool.barcode_processor import generate_barcodes_pdf
 
-            barcode_files = [r['file_path'] for r in results if r.get('file_path')]
+            # Convert string paths back to Path objects
+            barcode_files = [Path(r['file_path']) for r in results if r.get('file_path')]
 
             if not barcode_files:
                 return
