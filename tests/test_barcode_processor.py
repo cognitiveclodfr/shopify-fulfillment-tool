@@ -149,7 +149,7 @@ class TestUtilityFunctions:
     def test_format_multiple_tags(self):
         """Test formatting multiple tags separated by pipe."""
         result = format_tags_for_barcode("Priority|VIP|Fragile")
-        assert result == "Priority"  # Only first tag
+        assert result == "Priority|VIP|Fragile"  # All tags kept (for multiline display)
 
     def test_format_empty_tag(self):
         """Test formatting empty tag."""
@@ -157,10 +157,15 @@ class TestUtilityFunctions:
         assert result == ""
 
     def test_format_long_tag(self):
-        """Test formatting very long tag (truncation)."""
+        """Test formatting very long tag (no truncation now)."""
         long_tag = "A" * 50
         result = format_tags_for_barcode(long_tag)
-        assert len(result) <= 15  # Should truncate
+        assert result == long_tag  # No truncation - handled in display logic
+
+    def test_format_json_array_tags(self):
+        """Test formatting tags from JSON array format (Internal_Tags)."""
+        result = format_tags_for_barcode('["GIFT+1", "GIFT+2", "GIFT+3"]')
+        assert result == "GIFT+1|GIFT+2|GIFT+3"  # JSON array converted to pipe-separated
 
 
 class TestBatchGeneration:
@@ -194,16 +199,23 @@ class TestBatchGeneration:
             }
         ])
 
+        # Create sequential map for testing
+        sequential_map = {
+            "ORDER-001": 1,
+            "ORDER-002": 2,
+            "ORDER-003": 3
+        }
+
         results = generate_barcodes_batch(
             df=df,
             output_dir=output_dir,
-            sequential_start=1
+            sequential_map=sequential_map
         )
 
         assert len(results) == 3
         assert all(r['success'] for r in results)
 
-        # Check sequential numbering
+        # Check sequential numbering (from map)
         assert results[0]['sequential_num'] == 1
         assert results[1]['sequential_num'] == 2
         assert results[2]['sequential_num'] == 3
@@ -232,10 +244,15 @@ class TestBatchGeneration:
             }
         ])
 
+        # Create sequential map (only for valid order)
+        sequential_map = {
+            "ORDER-GOOD": 1
+        }
+
         results = generate_barcodes_batch(
             df=df,
             output_dir=output_dir,
-            sequential_start=1
+            sequential_map=sequential_map
         )
 
         assert len(results) == 2

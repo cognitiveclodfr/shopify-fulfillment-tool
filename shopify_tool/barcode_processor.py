@@ -475,7 +475,7 @@ def generate_barcode_label(
 def generate_barcodes_batch(
     df: pd.DataFrame,
     output_dir: Path,
-    sequential_start: int = 1,
+    sequential_map: Optional[Dict[str, int]] = None,
     progress_callback: Optional[Callable[[int, int, str], None]] = None
 ) -> List[Dict[str, Any]]:
     """
@@ -489,17 +489,20 @@ def generate_barcodes_batch(
             - Internal_Tag (required, may be empty)
             - item_count (preferred) or Quantity (fallback): number of items in order
         output_dir: Directory to save PNG files
-        sequential_start: Starting sequential number (default: 1)
+        sequential_map: Dict mapping Order_Number to sequential number (from sequential_order.json)
+                       If None, will use row index + 1 as fallback
         progress_callback: Optional callback(current, total, message) for progress updates
 
     Returns:
         List of result dicts (one per order), same format as generate_barcode_label()
 
     Example:
+        >>> from shopify_tool.sequential_order import load_sequential_order_map
+        >>> sequential_map = load_sequential_order_map(session_path)
         >>> results = generate_barcodes_batch(
         ...     df=filtered_orders,
         ...     output_dir=Path("session/barcodes/DHL_Orders"),
-        ...     sequential_start=1
+        ...     sequential_map=sequential_map
         ... )
         >>> successful = sum(r['success'] for r in results)
         >>> print(f"Generated {successful}/{len(results)} barcodes")
@@ -510,7 +513,13 @@ def generate_barcodes_batch(
     logger.info(f"Starting batch barcode generation: {total_orders} orders")
 
     for idx, row in df.iterrows():
-        sequential_num = sequential_start + len(results)
+        # Get sequential number from map, or fallback to index + 1
+        order_number = str(row['Order_Number'])
+        if sequential_map:
+            sequential_num = sequential_map.get(order_number, idx + 1)
+        else:
+            sequential_num = idx + 1
+            logger.warning(f"No sequential map provided, using fallback numbering for {order_number}")
 
         # Progress callback
         if progress_callback:
