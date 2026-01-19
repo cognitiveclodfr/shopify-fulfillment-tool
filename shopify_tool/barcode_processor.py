@@ -394,15 +394,19 @@ def generate_barcode_label(
             first_part = ""
             last_three = barcode_num_text
 
-        # Calculate widths for centering
+        # Calculate widths for centering horizontally
         bbox_first = draw.textbbox((0, 0), first_part, font=font_barcode_num)
         bbox_last = draw.textbbox((0, 0), last_three, font=font_barcode_num_bold)
         width_first = bbox_first[2] - bbox_first[0]
         width_last = bbox_last[2] - bbox_last[0]
         total_width = width_first + width_last
+        text_height = bbox_last[3] - bbox_last[1]  # Height of text
 
-        # Center the combined text under barcode
-        text_y = barcode_y + barcode_target_height + 3  # 3px below barcode
+        # Center the combined text under barcode (both horizontally and vertically)
+        # Calculate available space below barcode
+        space_below_barcode = label_height_px - (barcode_y + barcode_target_height)
+        # Center text vertically in available space (slightly above center for better look)
+        text_y = barcode_y + barcode_target_height + (space_below_barcode - text_height) // 2 - 2
         text_x_start = barcode_x + (barcode_target_width - total_width) // 2
 
         # Draw ONLY if there's space (prevent duplicate)

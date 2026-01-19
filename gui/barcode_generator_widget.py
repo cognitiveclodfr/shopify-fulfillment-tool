@@ -123,9 +123,19 @@ class BarcodeGeneratorWidget(QWidget):
         self.auto_open_folder_checkbox.setChecked(True)
         layout.addWidget(self.auto_open_folder_checkbox)
 
+        # Output format options
+        format_label = QLabel("Output Format:")
+        format_label.setStyleSheet("font-weight: bold; margin-top: 5px;")
+        layout.addWidget(format_label)
+
+        # Generate PNG checkbox
+        self.generate_png_checkbox = QCheckBox("Generate PNG files (individual barcode images)")
+        self.generate_png_checkbox.setChecked(False)  # Optional, off by default
+        layout.addWidget(self.generate_png_checkbox)
+
         # Generate PDF checkbox
-        self.generate_pdf_checkbox = QCheckBox("Also generate PDF file (all barcodes in one PDF)")
-        self.generate_pdf_checkbox.setChecked(False)
+        self.generate_pdf_checkbox = QCheckBox("Generate PDF file (all barcodes in one document)")
+        self.generate_pdf_checkbox.setChecked(True)  # Default option
         layout.addWidget(self.generate_pdf_checkbox)
 
         # Output directory label
@@ -246,6 +256,14 @@ class BarcodeGeneratorWidget(QWidget):
         layout.addLayout(button_layout)
 
         return group
+
+    def showEvent(self, event):
+        """Override showEvent to refresh packing lists when tab becomes visible."""
+        super().showEvent(event)
+        # Auto-refresh packing lists when user switches to this tab
+        if self.mw.session_path:
+            self._refresh_packing_lists()
+            self.log.debug("Auto-refreshed packing lists on tab switch")
 
     def _connect_signals(self):
         """Connect signals and slots."""
@@ -394,14 +412,32 @@ class BarcodeGeneratorWidget(QWidget):
             )
             return
 
+        # Validate format selection
+        if not self.generate_png_checkbox.isChecked() and not self.generate_pdf_checkbox.isChecked():
+            QMessageBox.warning(
+                self,
+                "No Format Selected",
+                "Please select at least one output format (PNG or PDF)."
+            )
+            return
+
         # Confirm generation
         order_count = self.filtered_orders_df['Order_Number'].nunique()
+
+        # Build format string
+        formats = []
+        if self.generate_png_checkbox.isChecked():
+            formats.append("PNG")
+        if self.generate_pdf_checkbox.isChecked():
+            formats.append("PDF")
+        format_str = " + ".join(formats)
 
         reply = QMessageBox.question(
             self,
             "Confirm Generation",
             f"Generate barcodes for {order_count} orders?\n\n"
             f"Packing List: {self.current_packing_list}\n"
+            f"Output Format: {format_str}\n"
             f"Output: {self.barcodes_dir}",
             QMessageBox.Yes | QMessageBox.No
         )
@@ -489,8 +525,20 @@ class BarcodeGeneratorWidget(QWidget):
         if self.generate_pdf_checkbox.isChecked() and successful:
             self._generate_pdf_from_results(successful)
 
+        # Delete PNG files if user only wants PDF
+        if self.generate_pdf_checkbox.isChecked() and not self.generate_png_checkbox.isChecked() and successful:
+            self._cleanup_png_files(successful)
+            self.log.info(f"Cleaned up {len(successful)} PNG files (PDF-only mode)")
+
         # Show summary
-        message = f"Successfully generated {len(successful)} barcode labels."
+        formats_generated = []
+        if self.generate_png_checkbox.isChecked():
+            formats_generated.append("PNG files")
+        if self.generate_pdf_checkbox.isChecked():
+            formats_generated.append("PDF document")
+        format_msg = " and ".join(formats_generated)
+
+        message = f"Successfully generated {len(successful)} barcode labels as {format_msg}."
 
         if failed:
             message += f"\n\n{len(failed)} barcodes failed to generate."
@@ -556,8 +604,26 @@ class BarcodeGeneratorWidget(QWidget):
         except Exception as e:
             self.log.error(f"Auto PDF generation failed: {e}")
 
+    def _cleanup_png_files(self, results):
+        """Remove PNG files after PDF generation (PDF-only mode)."""
+        try:
+            from pathlib import Path
+
+            # Delete all PNG files from results
+            for result in results:
+                file_path = result.get('file_path')
+                if file_path:
+                    png_file = Path(file_path)
+                    if png_file.exists() and png_file.suffix == '.png':
+                        png_file.unlink()
+
+            self.log.info(f"Cleaned up {len(results)} PNG files (PDF-only mode)")
+
+        except Exception as e:
+            self.log.error(f"PNG cleanup failed: {e}")
+
     def _load_history(self):
-        """Load history into table."""
+        """Load history into table (optimized for large datasets)."""
         if not self.history:
             return
 
@@ -565,20 +631,21 @@ class BarcodeGeneratorWidget(QWidget):
 
         entries = self.history.data.get('generated_barcodes', [])
 
-        for entry in reversed(entries):  # Newest first
+        # Limit to last 100 entries to prevent UI freezing with large histories
+        MAX_HISTORY_DISPLAY = 100
+        entries_to_display = list(reversed(entries))[:MAX_HISTORY_DISPLAY]  # Newest first
+
+        for entry in entries_to_display:
             row = self.history_table.rowCount()
             self.history_table.insertRow(row)
 
-            # Preview thumbnail
+            # Preview thumbnail - skip to improve performance
+            # User can double-click row to view full barcode
             file_path = entry.get('file_path')
-            if file_path and Path(file_path).exists():
-                pixmap = QPixmap(str(file_path))
-                pixmap_scaled = pixmap.scaled(50, 50, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-
-                label = QLabel()
-                label.setPixmap(pixmap_scaled)
-                label.setAlignment(Qt.AlignCenter)
-                self.history_table.setCellWidget(row, 0, label)
+            placeholder_label = QLabel("🏷️")  # Emoji placeholder instead of loading image
+            placeholder_label.setAlignment(Qt.AlignCenter)
+            placeholder_label.setStyleSheet("font-size: 24px;")
+            self.history_table.setCellWidget(row, 0, placeholder_label)
 
             # Sequential #
             self.history_table.setItem(row, 1, QTableWidgetItem(str(entry.get('sequential_num', ''))))
@@ -597,6 +664,10 @@ class BarcodeGeneratorWidget(QWidget):
 
             # Size (KB)
             self.history_table.setItem(row, 6, QTableWidgetItem(str(entry.get('file_size_kb', ''))))
+
+        # Show info message if history was truncated
+        if len(entries) > MAX_HISTORY_DISPLAY:
+            self.log.info(f"History limited to {MAX_HISTORY_DISPLAY} recent entries (total: {len(entries)})")
 
     def _on_preview_barcode(self, row, column):
         """Handle double-click on barcode row to preview."""
