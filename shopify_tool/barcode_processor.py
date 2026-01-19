@@ -284,8 +284,9 @@ def generate_barcode_label(
         font_medium = load_font(24, bold=True)        # For values - BOLD and bigger
         font_header = load_font(26, bold=True)        # For seq# and date - BOLD and bigger
         font_courier = load_font(30, bold=True)       # For courier (bold) - even bigger
-        font_barcode_num = load_font(26, bold=False)  # Regular font for barcode number (except last 3)
-        font_barcode_num_bold = load_font(26, bold=True)  # Bold font for last 3 digits
+        font_barcode_num = load_font(36, bold=False)  # BIGGER font for barcode number (except last 3)
+        font_barcode_num_bold = load_font(36, bold=True)  # BIGGER Bold font for last 3 digits
+        font_tag_multiline = load_font(16, bold=True)  # Smaller font for multiline tags
 
         left_margin = 6
         y_pos = 8  # Start from top
@@ -328,10 +329,50 @@ def generate_barcode_label(
         # Separator line (thicker)
         draw.line([(left_margin, y_pos - 8), (INFO_SECTION_WIDTH - 6, y_pos - 8)], fill='black', width=2)
 
-        # Section 3: TAG (internal tag) - BOLD
-        tag_display_short = tag_display[:7] if len(tag_display) <= 7 else tag_display[:4] + "..."
+        # Section 3: TAG (internal tag) - MULTILINE, takes all remaining space
         draw.text((left_margin, y_pos), "TAG:", font=font_small, fill='black')
-        draw.text((left_margin + 65, y_pos), tag_display_short, font=font_medium, fill='black')
+
+        # Calculate available space for tags (from current position to bottom of label)
+        tag_start_y = y_pos
+        available_height = label_height_px - tag_start_y - 6  # 6px bottom margin
+        available_width = INFO_SECTION_WIDTH - left_margin - 65 - 6  # Space after "TAG:" label
+
+        # Split tags by pipe and draw them in available space with wrapping
+        if tag_display and tag_display != "N/A":
+            tag_x = left_margin + 65
+            tag_y = tag_start_y
+            line_height = 20  # Line height for tag text
+
+            # Parse tags (can be pipe-separated like "Test|Priority")
+            tags = [t.strip() for t in tag_display.split('|') if t.strip()]
+
+            # Draw tags with word wrapping
+            current_line = ""
+            for tag in tags:
+                # Try to fit tag on current line
+                test_line = current_line + (", " if current_line else "") + tag
+                bbox = draw.textbbox((0, 0), test_line, font=font_tag_multiline)
+                line_width = bbox[2] - bbox[0]
+
+                if line_width <= available_width:
+                    current_line = test_line
+                else:
+                    # Draw current line and start new line
+                    if current_line:
+                        draw.text((tag_x, tag_y), current_line, font=font_tag_multiline, fill='black')
+                        tag_y += line_height
+                    current_line = tag
+
+                # Check if we're out of vertical space
+                if tag_y + line_height > tag_start_y + available_height:
+                    break
+
+            # Draw last line
+            if current_line and tag_y + line_height <= tag_start_y + available_height:
+                draw.text((tag_x, tag_y), current_line, font=font_tag_multiline, fill='black')
+        else:
+            # No tags, just show N/A
+            draw.text((left_margin + 65, tag_start_y), "N/A", font=font_tag_multiline, fill='black')
 
         # === Add order number below barcode (right side) - ONLY ONCE ===
         # Last 3 digits BOLD as requested
