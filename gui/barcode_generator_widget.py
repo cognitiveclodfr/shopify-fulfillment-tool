@@ -440,8 +440,14 @@ class BarcodeGeneratorWidget(QWidget):
         if not sequential_map:
             self.log.warning("Sequential order map not found, generating on-the-fly")
 
-        # Filter to unique orders only
+        # Filter to unique orders and calculate item count (number of rows per order)
         unique_orders = self.filtered_orders_df.groupby('Order_Number').first().reset_index()
+
+        # Calculate actual item count (number of unique items/rows in each order)
+        item_counts = self.filtered_orders_df.groupby('Order_Number').size().to_dict()
+
+        # Add item_count column to unique_orders (overwrite Quantity)
+        unique_orders['item_count'] = unique_orders['Order_Number'].map(item_counts)
 
         # Generate barcodes without progress callback
         # (progress callback causes Qt thread safety issues)

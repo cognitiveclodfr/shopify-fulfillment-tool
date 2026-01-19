@@ -276,28 +276,45 @@ def generate_barcode_label(
         font_small = load_font(FONT_SIZE_SMALL, bold=False)
         font_medium = load_font(FONT_SIZE_MEDIUM, bold=False)
         font_large = load_font(FONT_SIZE_LARGE, bold=True)
+        font_barcode_num = load_font(18, bold=True)  # Large font for barcode number
 
-        # Starting Y position for text
-        y_pos = 8
+        # Calculate total height of text block for vertical centering
+        line_height = 24  # Spacing between lines
+        total_text_height = 4 * line_height  # 4 lines of text
+
+        # Center text block vertically
+        y_start = (label_height_px - total_text_height) // 2
+        y_pos = y_start
 
         # Line 1: #Seq | xCount | Country | Tag (compact, separated by │)
         info_line = f"#{sequential_num} │ x{item_count} │ {country_display} │ {tag_display}"
         draw.text((10, y_pos), info_line, font=font_small, fill='black')
-        y_pos += 22  # Reduced spacing
+        y_pos += line_height
 
         # Line 2: Order Number (truncate to fit in narrow section)
         order_display = order_number[:22] if len(order_number) <= 22 else order_number[:19] + "..."
         draw.text((10, y_pos), order_display, font=font_medium, fill='black')
-        y_pos += 24  # Reduced spacing
+        y_pos += line_height
 
         # Line 3: Courier (bold) - truncate if too long
         courier_display = courier[:30] if len(courier) <= 30 else courier[:27] + "..."
         draw.text((10, y_pos), courier_display, font=font_large, fill='black')
-        y_pos += 26  # Reduced spacing
+        y_pos += line_height
 
-        # Line 4: Date (always show if possible)
-        if y_pos < label_height_px - 20:
-            draw.text((10, y_pos), date_str, font=font_small, fill='black')
+        # Line 4: Date
+        draw.text((10, y_pos), date_str, font=font_small, fill='black')
+
+        # === Add order number below barcode (right side) ===
+        # Get text size to center it
+        barcode_num_text = safe_order_number
+        bbox = draw.textbbox((0, 0), barcode_num_text, font=font_barcode_num)
+        text_width = bbox[2] - bbox[0]
+
+        # Center text under barcode
+        text_x = barcode_x + (barcode_target_width - text_width) // 2
+        text_y = barcode_y + barcode_target_height + 5  # 5px below barcode
+
+        draw.text((text_x, text_y), barcode_num_text, font=font_barcode_num, fill='black')
 
         # === STEP 5: Save PNG with DPI metadata ===
         output_file = output_dir / f"{safe_order_number}.png"
@@ -367,7 +384,7 @@ def generate_barcodes_batch(
             - Shipping_Provider (required, courier name)
             - Destination_Country (required, may be empty)
             - Internal_Tag (required, may be empty)
-            - Quantity (required, total items)
+            - item_count (preferred) or Quantity (fallback): number of items in order
         output_dir: Directory to save PNG files
         sequential_start: Starting sequential number (default: 1)
         progress_callback: Optional callback(current, total, message) for progress updates
@@ -406,8 +423,9 @@ def generate_barcodes_batch(
         country = str(row.get('Destination_Country', ''))
         tag = str(row.get('Internal_Tag', ''))
 
-        # Calculate total item count (Quantity column contains total qty)
-        item_count = int(row.get('Quantity', 0))
+        # Get item count (number of unique items/SKUs in order)
+        # Use 'item_count' column if available, otherwise fall back to 'Quantity'
+        item_count = int(row.get('item_count', row.get('Quantity', 1)))
 
         # Generate barcode
         try:
