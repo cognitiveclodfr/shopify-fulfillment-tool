@@ -254,13 +254,19 @@ def generate_barcode_label(
         # Load barcode as PIL Image
         barcode_img = Image.open(barcode_buffer)
 
+        # CRITICAL: Crop bottom part to remove text added by barcode library
+        # Even with write_text=False, some versions add text anyway
+        width, height = barcode_img.size
+        # Crop bottom ~30% where text usually appears
+        barcode_img = barcode_img.crop((0, 0, width, int(height * 0.75)))
+
         # === STEP 3: Create label canvas ===
         label_img = Image.new('RGB', (label_width_px, label_height_px), 'white')
         draw = ImageDraw.Draw(label_img)
 
         # Resize barcode to fit right section (MAXIMUM size)
         barcode_target_width = BARCODE_SECTION_WIDTH - 10  # Minimal margin
-        barcode_target_height = label_height_px - 60       # Space for number below (reduced)
+        barcode_target_height = label_height_px - 55       # Space for number below
 
         barcode_img_resized = barcode_img.resize(
             (barcode_target_width, barcode_target_height),
@@ -273,71 +279,92 @@ def generate_barcode_label(
         label_img.paste(barcode_img_resized, (barcode_x, barcode_y))
 
         # === STEP 4: Add text info on left side ===
-        font_small = load_font(16, bold=False)        # For labels (SUM, COU, TAG) - increased more
-        font_medium = load_font(20, bold=False)       # For values - increased more
-        font_header = load_font(22, bold=False)       # For seq# and date - increased more
-        font_courier = load_font(26, bold=True)       # For courier (bold) - increased more
-        font_barcode_num = load_font(24, bold=True)   # Large font for barcode number
+        # ALL fonts BOLD for better visibility
+        font_small = load_font(18, bold=True)         # For labels (SUM, COU, TAG) - BOLD and bigger
+        font_medium = load_font(24, bold=True)        # For values - BOLD and bigger
+        font_header = load_font(26, bold=True)        # For seq# and date - BOLD and bigger
+        font_courier = load_font(30, bold=True)       # For courier (bold) - even bigger
+        font_barcode_num = load_font(26, bold=False)  # Regular font for barcode number (except last 3)
+        font_barcode_num_bold = load_font(26, bold=True)  # Bold font for last 3 digits
 
-        left_margin = 8
-        y_pos = 10  # Start from top
+        left_margin = 6
+        y_pos = 8  # Start from top
 
         # === TOP SECTION: Seq#, Courier, Date ===
-        # Line 1: Sequential number
+        # Line 1: Sequential number (BOLD)
         draw.text((left_margin, y_pos), f"#{sequential_num}", font=font_header, fill='black')
-        y_pos += 30
-
-        # Line 2: Courier (bold, larger)
-        courier_display = courier[:15] if len(courier) <= 15 else courier[:12] + "..."
-        draw.text((left_margin, y_pos), courier_display, font=font_courier, fill='black')
         y_pos += 34
 
-        # Line 3: Date
+        # Line 2: Courier (BOLD, largest)
+        courier_display = courier[:12] if len(courier) <= 12 else courier[:9] + "..."
+        draw.text((left_margin, y_pos), courier_display, font=font_courier, fill='black')
+        y_pos += 38
+
+        # Line 3: Date (BOLD)
         draw.text((left_margin, y_pos), date_str, font=font_small, fill='black')
-        y_pos += 24
+        y_pos += 26
 
-        # === SEPARATOR LINE ===
+        # === SEPARATOR LINE (thicker) ===
         line_y = y_pos
-        draw.line([(left_margin, line_y), (INFO_SECTION_WIDTH - 8, line_y)], fill='black', width=2)
-        y_pos += 14
+        draw.line([(left_margin, line_y), (INFO_SECTION_WIDTH - 6, line_y)], fill='black', width=3)
+        y_pos += 16
 
-        # === INFO SECTIONS (3 rows with labels and values) ===
-        section_height = 32  # Height for each section (increased for bigger fonts)
+        # === INFO SECTIONS (3 rows with labels and values, ALL BOLD) ===
+        section_height = 36  # Height for each section (increased for bigger bold fonts)
 
-        # Section 1: SUM (items count)
+        # Section 1: SUM (items count) - BOLD
         draw.text((left_margin, y_pos), "SUM:", font=font_small, fill='black')
-        draw.text((left_margin + 70, y_pos), str(item_count), font=font_medium, fill='black')
+        draw.text((left_margin + 65, y_pos), str(item_count), font=font_medium, fill='black')
         y_pos += section_height
 
-        # Separator line
-        draw.line([(left_margin, y_pos - 7), (INFO_SECTION_WIDTH - 8, y_pos - 7)], fill='black', width=1)
+        # Separator line (thicker)
+        draw.line([(left_margin, y_pos - 8), (INFO_SECTION_WIDTH - 6, y_pos - 8)], fill='black', width=2)
 
-        # Section 2: COU (country)
+        # Section 2: COU (country) - BOLD
         draw.text((left_margin, y_pos), "COU:", font=font_small, fill='black')
-        draw.text((left_margin + 70, y_pos), country_display, font=font_medium, fill='black')
+        draw.text((left_margin + 65, y_pos), country_display, font=font_medium, fill='black')
         y_pos += section_height
 
-        # Separator line
-        draw.line([(left_margin, y_pos - 7), (INFO_SECTION_WIDTH - 8, y_pos - 7)], fill='black', width=1)
+        # Separator line (thicker)
+        draw.line([(left_margin, y_pos - 8), (INFO_SECTION_WIDTH - 6, y_pos - 8)], fill='black', width=2)
 
-        # Section 3: TAG (internal tag)
-        tag_display_short = tag_display[:8] if len(tag_display) <= 8 else tag_display[:5] + "..."
+        # Section 3: TAG (internal tag) - BOLD
+        tag_display_short = tag_display[:7] if len(tag_display) <= 7 else tag_display[:4] + "..."
         draw.text((left_margin, y_pos), "TAG:", font=font_small, fill='black')
-        draw.text((left_margin + 70, y_pos), tag_display_short, font=font_medium, fill='black')
+        draw.text((left_margin + 65, y_pos), tag_display_short, font=font_medium, fill='black')
 
         # === Add order number below barcode (right side) - ONLY ONCE ===
-        # Get text size to center it
+        # Last 3 digits BOLD as requested
         barcode_num_text = safe_order_number
-        bbox = draw.textbbox((0, 0), barcode_num_text, font=font_barcode_num)
-        text_width = bbox[2] - bbox[0]
 
-        # Center text under barcode
-        text_x = barcode_x + (barcode_target_width - text_width) // 2
-        text_y = barcode_y + barcode_target_height + 5  # 5px below barcode (reduced gap)
+        # Split into first part and last 3 digits
+        if len(barcode_num_text) > 3:
+            first_part = barcode_num_text[:-3]
+            last_three = barcode_num_text[-3:]
+        else:
+            first_part = ""
+            last_three = barcode_num_text
+
+        # Calculate widths for centering
+        bbox_first = draw.textbbox((0, 0), first_part, font=font_barcode_num)
+        bbox_last = draw.textbbox((0, 0), last_three, font=font_barcode_num_bold)
+        width_first = bbox_first[2] - bbox_first[0]
+        width_last = bbox_last[2] - bbox_last[0]
+        total_width = width_first + width_last
+
+        # Center the combined text under barcode
+        text_y = barcode_y + barcode_target_height + 3  # 3px below barcode
+        text_x_start = barcode_x + (barcode_target_width - total_width) // 2
 
         # Draw ONLY if there's space (prevent duplicate)
-        if text_y + 30 <= label_height_px:
-            draw.text((text_x, text_y), barcode_num_text, font=font_barcode_num, fill='black')
+        if text_y + 35 <= label_height_px:
+            # Draw first part (regular)
+            if first_part:
+                draw.text((text_x_start, text_y), first_part, font=font_barcode_num, fill='black')
+
+            # Draw last 3 digits (BOLD)
+            text_x_last = text_x_start + width_first
+            draw.text((text_x_last, text_y), last_three, font=font_barcode_num_bold, fill='black')
 
         # === STEP 5: Save PNG with DPI metadata ===
         output_file = output_dir / f"{safe_order_number}.png"
