@@ -139,32 +139,40 @@ def format_tags_for_barcode(internal_tag: str) -> str:
     """
     Format internal tags for barcode label display.
 
-    Takes first tag if multiple, truncates if too long.
+    Parses JSON array format and returns all tags pipe-separated.
 
     Args:
-        internal_tag: Internal tag string (may be pipe-separated)
+        internal_tag: Internal tag string (JSON array format: '["GIFT+1", "GIFT+2"]')
 
     Returns:
-        Formatted tag string (max 15 chars)
+        Formatted tag string with all tags pipe-separated
 
     Examples:
-        >>> format_tags_for_barcode("Priority|VIP")
+        >>> format_tags_for_barcode('["GIFT+1", "GIFT+2"]')
+        "GIFT+1|GIFT+2"
+        >>> format_tags_for_barcode("Priority")
         "Priority"
-        >>> format_tags_for_barcode("URGENT-CUSTOMER-FRAGILE-GLASS")
-        "URGENT-CUSTOMER"
     """
     if not internal_tag or internal_tag == 'nan' or internal_tag == 'None':
         return ""
 
-    # Split by pipe and take first tag
-    tags = internal_tag.split('|')
-    first_tag = tags[0].strip()
+    # Try to parse as JSON array (Internal_Tags format)
+    import json
+    try:
+        if internal_tag.startswith('[') and internal_tag.endswith(']'):
+            tags_list = json.loads(internal_tag)
+            if isinstance(tags_list, list) and tags_list:
+                # Join all tags with pipe separator
+                return '|'.join(str(tag).strip() for tag in tags_list if tag)
+    except (json.JSONDecodeError, ValueError):
+        pass
 
-    # Truncate if too long
-    if len(first_tag) > 15:
-        first_tag = first_tag[:15]
+    # Fallback: treat as plain string or pipe-separated
+    if '|' in internal_tag:
+        tags = [t.strip() for t in internal_tag.split('|') if t.strip()]
+        return '|'.join(tags)
 
-    return first_tag
+    return internal_tag.strip()
 
 
 # === MAIN BARCODE GENERATION FUNCTIONS ===
@@ -286,7 +294,7 @@ def generate_barcode_label(
         font_courier = load_font(30, bold=True)       # For courier (bold) - even bigger
         font_barcode_num = load_font(36, bold=False)  # BIGGER font for barcode number (except last 3)
         font_barcode_num_bold = load_font(36, bold=True)  # BIGGER Bold font for last 3 digits
-        font_tag_multiline = load_font(16, bold=True)  # Smaller font for multiline tags
+        font_tag_multiline = load_font(18, bold=True)  # BOLD font for multiline tags (increased from 16)
 
         left_margin = 6
         y_pos = 8  # Start from top
@@ -341,9 +349,9 @@ def generate_barcode_label(
         if tag_display and tag_display != "N/A":
             tag_x = left_margin + 65
             tag_y = tag_start_y
-            line_height = 20  # Line height for tag text
+            line_height = 22  # Line height for tag text (increased for bigger font)
 
-            # Parse tags (can be pipe-separated like "Test|Priority")
+            # Parse tags (can be pipe-separated like "GIFT+1|GIFT+2")
             tags = [t.strip() for t in tag_display.split('|') if t.strip()]
 
             # Draw tags with word wrapping
