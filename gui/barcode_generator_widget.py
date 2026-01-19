@@ -412,8 +412,9 @@ class BarcodeGeneratorWidget(QWidget):
         # Disable UI during generation
         self.generate_btn.setEnabled(False)
         self.progress_bar.setVisible(True)
-        self.progress_bar.setValue(0)
-        self.status_label.setText("Starting barcode generation...")
+        # Set indeterminate progress (busy indicator) to avoid thread safety issues
+        self.progress_bar.setRange(0, 0)  # Indeterminate mode
+        self.status_label.setText(f"Generating {order_count} barcode labels...")
         self.status_label.setStyleSheet("")
 
         # Start generation in background
@@ -442,17 +443,13 @@ class BarcodeGeneratorWidget(QWidget):
         # Filter to unique orders only
         unique_orders = self.filtered_orders_df.groupby('Order_Number').first().reset_index()
 
-        def progress_callback(current, total, message):
-            """Update progress bar from worker thread."""
-            percentage = int((current / total) * 100)
-            self.progress_bar.setValue(percentage)
-            self.status_label.setText(message)
-
+        # Generate barcodes without progress callback
+        # (progress callback causes Qt thread safety issues)
         results = generate_barcodes_batch(
             df=unique_orders,
             output_dir=self.barcodes_dir,
             sequential_start=1,
-            progress_callback=progress_callback
+            progress_callback=None  # No progress updates from worker thread
         )
 
         return results
@@ -462,6 +459,8 @@ class BarcodeGeneratorWidget(QWidget):
         successful = [r for r in results if r['success']]
         failed = [r for r in results if not r['success']]
 
+        # Reset progress bar to normal mode and set to 100%
+        self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(100)
         self.status_label.setText(
             f"Complete: {len(successful)} barcodes generated"
