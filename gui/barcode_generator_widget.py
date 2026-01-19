@@ -15,6 +15,8 @@ import logging
 from pathlib import Path
 from datetime import datetime
 
+import pandas as pd
+
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QPushButton,
     QLabel, QProgressBar, QTableWidget, QComboBox, QCheckBox,
@@ -280,21 +282,28 @@ class BarcodeGeneratorWidget(QWidget):
             self.log.warning(f"Packing lists directory not found: {packing_lists_dir}")
             return
 
-        # Find all .xlsx and .json files
-        packing_files = list(packing_lists_dir.glob("*.xlsx")) + list(packing_lists_dir.glob("*.json"))
+        # Find all .xlsx files (packing lists are Excel files)
+        # Note: .json files are also created but we only need .xlsx for UI
+        packing_files = list(packing_lists_dir.glob("*.xlsx"))
 
         if not packing_files:
             self.order_count_label.setText("No packing lists generated yet")
             self.log.info("No packing list files found in session")
             return
 
-        # Add to combo box (use file stem as display name)
+        # Get unique packing list names (avoid duplicates from .xlsx/.json)
+        unique_names = {}
         for file in sorted(packing_files):
             # Remove file extension for display name
             display_name = file.stem
-            self.packing_list_combo.addItem(display_name, file)
+            if display_name not in unique_names:
+                unique_names[display_name] = file
 
-        self.log.info(f"Found {len(packing_files)} packing lists")
+        # Add to combo box
+        for display_name, file_path in sorted(unique_names.items()):
+            self.packing_list_combo.addItem(display_name, file_path)
+
+        self.log.info(f"Found {len(unique_names)} unique packing lists")
 
     def _on_packing_list_changed(self, index):
         """Handle packing list selection change."""
@@ -311,33 +320,48 @@ class BarcodeGeneratorWidget(QWidget):
             self.export_pdf_btn.setEnabled(False)
             return
 
-        # Get selected packing list name
+        # Get selected packing list name and file path
         packing_list_name = self.packing_list_combo.currentText()
+        packing_list_file = self.packing_list_combo.currentData()
         self.current_packing_list = packing_list_name
 
         self.log.info(f"Selected packing list: {packing_list_name}")
-
-        # Filter analysis results for this packing list
-        # Determine courier from packing list name (e.g., "DHL_Orders" -> "DHL")
-        courier = packing_list_name.split('_')[0] if '_' in packing_list_name else packing_list_name
 
         if not hasattr(self.mw, 'analysis_results_df') or self.mw.analysis_results_df is None:
             self.order_count_label.setText("No analysis data loaded")
             self.log.warning("No analysis results DataFrame available")
             return
 
-        # Filter orders by courier and Fulfillable status
-        filtered_df = self.mw.analysis_results_df[
-            (self.mw.analysis_results_df['Shipping_Provider'] == courier) &
-            (self.mw.analysis_results_df['Order_Fulfillment_Status'] == 'Fulfillable')
-        ].copy()
+        # Read packing list Excel file to get order numbers
+        try:
+            packing_list_df = pd.read_excel(packing_list_file)
 
-        self.filtered_orders_df = filtered_df
+            # Get unique order numbers from packing list
+            if 'Order_Number' not in packing_list_df.columns:
+                self.order_count_label.setText("Invalid packing list format (missing Order_Number)")
+                self.log.error(f"Packing list missing Order_Number column: {packing_list_file}")
+                return
 
-        # Get unique order count
-        order_count = filtered_df['Order_Number'].nunique()
+            packing_list_orders = set(packing_list_df['Order_Number'].unique())
 
-        self.order_count_label.setText(f"{order_count} orders ready for barcode generation")
+            # Filter analysis results to only orders in this packing list
+            # AND that are Fulfillable
+            filtered_df = self.mw.analysis_results_df[
+                (self.mw.analysis_results_df['Order_Number'].isin(packing_list_orders)) &
+                (self.mw.analysis_results_df['Order_Fulfillment_Status'] == 'Fulfillable')
+            ].copy()
+
+            self.filtered_orders_df = filtered_df
+
+            # Get unique order count
+            order_count = filtered_df['Order_Number'].nunique()
+
+            self.order_count_label.setText(f"{order_count} orders ready for barcode generation")
+
+        except Exception as e:
+            self.order_count_label.setText(f"Error reading packing list: {str(e)}")
+            self.log.error(f"Failed to read packing list {packing_list_file}: {e}", exc_info=True)
+            return
 
         # Setup output directory
         session_path = Path(self.mw.session_path)
