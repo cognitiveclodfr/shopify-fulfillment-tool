@@ -47,15 +47,15 @@ LABEL_HEIGHT_MM = 38
 LABEL_WIDTH_PX = int((LABEL_WIDTH_MM / 25.4) * DPI)   # 543px
 LABEL_HEIGHT_PX = int((LABEL_HEIGHT_MM / 25.4) * DPI)  # 303px
 
-# Layout zones (split design)
-INFO_SECTION_WIDTH = 260  # Left side for text info
-BARCODE_SECTION_WIDTH = LABEL_WIDTH_PX - INFO_SECTION_WIDTH  # Right side for barcode
+# Layout zones (split design) - adjusted for better text visibility
+INFO_SECTION_WIDTH = 340  # Left side for text info (increased from 260px)
+BARCODE_SECTION_WIDTH = LABEL_WIDTH_PX - INFO_SECTION_WIDTH  # Right side for barcode (~203px)
 BARCODE_SECTION_X = INFO_SECTION_WIDTH  # X position where barcode starts
 
-# Font sizes
-FONT_SIZE_SMALL = 14   # For compact info line (#12 | x5 | DE | TAG)
-FONT_SIZE_MEDIUM = 18  # For order number
-FONT_SIZE_LARGE = 20   # For courier name (bold)
+# Font sizes - reduced for long text support
+FONT_SIZE_SMALL = 11   # For compact info line (#12 | x5 | DE | TAG)
+FONT_SIZE_MEDIUM = 14  # For order number
+FONT_SIZE_LARGE = 16   # For courier name (bold)
 
 
 # === EXCEPTIONS ===
@@ -237,8 +237,8 @@ def generate_barcode_label(
 
         writer = ImageWriter()
         writer.set_options({
-            'module_width': 0.4,     # Bar width (mm)
-            'module_height': 20.0,   # Bar height (mm)
+            'module_width': 0.30,    # Bar width (mm) - reduced for narrower section
+            'module_height': 15.0,   # Bar height (mm) - reduced to fit better
             'dpi': dpi,
             'quiet_zone': 0,         # No quiet zone (we add manually)
             'write_text': False,     # We add text manually
@@ -258,18 +258,18 @@ def generate_barcode_label(
         label_img = Image.new('RGB', (label_width_px, label_height_px), 'white')
         draw = ImageDraw.Draw(label_img)
 
-        # Resize barcode to fit right section
-        barcode_target_width = BARCODE_SECTION_WIDTH - 10  # Small margin
-        barcode_target_height = label_height_px - 20       # Top/bottom margin
+        # Resize barcode to fit right section (more compact)
+        barcode_target_width = BARCODE_SECTION_WIDTH - 15  # More margin for safety
+        barcode_target_height = label_height_px - 40       # More top/bottom margin
 
         barcode_img_resized = barcode_img.resize(
             (barcode_target_width, barcode_target_height),
             Image.Resampling.LANCZOS
         )
 
-        # Paste barcode on right side
-        barcode_x = BARCODE_SECTION_X + 5  # Small left margin
-        barcode_y = 10  # Top margin
+        # Paste barcode on right side (centered vertically)
+        barcode_x = BARCODE_SECTION_X + 8  # Margin from text section
+        barcode_y = (label_height_px - barcode_target_height) // 2  # Center vertically
         label_img.paste(barcode_img_resized, (barcode_x, barcode_y))
 
         # === STEP 4: Add text info on left side ===
@@ -278,25 +278,25 @@ def generate_barcode_label(
         font_large = load_font(FONT_SIZE_LARGE, bold=True)
 
         # Starting Y position for text
-        y_pos = 10
+        y_pos = 8
 
         # Line 1: #Seq | xCount | Country | Tag (compact, separated by │)
         info_line = f"#{sequential_num} │ x{item_count} │ {country_display} │ {tag_display}"
         draw.text((10, y_pos), info_line, font=font_small, fill='black')
-        y_pos += 30
+        y_pos += 22  # Reduced spacing
 
-        # Line 2: Order Number
-        # Truncate long orders to fit
-        order_display = order_number[:20]
+        # Line 2: Order Number (truncate to fit in narrow section)
+        order_display = order_number[:22] if len(order_number) <= 22 else order_number[:19] + "..."
         draw.text((10, y_pos), order_display, font=font_medium, fill='black')
-        y_pos += 30
+        y_pos += 24  # Reduced spacing
 
-        # Line 3: Courier (bold)
-        draw.text((10, y_pos), courier, font=font_large, fill='black')
-        y_pos += 30
+        # Line 3: Courier (bold) - truncate if too long
+        courier_display = courier[:30] if len(courier) <= 30 else courier[:27] + "..."
+        draw.text((10, y_pos), courier_display, font=font_large, fill='black')
+        y_pos += 26  # Reduced spacing
 
-        # Line 4: Date (if space available)
-        if y_pos < label_height_px - 25:
+        # Line 4: Date (always show if possible)
+        if y_pos < label_height_px - 20:
             draw.text((10, y_pos), date_str, font=font_small, fill='black')
 
         # === STEP 5: Save PNG with DPI metadata ===

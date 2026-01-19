@@ -73,6 +73,10 @@ class BarcodeHistory:
         if 'generated_at' not in entry:
             entry['generated_at'] = datetime.now().isoformat()
 
+        # Convert Path objects to strings for JSON serialization
+        if 'file_path' in entry and entry['file_path'] is not None:
+            entry['file_path'] = str(entry['file_path'])
+
         self.data['generated_barcodes'].append(entry)
         self._save_history()
 
