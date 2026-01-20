@@ -27,7 +27,6 @@ from PySide6.QtGui import QPixmap, QDesktopServices
 from PySide6.QtCore import QUrl
 
 from gui.worker import Worker
-from shopify_tool.barcode_history import BarcodeHistory
 
 
 class BarcodeGeneratorWidget(QWidget):
@@ -52,7 +51,6 @@ class BarcodeGeneratorWidget(QWidget):
         self.current_packing_list = None
         self.filtered_orders_df = None
         self.barcodes_dir = None
-        self.history = None
 
         self._init_ui()
         self._connect_signals()
@@ -73,8 +71,8 @@ class BarcodeGeneratorWidget(QWidget):
         # Section 3: Generation
         layout.addWidget(self._create_generation_section())
 
-        # Section 4: History
-        layout.addWidget(self._create_history_section(), 1)  # Stretch
+        # Spacer to push content to top
+        layout.addStretch()
 
     def _create_packing_list_section(self):
         """Create packing list selection section."""
@@ -191,71 +189,6 @@ class BarcodeGeneratorWidget(QWidget):
 
         return group
 
-    def _create_history_section(self):
-        """Create history section."""
-        group = QGroupBox("Generated Barcodes")
-        layout = QVBoxLayout(group)
-
-        # History table
-        self.history_table = QTableWidget()
-        self.history_table.setColumnCount(7)
-        self.history_table.setHorizontalHeaderLabels([
-            "Preview",
-            "Seq #",
-            "Order Number",
-            "Courier",
-            "Country",
-            "Items",
-            "Size (KB)"
-        ])
-        self.history_table.setSelectionBehavior(QTableWidget.SelectRows)
-        self.history_table.setSelectionMode(QTableWidget.SingleSelection)
-        self.history_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.history_table.setAlternatingRowColors(True)
-        self.history_table.verticalHeader().setVisible(False)
-
-        # Set column widths
-        header = self.history_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.Fixed)
-        header.resizeSection(0, 60)  # Preview thumbnail
-        header.setSectionResizeMode(1, QHeaderView.Fixed)
-        header.resizeSection(1, 50)  # Seq #
-        header.setSectionResizeMode(2, QHeaderView.Stretch)  # Order Number
-        header.setSectionResizeMode(3, QHeaderView.Fixed)
-        header.resizeSection(3, 80)  # Courier
-        header.setSectionResizeMode(4, QHeaderView.Fixed)
-        header.resizeSection(4, 60)  # Country
-        header.setSectionResizeMode(5, QHeaderView.Fixed)
-        header.resizeSection(5, 60)  # Items
-        header.setSectionResizeMode(6, QHeaderView.Fixed)
-        header.resizeSection(6, 80)  # Size
-
-        # Set row height for thumbnails
-        self.history_table.verticalHeader().setDefaultSectionSize(55)
-
-        layout.addWidget(self.history_table)
-
-        # Buttons
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-
-        self.open_folder_btn = QPushButton("Open Barcodes Folder")
-        self.open_folder_btn.setEnabled(False)
-        self.open_folder_btn.clicked.connect(self._open_barcodes_folder)
-        button_layout.addWidget(self.open_folder_btn)
-
-        self.export_pdf_btn = QPushButton("Export to PDF")
-        self.export_pdf_btn.setEnabled(False)
-        self.export_pdf_btn.clicked.connect(self._export_to_pdf)
-        button_layout.addWidget(self.export_pdf_btn)
-
-        clear_btn = QPushButton("Clear History")
-        clear_btn.clicked.connect(self._clear_history)
-        button_layout.addWidget(clear_btn)
-
-        layout.addLayout(button_layout)
-
-        return group
 
     def showEvent(self, event):
         """Override showEvent to refresh packing lists when tab becomes visible."""
@@ -268,7 +201,6 @@ class BarcodeGeneratorWidget(QWidget):
     def _connect_signals(self):
         """Connect signals and slots."""
         self.packing_list_combo.currentIndexChanged.connect(self._on_packing_list_changed)
-        self.history_table.cellDoubleClicked.connect(self._on_preview_barcode)
 
     def _update_state(self):
         """Update widget state based on current session."""
@@ -329,7 +261,6 @@ class BarcodeGeneratorWidget(QWidget):
             self.current_packing_list = None
             self.filtered_orders_df = None
             self.barcodes_dir = None
-            self.history = None
 
             self.order_count_label.setText("No packing list selected")
             self.output_dir_label.setText("No packing list selected")
@@ -389,12 +320,9 @@ class BarcodeGeneratorWidget(QWidget):
         self.output_dir_label.setText(str(self.barcodes_dir))
 
         # Setup history manager
-        history_file = self.barcodes_dir / "barcode_history.json"
-        self.history = BarcodeHistory(history_file)
+        history_file = self.barcodes_dir / "barcode_history.json"        # History removed - using logs only
 
         # Load history
-        self._load_history()
-
         # Enable generation if we have orders
         self.generate_btn.setEnabled(order_count > 0)
         self.open_folder_btn.setEnabled(True)
@@ -520,9 +448,6 @@ class BarcodeGeneratorWidget(QWidget):
         if self.history:
             for result in results:
                 self.history.add_entry(result)
-
-            self._load_history()
-
         # Generate PDF if requested
         if self.generate_pdf_checkbox.isChecked() and successful:
             self._generate_pdf_from_results(successful)
@@ -787,6 +712,4 @@ class BarcodeGeneratorWidget(QWidget):
             return
 
         self.history.clear_history()
-        self._load_history()
-
         self.log.info("Cleared barcode history")
