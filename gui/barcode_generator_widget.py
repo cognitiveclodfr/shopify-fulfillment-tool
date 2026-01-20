@@ -394,13 +394,13 @@ class BarcodeGeneratorWidget(QWidget):
         # Load sequential order map (optional - for independent numbering per packing list)
         sequential_map = load_sequential_order_map(session_path)
 
-        # Filter to unique orders and calculate item count (number of rows per order)
+        # Filter to unique orders and calculate item count (total quantity of products)
         unique_orders = self.filtered_orders_df.groupby('Order_Number').first().reset_index()
 
-        # Calculate actual item count (number of unique items/rows in each order)
-        item_counts = self.filtered_orders_df.groupby('Order_Number').size().to_dict()
+        # Calculate actual item count (sum of Quantity column for each order)
+        item_counts = self.filtered_orders_df.groupby('Order_Number')['Quantity'].sum().to_dict()
 
-        # Add item_count column to unique_orders (overwrite Quantity)
+        # Add item_count column to unique_orders (total quantity of products)
         unique_orders['item_count'] = unique_orders['Order_Number'].map(item_counts)
 
         if sequential_map:
