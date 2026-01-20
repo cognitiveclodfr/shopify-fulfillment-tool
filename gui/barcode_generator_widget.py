@@ -436,10 +436,6 @@ class BarcodeGeneratorWidget(QWidget):
             f"{len(failed)} failed"
         )
 
-        # Add to history
-        if self.history:
-            for result in results:
-                self.history.add_entry(result)
         # Generate PDF if requested
         if self.generate_pdf_checkbox.isChecked() and successful:
             self._generate_pdf_from_results(successful)
@@ -541,76 +537,6 @@ class BarcodeGeneratorWidget(QWidget):
         except Exception as e:
             self.log.error(f"PNG cleanup failed: {e}")
 
-    def _load_history(self):
-        """Load history into table (optimized for large datasets)."""
-        if not self.history:
-            return
-
-        self.history_table.setRowCount(0)
-
-        entries = self.history.data.get('generated_barcodes', [])
-
-        # Limit to last 100 entries to prevent UI freezing with large histories
-        MAX_HISTORY_DISPLAY = 100
-        entries_to_display = list(reversed(entries))[:MAX_HISTORY_DISPLAY]  # Newest first
-
-        for entry in entries_to_display:
-            row = self.history_table.rowCount()
-            self.history_table.insertRow(row)
-
-            # Preview thumbnail - skip to improve performance
-            # User can double-click row to view full barcode
-            file_path = entry.get('file_path')
-            placeholder_label = QLabel("🏷️")  # Emoji placeholder instead of loading image
-            placeholder_label.setAlignment(Qt.AlignCenter)
-            placeholder_label.setStyleSheet("font-size: 24px;")
-            self.history_table.setCellWidget(row, 0, placeholder_label)
-
-            # Sequential #
-            self.history_table.setItem(row, 1, QTableWidgetItem(str(entry.get('sequential_num', ''))))
-
-            # Order Number
-            self.history_table.setItem(row, 2, QTableWidgetItem(entry.get('order_number', '')))
-
-            # Courier
-            self.history_table.setItem(row, 3, QTableWidgetItem(entry.get('courier', '')))
-
-            # Country
-            self.history_table.setItem(row, 4, QTableWidgetItem(entry.get('country', '')))
-
-            # Items
-            self.history_table.setItem(row, 5, QTableWidgetItem(str(entry.get('item_count', ''))))
-
-            # Size (KB)
-            self.history_table.setItem(row, 6, QTableWidgetItem(str(entry.get('file_size_kb', ''))))
-
-        # Show info message if history was truncated
-        if len(entries) > MAX_HISTORY_DISPLAY:
-            self.log.info(f"History limited to {MAX_HISTORY_DISPLAY} recent entries (total: {len(entries)})")
-
-    def _on_preview_barcode(self, row, column):
-        """Handle double-click on barcode row to preview."""
-        order_number_item = self.history_table.item(row, 2)
-
-        if not order_number_item:
-            return
-
-        order_number = order_number_item.text()
-
-        # Find barcode file
-        barcode_file = self.barcodes_dir / f"{order_number}.png"
-
-        if not barcode_file.exists():
-            QMessageBox.warning(
-                self,
-                "File Not Found",
-                f"Barcode file not found:\n{barcode_file}"
-            )
-            return
-
-        # Open in default image viewer
-        url = QUrl.fromLocalFile(str(barcode_file))
-        QDesktopServices.openUrl(url)
 
     def _open_barcodes_folder(self):
         """Open barcodes folder in file explorer."""
@@ -627,81 +553,3 @@ class BarcodeGeneratorWidget(QWidget):
 
         self.log.info(f"Opened barcodes folder: {self.barcodes_dir}")
 
-    def _export_to_pdf(self):
-        """Export all barcodes to PDF."""
-        if not self.barcodes_dir or not self.barcodes_dir.exists():
-            QMessageBox.warning(
-                self,
-                "No Barcodes",
-                "No barcodes available to export."
-            )
-            return
-
-        # Get all PNG files
-        barcode_files = list(self.barcodes_dir.glob("*.png"))
-
-        if not barcode_files:
-            QMessageBox.information(
-                self,
-                "No Barcodes",
-                "No barcode files found in folder."
-            )
-            return
-
-        # Ask for PDF filename
-        pdf_filename, _ = QFileDialog.getSaveFileName(
-            self,
-            "Export Barcodes to PDF",
-            str(self.barcodes_dir / f"{self.current_packing_list}_barcodes.pdf"),
-            "PDF Files (*.pdf)"
-        )
-
-        if not pdf_filename:
-            return
-
-        try:
-            from shopify_tool.barcode_processor import generate_barcodes_pdf
-
-            pdf_path = generate_barcodes_pdf(
-                barcode_files,
-                Path(pdf_filename)
-            )
-
-            QMessageBox.information(
-                self,
-                "Export Complete",
-                f"Exported {len(barcode_files)} barcodes to PDF:\n\n{pdf_path}"
-            )
-
-            # Open PDF
-            url = QUrl.fromLocalFile(str(pdf_path))
-            QDesktopServices.openUrl(url)
-
-            self.log.info(f"Exported barcodes to PDF: {pdf_path}")
-
-        except Exception as e:
-            self.log.error(f"PDF export failed: {e}", exc_info=True)
-            QMessageBox.critical(
-                self,
-                "PDF Export Failed",
-                f"Failed to export PDF:\n\n{e}"
-            )
-
-    def _clear_history(self):
-        """Clear barcode history."""
-        if not self.history:
-            return
-
-        reply = QMessageBox.question(
-            self,
-            "Confirm Clear History",
-            "Clear all barcode generation history?\n\n"
-            "This will not delete the barcode files.",
-            QMessageBox.Yes | QMessageBox.No
-        )
-
-        if reply != QMessageBox.Yes:
-            return
-
-        self.history.clear_history()
-        self.log.info("Cleared barcode history")
