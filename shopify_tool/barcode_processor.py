@@ -512,14 +512,19 @@ def generate_barcodes_batch(
 
     logger.info(f"Starting batch barcode generation: {total_orders} orders")
 
+    # Track if we're using independent numbering
+    using_independent_numbering = sequential_map is None
+    if using_independent_numbering:
+        logger.info("Using independent packing list numbering (1, 2, 3...)")
+
     for idx, row in df.iterrows():
-        # Get sequential number from map, or fallback to index + 1
+        # Get sequential number from map, or use packing list order (1, 2, 3...)
         order_number = str(row['Order_Number'])
         if sequential_map:
             sequential_num = sequential_map.get(order_number, idx + 1)
         else:
+            # Independent numbering: each packing list starts from 1
             sequential_num = idx + 1
-            logger.warning(f"No sequential map provided, using fallback numbering for {order_number}")
 
         # Progress callback
         if progress_callback:

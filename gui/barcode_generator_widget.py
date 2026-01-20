@@ -391,12 +391,8 @@ class BarcodeGeneratorWidget(QWidget):
 
         session_path = Path(self.mw.session_path)
 
-        # Load sequential order map (CRITICAL: must match reference labels)
+        # Load sequential order map (optional - for independent numbering per packing list)
         sequential_map = load_sequential_order_map(session_path)
-
-        if not sequential_map:
-            self.log.error("Sequential order map not found! Barcode numbers will not match reference labels.")
-            raise ValueError("Sequential order map not found. Please re-run analysis to generate the map.")
 
         # Filter to unique orders and calculate item count (number of rows per order)
         unique_orders = self.filtered_orders_df.groupby('Order_Number').first().reset_index()
@@ -407,13 +403,16 @@ class BarcodeGeneratorWidget(QWidget):
         # Add item_count column to unique_orders (overwrite Quantity)
         unique_orders['item_count'] = unique_orders['Order_Number'].map(item_counts)
 
-        self.log.info(f"Generating barcodes with sequential map ({len(sequential_map)} orders)")
+        if sequential_map:
+            self.log.info(f"Using sequential map for numbering ({len(sequential_map)} total orders)")
+        else:
+            self.log.info("Sequential map not found - using packing list order (1, 2, 3...)")
 
-        # Generate barcodes using sequential map (matches reference labels)
+        # Generate barcodes with independent numbering per packing list
         results = generate_barcodes_batch(
             df=unique_orders,
             output_dir=self.barcodes_dir,
-            sequential_map=sequential_map,  # Use map for consistent numbering
+            sequential_map=sequential_map,  # Optional - uses packing list order if None
             progress_callback=None  # No progress updates from worker thread
         )
 
