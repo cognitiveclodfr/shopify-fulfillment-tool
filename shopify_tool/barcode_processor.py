@@ -38,6 +38,14 @@ from reportlab.lib.pagesizes import mm
 
 logger = logging.getLogger(__name__)
 
+# Monkey patch ImageWriter to disable text rendering and font loading
+# This prevents "cannot open resource" errors when fonts are not available
+def _noop_paint_text(self, *args, **kwargs):
+    """No-op replacement for _paint_text to avoid font loading."""
+    pass
+
+ImageWriter._paint_text = _noop_paint_text
+
 
 # === LABEL SPECIFICATIONS ===
 # Optimized for Citizen CL-E300 thermal printer
@@ -250,6 +258,8 @@ def generate_barcode_label(
             'dpi': dpi,
             'quiet_zone': 0,         # No quiet zone (we add manually)
             'write_text': False,     # We add text manually
+            'text': '',              # Empty text to avoid font loading
+            'font_size': 0,          # Zero font size to skip font initialization
         })
 
         barcode_instance = barcode_class(safe_order_number, writer=writer)
