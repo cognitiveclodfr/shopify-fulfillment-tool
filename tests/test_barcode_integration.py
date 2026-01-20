@@ -85,20 +85,26 @@ class TestBarcodeWorkflow:
 
         assert len(dhl_orders) == 2
 
-        # 2. Generate barcodes
+        # 2. Generate sequential map for DHL orders
+        sequential_map = {
+            "DHL-001": 1,
+            "DHL-002": 2
+        }
+
+        # 3. Generate barcodes
         output_dir = session_dir / "barcodes" / "DHL_Orders"
         output_dir.mkdir(parents=True)
 
         results = generate_barcodes_batch(
             df=dhl_orders,
             output_dir=output_dir,
-            sequential_start=1
+            sequential_map=sequential_map
         )
 
         assert len(results) == 2
         assert all(r['success'] for r in results)
 
-        # 3. Generate PDF
+        # 4. Generate PDF
         barcode_files = [r['file_path'] for r in results]
         pdf_path = output_dir / "DHL_Orders_barcodes.pdf"
 
@@ -127,6 +133,14 @@ class TestBarcodeWorkflow:
 
         all_results = []
 
+        # Create sequential map for all orders
+        sequential_map = {
+            "DHL-001": 1,
+            "DHL-002": 2,
+            "POST-001": 3,
+            "POST-002": 4
+        }
+
         for courier in couriers:
             # Filter orders for this courier
             courier_orders = analysis_results[
@@ -140,7 +154,7 @@ class TestBarcodeWorkflow:
             results = generate_barcodes_batch(
                 df=courier_orders,
                 output_dir=output_dir,
-                sequential_start=1
+                sequential_map=sequential_map
             )
 
             all_results.extend(results)
