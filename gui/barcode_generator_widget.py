@@ -210,8 +210,6 @@ class BarcodeGeneratorWidget(QWidget):
             self.output_dir_label.setText("No session selected")
             self.status_label.setText("No session selected")
             self.generate_btn.setEnabled(False)
-            self.open_folder_btn.setEnabled(False)
-            self.export_pdf_btn.setEnabled(False)
             return
 
         # Refresh packing lists
@@ -265,8 +263,6 @@ class BarcodeGeneratorWidget(QWidget):
             self.order_count_label.setText("No packing list selected")
             self.output_dir_label.setText("No packing list selected")
             self.generate_btn.setEnabled(False)
-            self.open_folder_btn.setEnabled(False)
-            self.export_pdf_btn.setEnabled(False)
             return
 
         # Get selected packing list name and file path
@@ -322,11 +318,8 @@ class BarcodeGeneratorWidget(QWidget):
         # Setup history manager
         history_file = self.barcodes_dir / "barcode_history.json"        # History removed - using logs only
 
-        # Load history
         # Enable generation if we have orders
         self.generate_btn.setEnabled(order_count > 0)
-        self.open_folder_btn.setEnabled(True)
-        self.export_pdf_btn.setEnabled(order_count > 0)
 
         self.log.info(f"Ready to generate {order_count} barcodes for {packing_list_name}")
 
