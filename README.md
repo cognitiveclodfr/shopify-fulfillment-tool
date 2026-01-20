@@ -1,46 +1,42 @@
 # Shopify Fulfillment Tool
 
-![Version](https://img.shields.io/badge/version-1.8.0-blue)
+![Version](https://img.shields.io/badge/version-1.9.2-blue)
 ![Status](https://img.shields.io/badge/status-stable-green)
-![Tests](https://img.shields.io/badge/tests-55%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-60%2B%20passing-brightgreen)
 ![Python](https://img.shields.io/badge/python-3.9+-blue)
 ![License](https://img.shields.io/badge/license-proprietary-red)
 
-**Status:** ✅ Production Ready - Stable Release v1.8.0
-**Version:** 1.8.0
+**Status:** ✅ Production Ready - Stable Release v1.9.2
+**Version:** 1.9.2
 **Architecture:** Server-Based Multi-Client System
-**Last Updated:** 2025-11-17
+**Last Updated:** 2026-01-17
 
 ---
 
-## 🎉 What's New in v1.8.0
+## 🎉 What's New in v1.9.2
 
-### Major Improvements
+### Barcode Generator Integration (Feature #5)
 
-**🚀 Performance Enhancements**
-- **10-50x faster** analysis on large datasets through vectorization
-- Eliminated all `df.iterrows()` calls (3 instances)
-- Optimized stock simulation algorithm
-- Efficient batch operations for large orders
+**🏷️ Warehouse Barcode Labels**
+- Generate Code-128 barcodes from analysis results
+- 8 data fields: Sequential#, Items, Country, Tag, Order#, Courier, Date, Barcode
+- 68mm × 38mm labels optimized for Citizen CL-E300 thermal printer
+- PNG + PDF output formats with auto-open
 
-**🏗️ Code Quality Improvements**
-- Core functions refactored: `run_full_analysis()` (422→80 lines)
-- Analysis engine refactored: `run_analysis()` (364→65 lines)
-- **82% reduction** in cyclomatic complexity
-- Comprehensive error handling with specific exceptions
-- Added 12 new modular phase functions
+**📋 Smart Organization**
+- Filter by packing list configuration
+- Per-packing-list subdirectories (DHL_Orders/, PostOne_Orders/)
+- Sequential numbering consistent with Reference Labels
+- Generation history with statistics
 
-**✨ User Experience**
-- Fixed accidental combo box changes during scrolling
-- Custom `WheelIgnoreComboBox` widget prevents frustrating UX issues
-- Better error messages with actionable context
-- Improved logging for easier debugging
+**⚠️ Breaking Change:** Destination_Country now populated for ALL couriers (previously DHL only)
 
-**🧪 Testing & Stability**
-- 55/55 tests passing (100% success rate)
-- Comprehensive test coverage for refactored components
-- Better exception handling (1 critical + 15 high-priority fixes)
-- Production-ready stability
+### Tools Window (v1.9.1)
+
+**📄 Reference Labels PDF Processor**
+- Automated reference numbering for courier label PDFs
+- 3-step matching: PostOne ID → Tracking → Name
+- Automatic page sorting by reference number
 
 ---
 
@@ -92,6 +88,19 @@ The Shopify Fulfillment Tool is a professional desktop application designed for 
 - **JSON Integration**: Seamless integration with Packing Tool
 - **Analysis Reports**: Comprehensive fulfillment statistics
 - **Custom Filters**: SKU exclusion, courier-specific reports
+
+### Tools Window
+- **Barcode Generator**: Generate Code-128 warehouse labels from analysis results
+  - 68mm × 38mm labels for Citizen CL-E300 thermal printer
+  - 8 data fields per label (sequential#, items, country, tag, etc.)
+  - Filter by packing list configuration
+  - PNG + PDF output with auto-open
+  - Generation history and statistics
+
+- **Reference Labels**: PDF processing for courier reference numbers
+  - Automated reference numbering for PostOne labels
+  - 3-step matching algorithm (ID → Tracking → Name)
+  - Automatic page sorting by reference number
 
 ### User Interface
 - **Modern Qt6 Interface**: Fast, responsive desktop application

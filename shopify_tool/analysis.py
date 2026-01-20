@@ -651,13 +651,11 @@ def _merge_results_to_dataframe(
 
     final_df["Order_Fulfillment_Status"] = final_df["Order_Number"].map(get_fulfillment_status)
 
-    # Use Shipping_Country with underscore (internal name)
+    # Destination_Country now populated for ALL couriers (not just DHL)
+    # All major couriers (DHL, PostOne, DPD) ship internationally
+    # This enables country display on barcode labels for all orders
     if "Shipping_Country" in final_df.columns:
-        final_df["Destination_Country"] = np.where(
-            final_df["Shipping_Provider"] == "DHL",
-            final_df["Shipping_Country"],
-            ""
-        )
+        final_df["Destination_Country"] = final_df["Shipping_Country"].fillna("")
     else:
         final_df["Destination_Country"] = ""
 

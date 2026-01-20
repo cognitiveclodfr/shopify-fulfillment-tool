@@ -3,7 +3,7 @@ Tools Widget - Main container for utility tools.
 
 Contains sub-tabs:
 - Reference Labels: PDF processing for reference numbers
-- Barcode Generator: Future implementation
+- Barcode Generator: Generate warehouse barcode labels
 """
 
 from PySide6.QtWidgets import (
@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 
 from gui.reference_labels_widget import ReferenceLabelsWidget
+from gui.barcode_generator_widget import BarcodeGeneratorWidget
 
 
 class ToolsWidget(QWidget):
@@ -46,28 +47,11 @@ class ToolsWidget(QWidget):
             "📄 Reference Labels"
         )
 
-        # Sub-tab 2: Barcode Generator (placeholder for future)
-        barcode_widget = self._create_barcode_placeholder()
-        self.sub_tabs.addTab(barcode_widget, "🔢 Barcode Generator")
+        # Sub-tab 2: Barcode Generator
+        self.barcode_generator_widget = BarcodeGeneratorWidget(self.mw)
+        self.sub_tabs.addTab(
+            self.barcode_generator_widget,
+            "🏷️ Barcode Generator"
+        )
 
         layout.addWidget(self.sub_tabs)
-
-    def _create_barcode_placeholder(self):
-        """Create placeholder widget for future Barcode Generator."""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        layout.setAlignment(Qt.AlignCenter)
-
-        label = QLabel("🏗️ Barcode Generator")
-        label.setStyleSheet("font-size: 24px; font-weight: bold; color: #888;")
-        label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(label)
-
-        sublabel = QLabel("Coming Soon in v1.9.2")
-        sublabel.setStyleSheet("font-size: 14px; color: #aaa;")
-        sublabel.setAlignment(Qt.AlignCenter)
-        layout.addWidget(sublabel)
-
-        layout.addStretch()
-
-        return widget
