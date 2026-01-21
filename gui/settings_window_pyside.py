@@ -513,7 +513,14 @@ class SettingsWindow(QDialog):
         # Set current text, skipping separators
         initial_field = config.get("field", "")
         if initial_field and not initial_field.startswith("---"):
-            field_combo.setCurrentText(initial_field)
+            # Find the index of the field in the combo box
+            index = field_combo.findText(initial_field)
+            if index >= 0:
+                field_combo.setCurrentIndex(index)
+            else:
+                # Field not found in combo box - add it to preserve saved value
+                field_combo.addItem(initial_field)
+                field_combo.setCurrentText(initial_field)
         elif not initial_field:
             # Set to first non-separator field
             for i, field in enumerate(available_fields):
