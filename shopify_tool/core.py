@@ -753,7 +753,9 @@ def _save_results_and_reports(
         worksheet = writer.sheets["fulfillment_analysis"]
         highlight_format = workbook.add_format({"bg_color": "#FFC7CE", "font_color": "#9C0006"})
         for idx, col in enumerate(final_df):
-            max_len = max((final_df[col].astype(str).map(len).max(), len(str(col)))) + 2
+            # Convert to string and handle NaN values before calculating length
+            col_strings = final_df[col].astype(str).fillna('')
+            max_len = max((col_strings.str.len().max(), len(str(col)))) + 2
             worksheet.set_column(idx, idx, max_len)
         for row_num, status in enumerate(final_df["Order_Fulfillment_Status"]):
             if status == "Not Fulfillable":
