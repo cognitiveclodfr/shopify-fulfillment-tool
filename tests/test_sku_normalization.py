@@ -129,9 +129,10 @@ class TestSkuDtypeForcing:
         sku_str = str(df_broken["SKU"].iloc[0])
         assert sku_str in ["5170", "5170.0"], f"Unexpected SKU format: {sku_str}"
 
-        # With dtype=str (fixed - pandas 2.x uses StringDtype)
+        # With dtype=str (fixed - pandas 2.x uses StringDtype which shows as 'str')
         df_fixed = pd.read_csv(io.StringIO(csv_content), dtype={"SKU": str})
-        assert df_fixed["SKU"].dtype == object or str(df_fixed["SKU"].dtype).startswith('string')
+        dtype_str = str(df_fixed["SKU"].dtype)
+        assert df_fixed["SKU"].dtype == object or dtype_str == 'str' or dtype_str.startswith('string')
         assert df_fixed["SKU"].iloc[0] == "5170"
 
     def test_csv_load_mixed_sku_types(self):

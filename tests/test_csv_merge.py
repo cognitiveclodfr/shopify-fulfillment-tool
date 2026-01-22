@@ -60,8 +60,9 @@ def test_merge_with_dtype(tmp_path):
         dtype_dict={"SKU": str}
     )
 
-    # SKU should be string, not float (pandas 2.x uses StringDtype)
-    assert merged["SKU"].dtype == object or str(merged["SKU"].dtype).startswith('string')
+    # SKU should be string, not float (pandas 2.x uses StringDtype which shows as 'str')
+    dtype_str = str(merged["SKU"].dtype)
+    assert merged["SKU"].dtype == object or dtype_str == 'str' or dtype_str.startswith('string')
     assert merged["SKU"].iloc[0] == "5170"  # Not "5170.0"
 
 

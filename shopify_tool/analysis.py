@@ -154,8 +154,9 @@ def _clean_and_prepare_data(
     # This handles float artifacts (5170.0 → "5170"), whitespace, and leading zeros
     # Skip normalization for NO_SKU placeholder
     from .csv_utils import normalize_sku
-    # First, ensure SKU column is string type to avoid dtype errors
-    if orders_clean_df["SKU"].dtype != object and not str(orders_clean_df["SKU"].dtype).startswith('string'):
+    # First, ensure SKU column is string type to avoid dtype errors (pandas 2.x uses 'str')
+    dtype_str = str(orders_clean_df["SKU"].dtype)
+    if orders_clean_df["SKU"].dtype != object and dtype_str != 'str' and not dtype_str.startswith('string'):
         orders_clean_df["SKU"] = orders_clean_df["SKU"].astype(str)
     orders_clean_df.loc[orders_clean_df["Has_SKU"], "SKU"] = \
         orders_clean_df.loc[orders_clean_df["Has_SKU"], "SKU"].apply(normalize_sku)
