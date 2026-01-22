@@ -1,42 +1,48 @@
 # Shopify Fulfillment Tool
 
-![Version](https://img.shields.io/badge/version-1.9.2-blue)
+![Version](https://img.shields.io/badge/version-1.8.6.0-blue)
 ![Status](https://img.shields.io/badge/status-stable-green)
 ![Tests](https://img.shields.io/badge/tests-60%2B%20passing-brightgreen)
 ![Python](https://img.shields.io/badge/python-3.9+-blue)
 ![License](https://img.shields.io/badge/license-proprietary-red)
 
-**Status:** ✅ Production Ready - Stable Release v1.9.2
-**Version:** 1.9.2
+**Status:** ✅ Production Ready - Stable Release v1.8.6.0
+**Version:** 1.8.6.0
 **Architecture:** Server-Based Multi-Client System
-**Last Updated:** 2026-01-17
+**Last Updated:** 2026-01-22
 
 ---
 
-## 🎉 What's New in v1.9.2
+## 🎉 What's New in v1.8.6.0
 
-### Barcode Generator Integration (Feature #5)
+### Barcode Generator Integration (Feature #5) ✅ COMPLETE
 
 **🏷️ Warehouse Barcode Labels**
 - Generate Code-128 barcodes from analysis results
 - 8 data fields: Sequential#, Items, Country, Tag, Order#, Courier, Date, Barcode
-- 68mm × 38mm labels optimized for Citizen CL-E300 thermal printer
-- PNG + PDF output formats with auto-open
+- 68mm × 38mm labels optimized for Citizen CL-E300 thermal printer (203 DPI)
+- PNG + PDF output formats with auto-folder opening
+- Independent sequential numbering per packing list
 
 **📋 Smart Organization**
 - Filter by packing list configuration
 - Per-packing-list subdirectories (DHL_Orders/, PostOne_Orders/)
-- Sequential numbering consistent with Reference Labels
-- Generation history with statistics
+- Sequential numbering consistent with Reference Labels feature
+- Generation history with statistics tracking
+- Background processing (non-blocking UI)
 
-**⚠️ Breaking Change:** Destination_Country now populated for ALL couriers (previously DHL only)
-
-### Tools Window (v1.9.1)
-
-**📄 Reference Labels PDF Processor**
+**📄 Reference Labels PDF Processor (Feature #4)**
 - Automated reference numbering for courier label PDFs
 - 3-step matching: PostOne ID → Tracking → Name
 - Automatic page sorting by reference number
+- CSV-based mapping support
+
+### 🐛 Critical Fixes
+- Fixed barcode font loading errors
+- Fixed item count calculation (sum of quantities)
+- Fixed Order Rules field parameter preservation
+- Fixed Windows file locking for large configurations (70+ sets)
+- Thread safety improvements
 
 ---
 
@@ -709,9 +715,11 @@ For issues, questions, or feature requests:
 
 ## 📝 Version History
 
-**Current Version:** 1.8.0 (Stable)
+**Current Version:** 1.8.6.0 (Stable)
 
 Major releases:
+- **v1.8.6.0** (2026-01-22): Barcode Generator + Reference Labels + Stability Fixes
+- **v1.8.1** (2025-11-18): UX Improvements & Enhancements
 - **v1.8.0** (2025-11-17): Performance & refactoring release
 - **v1.7.1** (2025-11-10): Post-migration stable release
 - **v1.7.0** (2025-11-04): Phase 1 unified server architecture
@@ -738,6 +746,6 @@ This project is proprietary software developed for internal warehouse operations
 
 **Built with ❤️ for efficient warehouse fulfillment operations**
 
-**Last Updated:** 2025-11-17
-**Version:** 1.8.0-stable
+**Last Updated:** 2026-01-22
+**Version:** 1.8.6.0-stable
 **Status:** Production Ready ✅
