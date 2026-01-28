@@ -26,6 +26,7 @@ from gui.client_selector_widget import ClientSelectorWidget
 from gui.session_browser_widget import SessionBrowserWidget
 from gui.profile_manager_dialog import ProfileManagerDialog
 from gui.tag_management_panel import TagManagementPanel
+from gui.selection_helper import SelectionHelper
 
 
 class MainWindow(QMainWindow):
@@ -87,6 +88,13 @@ class MainWindow(QMainWindow):
 
         # Initialize undo manager
         self.undo_manager = UndoManager(self)
+
+        # Initialize selection helper for bulk operations
+        self.selection_helper = SelectionHelper(
+            table_view=None,  # Will be set after UI creation
+            proxy_model=self.proxy_model,
+            main_window=self
+        )
 
         # Initialize handlers
         self.ui_manager = UIManager(self)
@@ -265,6 +273,22 @@ class MainWindow(QMainWindow):
 
         # Add Ctrl+Z shortcut for Undo
         QShortcut(QKeySequence("Ctrl+Z"), self, self.undo_last_operation)
+
+        # Bulk operations toolbar signals
+        if hasattr(self, 'bulk_toolbar'):
+            self.bulk_toolbar.select_all_clicked.connect(self._on_bulk_select_all)
+            self.bulk_toolbar.clear_selection_clicked.connect(self._on_bulk_clear_selection)
+            self.bulk_toolbar.change_status_clicked.connect(self.actions_handler.bulk_change_status)
+            self.bulk_toolbar.add_tag_clicked.connect(self.actions_handler.bulk_add_tag)
+            self.bulk_toolbar.remove_tag_clicked.connect(self.actions_handler.bulk_remove_tag)
+            self.bulk_toolbar.remove_sku_from_orders_clicked.connect(
+                self.actions_handler.bulk_remove_sku_from_orders
+            )
+            self.bulk_toolbar.remove_orders_with_sku_clicked.connect(
+                self.actions_handler.bulk_remove_orders_with_sku
+            )
+            self.bulk_toolbar.delete_orders_clicked.connect(self.actions_handler.bulk_delete_orders)
+            self.bulk_toolbar.export_selection_clicked.connect(self.actions_handler.bulk_export_selection)
 
     def clear_filter(self):
         """Clears the filter input text box and tag filter."""
@@ -460,6 +484,64 @@ class MainWindow(QMainWindow):
                     pass  # Not connected yet
                 self.tableView.selectionModel().selectionChanged.connect(self.on_selection_changed_for_tags)
 
+    def toggle_bulk_mode(self):
+        """Toggle bulk operations mode.
+
+        When bulk mode is enabled:
+        - Checkbox column is shown in the table
+        - Bulk operations toolbar is visible
+        - Selection state is tracked via SelectionHelper
+
+        When bulk mode is disabled:
+        - Checkbox column is hidden
+        - Bulk operations toolbar is hidden
+        - Selection is cleared
+        """
+        is_bulk_mode = self.toggle_bulk_mode_btn.isChecked()
+
+        # Show/hide bulk toolbar
+        if hasattr(self, 'bulk_toolbar'):
+            self.bulk_toolbar.setVisible(is_bulk_mode)
+
+        # Clear selection when toggling
+        self.selection_helper.clear_selection()
+
+        # Refresh table to show/hide checkboxes
+        if self.analysis_results_df is not None and not self.analysis_results_df.empty:
+            self.ui_manager.update_results_table(self.analysis_results_df)
+
+        # Update button styling
+        if is_bulk_mode:
+            self.toggle_bulk_mode_btn.setText("Exit Bulk Mode")
+            self.toggle_bulk_mode_btn.setStyleSheet("background-color: #4CAF50; color: white;")
+            self._update_bulk_toolbar_state()
+            logging.info("Bulk mode enabled")
+        else:
+            self.toggle_bulk_mode_btn.setText("📦 Bulk Operations")
+            self.toggle_bulk_mode_btn.setStyleSheet("")
+            logging.info("Bulk mode disabled")
+
+    def _update_bulk_toolbar_state(self):
+        """Update bulk toolbar selection counter and button states."""
+        if not hasattr(self, 'bulk_toolbar'):
+            return
+
+        orders_count, items_count = self.selection_helper.get_selection_summary()
+        self.bulk_toolbar.update_selection_count(orders_count, items_count)
+        self.bulk_toolbar.set_enabled(orders_count > 0)
+
+    def _on_bulk_select_all(self):
+        """Handle Select All button in bulk toolbar."""
+        self.selection_helper.select_all()
+        self._update_bulk_toolbar_state()
+        self.tableView.viewport().update()  # Force repaint
+
+    def _on_bulk_clear_selection(self):
+        """Handle Clear button in bulk toolbar."""
+        self.selection_helper.clear_selection()
+        self._update_bulk_toolbar_state()
+        self.tableView.viewport().update()  # Force repaint
+
     def update_session_info_label(self):
         """Update global header session info label."""
         if not self.session_path:
@@ -523,6 +605,10 @@ class MainWindow(QMainWindow):
         # Tags Manager button
         if hasattr(self, 'toggle_tags_panel_btn'):
             self.toggle_tags_panel_btn.setEnabled(has_analysis)
+
+        # Bulk Operations button
+        if hasattr(self, 'toggle_bulk_mode_btn'):
+            self.toggle_bulk_mode_btn.setEnabled(has_analysis)
 
         # Open Session Folder button (enabled when session exists)
         if hasattr(self, 'open_session_folder_button'):

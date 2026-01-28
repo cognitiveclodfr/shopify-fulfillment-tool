@@ -17,17 +17,20 @@ class PandasModel(QAbstractTableModel):
         _dataframe (pd.DataFrame): The underlying pandas DataFrame.
         colors (dict): A mapping of status strings to QColor objects for row
                        styling.
+        enable_checkboxes (bool): Whether to show checkbox column for bulk operations.
     """
 
-    def __init__(self, dataframe: pd.DataFrame, parent=None):
+    def __init__(self, dataframe: pd.DataFrame, parent=None, enable_checkboxes: bool = False):
         """Initializes the PandasModel.
 
         Args:
             dataframe (pd.DataFrame): The pandas DataFrame to be modeled.
             parent (QObject, optional): The parent object. Defaults to None.
+            enable_checkboxes (bool): Whether to add a checkbox column at position 0.
         """
         super().__init__(parent)
         self._dataframe = dataframe
+        self.enable_checkboxes = enable_checkboxes
         # Define colors for styling
         self.colors = {
             "Fulfillable": QColor("#2E8B57"),  # SeaGreen
@@ -45,6 +48,9 @@ class PandasModel(QAbstractTableModel):
         """Returns the number of columns in the model."""
         if parent.isValid():
             return 0
+        # Add 1 for checkbox column if enabled
+        if self.enable_checkboxes:
+            return len(self._dataframe.columns) + 1
         return len(self._dataframe.columns)
 
     def data(self, index: QModelIndex, role=Qt.ItemDataRole.DisplayRole):
@@ -68,9 +74,19 @@ class PandasModel(QAbstractTableModel):
 
         row = index.row()
 
+        # Handle checkbox column (column 0 when checkboxes enabled)
+        # Checkbox rendering is handled by CheckboxDelegate
+        if self.enable_checkboxes and index.column() == 0:
+            return None
+
+        # Adjust column index if checkboxes enabled
+        col_index = index.column()
+        if self.enable_checkboxes:
+            col_index = index.column() - 1
+
         if role == Qt.ItemDataRole.DisplayRole:
             try:
-                value = self._dataframe.iloc[row, index.column()]
+                value = self._dataframe.iloc[row, col_index]
                 if pd.isna(value):
                     return ""
                 return str(value)
@@ -116,6 +132,11 @@ class PandasModel(QAbstractTableModel):
         """
         if role == Qt.ItemDataRole.DisplayRole:
             if orientation == Qt.Orientation.Horizontal:
+                # Handle checkbox column header
+                if self.enable_checkboxes:
+                    if section == 0:
+                        return ""  # Checkbox column header (empty or could be "")
+                    return str(self._dataframe.columns[section - 1])
                 return str(self._dataframe.columns[section])
             if orientation == Qt.Orientation.Vertical:
                 return str(section + 1)
@@ -131,7 +152,11 @@ class PandasModel(QAbstractTableModel):
             int | None: The index of the column, or None if not found.
         """
         try:
-            return self._dataframe.columns.get_loc(column_name)
+            df_index = self._dataframe.columns.get_loc(column_name)
+            # Adjust for checkbox column if enabled
+            if self.enable_checkboxes:
+                return df_index + 1
+            return df_index
         except KeyError:
             return None
 
