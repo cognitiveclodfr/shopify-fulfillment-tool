@@ -1201,3 +1201,591 @@ class ActionsHandler(QObject):
                     self.mw.undo_button.setToolTip("Undo last operation (Ctrl+Z)")
             else:
                 self.mw.undo_button.setToolTip("Undo last operation (Ctrl+Z)")
+
+    # ============================================================================
+    # BULK OPERATIONS
+    # ============================================================================
+
+    def bulk_change_status(self, is_fulfillable: bool):
+        """Change fulfillment status for all selected orders.
+
+        Args:
+            is_fulfillable: True for Fulfillable, False for Not Fulfillable
+        """
+        selected_df = self.mw.selection_helper.get_selected_orders_data()
+
+        if selected_df.empty:
+            QMessageBox.warning(
+                self.mw,
+                "No Selection",
+                "Please select orders first."
+            )
+            return
+
+        # Get summary
+        orders_count, items_count = self.mw.selection_helper.get_selection_summary()
+        status_text = "Fulfillable" if is_fulfillable else "Not Fulfillable"
+
+        # Confirmation dialog
+        reply = QMessageBox.question(
+            self.mw,
+            "Confirm Bulk Status Change",
+            f"Change status to '{status_text}' for:\n"
+            f"- {orders_count} orders\n"
+            f"- {items_count} total items\n\n"
+            f"Continue?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+
+        if reply != QMessageBox.Yes:
+            return
+
+        # Get affected rows BEFORE modification
+        selected_indexes = self.mw.selection_helper.get_selected_source_rows()
+        affected_rows_before = self.mw.analysis_results_df.loc[selected_indexes].copy()
+
+        # Perform bulk status change
+        new_status = "Fulfillable" if is_fulfillable else "Not Fulfillable"
+        self.mw.analysis_results_df.loc[selected_indexes, "Order_Fulfillment_Status"] = new_status
+
+        # Record undo operation
+        self.mw.undo_manager.record_operation(
+            operation_type="bulk_change_status",
+            description=f"Bulk Change Status: {orders_count} orders to {status_text}",
+            params={
+                "is_fulfillable": is_fulfillable,
+                "affected_indexes": selected_indexes
+            },
+            affected_rows_before=affected_rows_before
+        )
+
+        # Update UI
+        self.mw.save_session_state()
+        self.mw._update_all_views()
+        self.mw.log_activity(
+            "Bulk Operation",
+            f"Changed status to {status_text} for {orders_count} orders ({items_count} items)"
+        )
+
+        # Update undo button
+        self._update_undo_button()
+
+    def bulk_add_tag(self):
+        """Add Internal Tag to all selected orders."""
+        selected_df = self.mw.selection_helper.get_selected_orders_data()
+
+        if selected_df.empty:
+            QMessageBox.warning(
+                self.mw,
+                "No Selection",
+                "Please select orders first."
+            )
+            return
+
+        # Get tag categories from config
+        tag_categories = self.mw.active_profile_config.get("tag_categories", {})
+
+        # Build tag selection dialog
+        all_tags = []
+        for category, config in tag_categories.items():
+            category_label = config.get("label", category)
+            for tag in config.get("tags", []):
+                all_tags.append(f"{category_label}: {tag}")
+
+        all_tags.append("--- Custom Tag ---")
+
+        tag, ok = QInputDialog.getItem(
+            self.mw,
+            "Select Tag",
+            "Choose tag to add to selected orders:",
+            all_tags,
+            0,
+            False
+        )
+
+        if not ok:
+            return
+
+        # Handle custom tag
+        if tag == "--- Custom Tag ---":
+            custom_tag, ok = QInputDialog.getText(
+                self.mw,
+                "Custom Tag",
+                "Enter custom tag:"
+            )
+            if not ok or not custom_tag.strip():
+                return
+            tag_value = custom_tag.strip()
+        else:
+            # Extract tag value from "Category: Tag" format
+            tag_value = tag.split(": ", 1)[1] if ": " in tag else tag
+
+        # Get summary
+        orders_count, items_count = self.mw.selection_helper.get_selection_summary()
+
+        # Confirmation
+        reply = QMessageBox.question(
+            self.mw,
+            "Confirm Bulk Add Tag",
+            f"Add tag '{tag_value}' to:\n"
+            f"- {orders_count} orders\n"
+            f"- {items_count} total items\n\n"
+            f"Continue?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+
+        if reply != QMessageBox.Yes:
+            return
+
+        # Get affected rows BEFORE modification
+        from shopify_tool.tag_manager import add_tag
+
+        selected_indexes = self.mw.selection_helper.get_selected_source_rows()
+        affected_rows_before = self.mw.analysis_results_df.loc[selected_indexes].copy()
+
+        # Ensure Internal_Tags column exists
+        if "Internal_Tags" not in self.mw.analysis_results_df.columns:
+            self.mw.analysis_results_df["Internal_Tags"] = "[]"
+
+        # Perform bulk tag addition
+        current_tags = self.mw.analysis_results_df.loc[selected_indexes, "Internal_Tags"]
+        new_tags = current_tags.apply(lambda t: add_tag(t, tag_value))
+        self.mw.analysis_results_df.loc[selected_indexes, "Internal_Tags"] = new_tags
+
+        # Record undo operation
+        self.mw.undo_manager.record_operation(
+            operation_type="bulk_add_tag",
+            description=f"Bulk Add Tag: '{tag_value}' to {orders_count} orders",
+            params={
+                "tag": tag_value,
+                "affected_indexes": selected_indexes
+            },
+            affected_rows_before=affected_rows_before
+        )
+
+        # Update UI
+        self.mw.save_session_state()
+        self.mw._update_all_views()
+        self.mw.log_activity(
+            "Bulk Operation",
+            f"Added tag '{tag_value}' to {orders_count} orders ({items_count} items)"
+        )
+
+        # Update undo button
+        self._update_undo_button()
+
+    def bulk_remove_tag(self):
+        """Remove Internal Tag from all selected orders."""
+        from shopify_tool.tag_manager import parse_tags, remove_tag
+
+        selected_df = self.mw.selection_helper.get_selected_orders_data()
+
+        if selected_df.empty:
+            QMessageBox.warning(
+                self.mw,
+                "No Selection",
+                "Please select orders first."
+            )
+            return
+
+        # Get all unique tags from selected orders
+        all_tags = set()
+        if "Internal_Tags" in selected_df.columns:
+            for tags_json in selected_df["Internal_Tags"]:
+                tags = parse_tags(tags_json)
+                all_tags.update(tags)
+
+        if not all_tags:
+            QMessageBox.information(
+                self.mw,
+                "No Tags",
+                "Selected orders have no Internal Tags."
+            )
+            return
+
+        # Tag selection dialog
+        tag, ok = QInputDialog.getItem(
+            self.mw,
+            "Select Tag to Remove",
+            "Choose tag to remove from selected orders:",
+            sorted(list(all_tags)),
+            0,
+            False
+        )
+
+        if not ok:
+            return
+
+        # Get summary
+        orders_count, items_count = self.mw.selection_helper.get_selection_summary()
+
+        # Confirmation
+        reply = QMessageBox.question(
+            self.mw,
+            "Confirm Bulk Remove Tag",
+            f"Remove tag '{tag}' from:\n"
+            f"- {orders_count} orders\n"
+            f"- {items_count} total items\n\n"
+            f"Continue?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+
+        if reply != QMessageBox.Yes:
+            return
+
+        # Get affected rows BEFORE modification
+        selected_indexes = self.mw.selection_helper.get_selected_source_rows()
+        affected_rows_before = self.mw.analysis_results_df.loc[selected_indexes].copy()
+
+        # Perform bulk tag removal
+        current_tags = self.mw.analysis_results_df.loc[selected_indexes, "Internal_Tags"]
+        new_tags = current_tags.apply(lambda t: remove_tag(t, tag))
+        self.mw.analysis_results_df.loc[selected_indexes, "Internal_Tags"] = new_tags
+
+        # Record undo operation
+        self.mw.undo_manager.record_operation(
+            operation_type="bulk_remove_tag",
+            description=f"Bulk Remove Tag: '{tag}' from {orders_count} orders",
+            params={
+                "tag": tag,
+                "affected_indexes": selected_indexes
+            },
+            affected_rows_before=affected_rows_before
+        )
+
+        # Update UI
+        self.mw.save_session_state()
+        self.mw._update_all_views()
+        self.mw.log_activity(
+            "Bulk Operation",
+            f"Removed tag '{tag}' from {orders_count} orders ({items_count} items)"
+        )
+
+        # Update undo button
+        self._update_undo_button()
+
+    def bulk_remove_sku_from_orders(self):
+        """Remove specific SKU from all selected orders."""
+        selected_df = self.mw.selection_helper.get_selected_orders_data()
+
+        if selected_df.empty:
+            QMessageBox.warning(
+                self.mw,
+                "No Selection",
+                "Please select orders first."
+            )
+            return
+
+        # Get all unique SKUs from selected orders
+        unique_skus = sorted(selected_df["SKU"].unique())
+
+        # SKU selection dialog
+        sku, ok = QInputDialog.getItem(
+            self.mw,
+            "Select SKU to Remove",
+            "Choose SKU to remove from selected orders:",
+            [str(s) for s in unique_skus],
+            0,
+            False
+        )
+
+        if not ok:
+            return
+
+        # Find affected rows (items with this SKU in selected orders)
+        selected_indexes = self.mw.selection_helper.get_selected_source_rows()
+        selected_df_full = self.mw.analysis_results_df.loc[selected_indexes]
+
+        rows_to_remove = selected_df_full[selected_df_full["SKU"] == sku]
+        affected_count = len(rows_to_remove)
+
+        if affected_count == 0:
+            QMessageBox.information(
+                self.mw,
+                "No Items Found",
+                f"SKU '{sku}' not found in selected orders."
+            )
+            return
+
+        # Confirmation
+        reply = QMessageBox.question(
+            self.mw,
+            "Confirm SKU Removal",
+            f"Remove {affected_count} items with SKU '{sku}' from selected orders?\n\n"
+            f"This will remove the SKU from orders but keep the orders.",
+            QMessageBox.Yes | QMessageBox.No
+        )
+
+        if reply != QMessageBox.Yes:
+            return
+
+        # Get affected rows BEFORE modification
+        affected_rows_before = rows_to_remove.copy()
+
+        # Perform removal
+        self.mw.analysis_results_df = self.mw.analysis_results_df.drop(rows_to_remove.index)
+        self.mw.analysis_results_df = self.mw.analysis_results_df.reset_index(drop=True)
+
+        # Record undo operation
+        self.mw.undo_manager.record_operation(
+            operation_type="bulk_remove_sku",
+            description=f"Bulk Remove SKU: '{sku}' ({affected_count} items)",
+            params={
+                "sku": sku,
+                "removed_count": affected_count
+            },
+            affected_rows_before=affected_rows_before
+        )
+
+        # Clear selection (indexes changed after removal)
+        self.mw.selection_helper.clear_selection()
+
+        # Update UI
+        self.mw.save_session_state()
+        self.mw._update_all_views()
+        self.mw.log_activity(
+            "Bulk Operation",
+            f"Removed SKU '{sku}' ({affected_count} items) from selected orders"
+        )
+
+        # Update toolbar state
+        if hasattr(self.mw, '_update_bulk_toolbar_state'):
+            self.mw._update_bulk_toolbar_state()
+
+        # Update undo button
+        self._update_undo_button()
+
+    def bulk_remove_orders_with_sku(self):
+        """Remove entire orders that contain specific SKU."""
+        selected_df = self.mw.selection_helper.get_selected_orders_data()
+
+        if selected_df.empty:
+            QMessageBox.warning(
+                self.mw,
+                "No Selection",
+                "Please select orders first."
+            )
+            return
+
+        # Get all unique SKUs from selected orders
+        unique_skus = sorted(selected_df["SKU"].unique())
+
+        # SKU selection dialog
+        sku, ok = QInputDialog.getItem(
+            self.mw,
+            "Select SKU",
+            "Remove all orders containing this SKU:",
+            [str(s) for s in unique_skus],
+            0,
+            False
+        )
+
+        if not ok:
+            return
+
+        # Find all orders containing this SKU
+        selected_indexes = self.mw.selection_helper.get_selected_source_rows()
+        selected_df_full = self.mw.analysis_results_df.loc[selected_indexes]
+
+        # Get order numbers that contain this SKU
+        orders_with_sku = selected_df_full[selected_df_full["SKU"] == sku]["Order_Number"].unique()
+
+        if len(orders_with_sku) == 0:
+            QMessageBox.information(
+                self.mw,
+                "No Orders Found",
+                f"No selected orders contain SKU '{sku}'."
+            )
+            return
+
+        # Find all items in these orders
+        rows_to_remove = selected_df_full[selected_df_full["Order_Number"].isin(orders_with_sku)]
+        items_count = len(rows_to_remove)
+
+        # Confirmation
+        reply = QMessageBox.question(
+            self.mw,
+            "Confirm Order Removal",
+            f"Remove {len(orders_with_sku)} orders ({items_count} items) containing SKU '{sku}'?\n\n"
+            f"This will delete entire orders, not just the SKU.",
+            QMessageBox.Yes | QMessageBox.No
+        )
+
+        if reply != QMessageBox.Yes:
+            return
+
+        # Get affected rows BEFORE modification
+        affected_rows_before = rows_to_remove.copy()
+
+        # Perform removal
+        self.mw.analysis_results_df = self.mw.analysis_results_df.drop(rows_to_remove.index)
+        self.mw.analysis_results_df = self.mw.analysis_results_df.reset_index(drop=True)
+
+        # Record undo operation
+        self.mw.undo_manager.record_operation(
+            operation_type="bulk_remove_orders_with_sku",
+            description=f"Bulk Remove Orders with SKU: '{sku}' ({len(orders_with_sku)} orders)",
+            params={
+                "sku": sku,
+                "removed_orders": len(orders_with_sku),
+                "removed_items": items_count
+            },
+            affected_rows_before=affected_rows_before
+        )
+
+        # Clear selection
+        self.mw.selection_helper.clear_selection()
+
+        # Update UI
+        self.mw.save_session_state()
+        self.mw._update_all_views()
+        self.mw.log_activity(
+            "Bulk Operation",
+            f"Removed {len(orders_with_sku)} orders ({items_count} items) containing SKU '{sku}'"
+        )
+
+        # Update toolbar state
+        if hasattr(self.mw, '_update_bulk_toolbar_state'):
+            self.mw._update_bulk_toolbar_state()
+
+        # Update undo button
+        self._update_undo_button()
+
+    def bulk_delete_orders(self):
+        """Delete all selected orders."""
+        selected_df = self.mw.selection_helper.get_selected_orders_data()
+
+        if selected_df.empty:
+            QMessageBox.warning(
+                self.mw,
+                "No Selection",
+                "Please select orders first."
+            )
+            return
+
+        # Get summary
+        orders_count, items_count = self.mw.selection_helper.get_selection_summary()
+
+        # Confirmation dialog
+        reply = QMessageBox.question(
+            self.mw,
+            "Confirm Bulk Delete",
+            f"DELETE {orders_count} orders ({items_count} total items)?\n\n"
+            f"This action can be undone with Ctrl+Z.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No  # Default to No
+        )
+
+        if reply != QMessageBox.Yes:
+            return
+
+        # Get affected rows BEFORE modification
+        selected_indexes = self.mw.selection_helper.get_selected_source_rows()
+        affected_rows_before = self.mw.analysis_results_df.loc[selected_indexes].copy()
+
+        # Perform deletion
+        self.mw.analysis_results_df = self.mw.analysis_results_df.drop(selected_indexes)
+        self.mw.analysis_results_df = self.mw.analysis_results_df.reset_index(drop=True)
+
+        # Record undo operation
+        self.mw.undo_manager.record_operation(
+            operation_type="bulk_delete_orders",
+            description=f"Bulk Delete: {orders_count} orders ({items_count} items)",
+            params={
+                "deleted_orders": orders_count,
+                "deleted_items": items_count
+            },
+            affected_rows_before=affected_rows_before
+        )
+
+        # Clear selection
+        self.mw.selection_helper.clear_selection()
+
+        # Update UI
+        self.mw.save_session_state()
+        self.mw._update_all_views()
+        self.mw.log_activity(
+            "Bulk Operation",
+            f"Deleted {orders_count} orders ({items_count} items)"
+        )
+
+        # Update toolbar state
+        if hasattr(self.mw, '_update_bulk_toolbar_state'):
+            self.mw._update_bulk_toolbar_state()
+
+        # Update undo button
+        self._update_undo_button()
+
+    def bulk_export_selection(self, format_type: str):
+        """Export selected rows to file.
+
+        Args:
+            format_type: 'xlsx' or 'csv'
+        """
+        from PySide6.QtWidgets import QFileDialog
+        from pathlib import Path
+
+        selected_df = self.mw.selection_helper.get_selected_orders_data()
+
+        if selected_df.empty:
+            QMessageBox.warning(
+                self.mw,
+                "No Selection",
+                "Please select orders first."
+            )
+            return
+
+        # Get summary
+        orders_count, items_count = self.mw.selection_helper.get_selection_summary()
+
+        # File dialog
+        if format_type == 'xlsx':
+            file_filter = "Excel Files (*.xlsx)"
+            default_name = f"selection_{orders_count}_orders.xlsx"
+        else:
+            file_filter = "CSV Files (*.csv)"
+            default_name = f"selection_{orders_count}_orders.csv"
+
+        # Suggest saving in session exports folder
+        if self.mw.session_path:
+            default_dir = Path(self.mw.session_path) / "exports"
+            default_dir.mkdir(exist_ok=True)
+            default_path = str(default_dir / default_name)
+        else:
+            default_path = default_name
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self.mw,
+            "Export Selected Orders",
+            default_path,
+            file_filter
+        )
+
+        if not file_path:
+            return
+
+        try:
+            # Export based on format
+            if format_type == 'xlsx':
+                selected_df.to_excel(file_path, index=False, engine='openpyxl')
+            else:
+                selected_df.to_csv(file_path, index=False, encoding='utf-8')
+
+            QMessageBox.information(
+                self.mw,
+                "Export Successful",
+                f"Exported {orders_count} orders ({items_count} items) to:\n{file_path}"
+            )
+
+            self.mw.log_activity(
+                "Bulk Operation",
+                f"Exported {orders_count} orders to {format_type.upper()}: {Path(file_path).name}"
+            )
+
+        except Exception as e:
+            QMessageBox.critical(
+                self.mw,
+                "Export Failed",
+                f"Failed to export selection:\n{str(e)}"
+            )
+            self.log.error(f"Bulk export failed: {e}", exc_info=True)

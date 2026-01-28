@@ -10,6 +10,8 @@ from PySide6.QtGui import QColor, QKeySequence, QShortcut
 from .pandas_model import PandasModel
 from .wheel_ignore_combobox import WheelIgnoreComboBox
 from .tag_management_panel import TagManagementPanel
+from .bulk_operations_toolbar import BulkOperationsToolbar
+from .selection_helper import SelectionHelper
 
 
 class UIManager:
@@ -199,6 +201,7 @@ class UIManager:
         Contains:
         - Filter controls
         - Action buttons
+        - Bulk operations toolbar (hidden by default)
         - Results table
         - Summary bar
         """
@@ -214,6 +217,11 @@ class UIManager:
         # Section 2: Action buttons
         actions_widget = self._create_results_actions()
         layout.addWidget(actions_widget)
+
+        # Section 2.5: Bulk Operations Toolbar (NEW - hidden by default)
+        self.mw.bulk_toolbar = BulkOperationsToolbar()
+        self.mw.bulk_toolbar.setVisible(False)
+        layout.addWidget(self.mw.bulk_toolbar)
 
         # Section 3: Results table (MAIN content)
         table_widget = self._create_results_table()
@@ -731,6 +739,10 @@ class UIManager:
         if hasattr(self.mw, 'add_product_button'):
             self.mw.add_product_button.setEnabled(not is_busy and is_data_loaded)
 
+        # Enable "Bulk Operations" button after analysis
+        if hasattr(self.mw, 'toggle_bulk_mode_btn'):
+            self.mw.toggle_bulk_mode_btn.setEnabled(not is_busy and is_data_loaded)
+
         self.log.debug(f"UI busy state set to: {is_busy}, data_loaded: {is_data_loaded}")
 
     def update_results_table(self, data_df):
@@ -755,7 +767,12 @@ class UIManager:
         # Use all columns from the dataframe, visibility is handled by the view
         main_df = data_df.copy()
 
-        source_model = PandasModel(main_df)
+        # Check if bulk mode is active
+        bulk_mode_enabled = (hasattr(self.mw, 'toggle_bulk_mode_btn') and
+                            self.mw.toggle_bulk_mode_btn.isChecked())
+
+        # Create model with checkbox support if bulk mode is active
+        source_model = PandasModel(main_df, enable_checkboxes=bulk_mode_enabled)
         self.mw.proxy_model.setSourceModel(source_model)
         self.mw.tableView.setModel(self.mw.proxy_model)
 
@@ -764,6 +781,17 @@ class UIManager:
         if not hasattr(self.mw, 'order_group_delegate') or self.mw.order_group_delegate is None:
             self.mw.order_group_delegate = OrderGroupDelegate(self.mw)
         self.mw.tableView.setItemDelegate(self.mw.order_group_delegate)
+
+        # Set checkbox delegate for first column if bulk mode is active
+        if bulk_mode_enabled:
+            from gui.checkbox_delegate import CheckboxDelegate
+            checkbox_delegate = CheckboxDelegate(self.mw.selection_helper)
+            self.mw.tableView.setItemDelegateForColumn(0, checkbox_delegate)
+            # Set checkbox column width
+            self.mw.tableView.setColumnWidth(0, 30)
+        else:
+            # Reset column 0 delegate to default (order group delegate) when bulk mode is off
+            self.mw.tableView.setItemDelegateForColumn(0, self.mw.order_group_delegate)
 
         # Set tag delegate for Internal_Tags column if it exists
         # This overrides the order group delegate for this specific column
@@ -774,7 +802,10 @@ class UIManager:
             if not hasattr(self.mw, 'tag_delegate') or self.mw.tag_delegate is None:
                 self.mw.tag_delegate = TagDelegate(tag_categories, self.mw)
 
+            # Adjust column index for checkbox column if enabled
             col_index = main_df.columns.get_loc("Internal_Tags")
+            if bulk_mode_enabled:
+                col_index += 1  # Account for checkbox column
             self.mw.tableView.setItemDelegateForColumn(col_index, self.mw.tag_delegate)
 
             # Populate tag filter combo box
@@ -941,6 +972,17 @@ class UIManager:
         self.mw.toggle_tags_panel_btn.setToolTip("Show/hide Internal Tags management panel")
         self.mw.toggle_tags_panel_btn.clicked.connect(self.mw.toggle_tag_panel)
         layout.addWidget(self.mw.toggle_tags_panel_btn)
+
+        # Add separator
+        layout.addSpacing(20)
+
+        # Bulk Operations toggle button (NEW)
+        self.mw.toggle_bulk_mode_btn = QPushButton("📦 Bulk Operations")
+        self.mw.toggle_bulk_mode_btn.setCheckable(True)
+        self.mw.toggle_bulk_mode_btn.setEnabled(False)
+        self.mw.toggle_bulk_mode_btn.setToolTip("Enable bulk selection and operations on multiple orders")
+        self.mw.toggle_bulk_mode_btn.clicked.connect(self.mw.toggle_bulk_mode)
+        layout.addWidget(self.mw.toggle_bulk_mode_btn)
 
         layout.addStretch()
 

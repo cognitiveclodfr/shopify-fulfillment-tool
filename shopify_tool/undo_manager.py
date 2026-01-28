@@ -147,10 +147,25 @@ class UndoManager:
                 success = self._undo_add_tag(params, affected_rows_before)
             elif operation_type == "add_internal_tag":
                 success = self._undo_add_internal_tag(params, affected_rows_before)
+            elif operation_type == "remove_internal_tag":
+                success = self._undo_add_internal_tag(params, affected_rows_before)  # Same logic
             elif operation_type == "remove_item":
                 success = self._undo_remove_item(params, affected_rows_before)
             elif operation_type == "remove_order":
                 success = self._undo_remove_order(params, affected_rows_before)
+            # Bulk operations
+            elif operation_type == "bulk_change_status":
+                success = self._undo_bulk_change_status(params, affected_rows_before)
+            elif operation_type == "bulk_add_tag":
+                success = self._undo_bulk_add_tag(params, affected_rows_before)
+            elif operation_type == "bulk_remove_tag":
+                success = self._undo_bulk_remove_tag(params, affected_rows_before)
+            elif operation_type == "bulk_remove_sku":
+                success = self._undo_bulk_remove_sku(params, affected_rows_before)
+            elif operation_type == "bulk_remove_orders_with_sku":
+                success = self._undo_bulk_remove_orders_with_sku(params, affected_rows_before)
+            elif operation_type == "bulk_delete_orders":
+                success = self._undo_bulk_delete_orders(params, affected_rows_before)
             else:
                 return False, f"Unknown operation type: {operation_type}"
 
@@ -409,3 +424,190 @@ class UndoManager:
         self.current_position = 0
         self._save_history()
         self.log.info("Cleared undo history")
+
+    # ============================================================================
+    # BULK OPERATION UNDO HANDLERS
+    # ============================================================================
+
+    def _undo_bulk_change_status(self, params: Dict, affected_rows_before: pd.DataFrame) -> bool:
+        """Undo bulk status change operation.
+
+        Args:
+            params: Operation parameters
+            affected_rows_before: Rows before status change
+
+        Returns:
+            True if successful
+        """
+        try:
+            affected_indexes = params.get("affected_indexes", [])
+
+            if affected_rows_before.empty:
+                self.log.warning("No affected rows to restore")
+                return False
+
+            # The affected_rows_before DataFrame has the original indexes as its index
+            # We need to restore Order_Fulfillment_Status from before state
+            for idx, row in affected_rows_before.iterrows():
+                original_status = row.get("Order_Fulfillment_Status")
+                if pd.notna(original_status):
+                    # Find matching row in current DataFrame
+                    # After reset_index, we need to find by other criteria or use iloc
+                    if idx in self.main_window.analysis_results_df.index:
+                        self.main_window.analysis_results_df.loc[idx, "Order_Fulfillment_Status"] = original_status
+
+            self.log.info(f"Undid bulk status change for {len(affected_rows_before)} rows")
+            return True
+
+        except Exception as e:
+            self.log.error(f"Failed to undo bulk status change: {e}", exc_info=True)
+            return False
+
+    def _undo_bulk_add_tag(self, params: Dict, affected_rows_before: pd.DataFrame) -> bool:
+        """Undo bulk tag addition.
+
+        Args:
+            params: Operation parameters
+            affected_rows_before: Rows before tag addition
+
+        Returns:
+            True if successful
+        """
+        try:
+            if affected_rows_before.empty:
+                self.log.warning("No affected rows to restore")
+                return False
+
+            # Restore Internal_Tags from before state
+            for idx, row in affected_rows_before.iterrows():
+                original_tags = row.get("Internal_Tags", "[]")
+                if idx in self.main_window.analysis_results_df.index:
+                    self.main_window.analysis_results_df.loc[idx, "Internal_Tags"] = original_tags
+
+            self.log.info(f"Undid bulk add tag for {len(affected_rows_before)} rows")
+            return True
+
+        except Exception as e:
+            self.log.error(f"Failed to undo bulk add tag: {e}", exc_info=True)
+            return False
+
+    def _undo_bulk_remove_tag(self, params: Dict, affected_rows_before: pd.DataFrame) -> bool:
+        """Undo bulk tag removal.
+
+        Args:
+            params: Operation parameters
+            affected_rows_before: Rows before tag removal
+
+        Returns:
+            True if successful
+        """
+        try:
+            if affected_rows_before.empty:
+                self.log.warning("No affected rows to restore")
+                return False
+
+            # Restore Internal_Tags from before state
+            for idx, row in affected_rows_before.iterrows():
+                original_tags = row.get("Internal_Tags", "[]")
+                if idx in self.main_window.analysis_results_df.index:
+                    self.main_window.analysis_results_df.loc[idx, "Internal_Tags"] = original_tags
+
+            self.log.info(f"Undid bulk remove tag for {len(affected_rows_before)} rows")
+            return True
+
+        except Exception as e:
+            self.log.error(f"Failed to undo bulk remove tag: {e}", exc_info=True)
+            return False
+
+    def _undo_bulk_remove_sku(self, params: Dict, affected_rows_before: pd.DataFrame) -> bool:
+        """Undo bulk SKU removal.
+
+        Args:
+            params: Operation parameters
+            affected_rows_before: Removed rows to restore
+
+        Returns:
+            True if successful
+        """
+        try:
+            if affected_rows_before.empty:
+                self.log.warning("No affected rows to restore")
+                return False
+
+            # Restore removed rows
+            self.main_window.analysis_results_df = pd.concat(
+                [self.main_window.analysis_results_df, affected_rows_before],
+                ignore_index=True
+            )
+
+            sku = params.get("sku", "unknown")
+            removed_count = params.get("removed_count", len(affected_rows_before))
+            self.log.info(f"Restored {removed_count} items with SKU {sku}")
+
+            return True
+
+        except Exception as e:
+            self.log.error(f"Failed to undo bulk SKU removal: {e}", exc_info=True)
+            return False
+
+    def _undo_bulk_remove_orders_with_sku(self, params: Dict, affected_rows_before: pd.DataFrame) -> bool:
+        """Undo bulk order removal (orders containing SKU).
+
+        Args:
+            params: Operation parameters
+            affected_rows_before: Removed rows to restore
+
+        Returns:
+            True if successful
+        """
+        try:
+            if affected_rows_before.empty:
+                self.log.warning("No affected rows to restore")
+                return False
+
+            # Restore removed rows
+            self.main_window.analysis_results_df = pd.concat(
+                [self.main_window.analysis_results_df, affected_rows_before],
+                ignore_index=True
+            )
+
+            removed_orders = params.get("removed_orders", 0)
+            removed_items = params.get("removed_items", len(affected_rows_before))
+            self.log.info(f"Restored {removed_orders} orders ({removed_items} items)")
+
+            return True
+
+        except Exception as e:
+            self.log.error(f"Failed to undo bulk order removal: {e}", exc_info=True)
+            return False
+
+    def _undo_bulk_delete_orders(self, params: Dict, affected_rows_before: pd.DataFrame) -> bool:
+        """Undo bulk order deletion.
+
+        Args:
+            params: Operation parameters
+            affected_rows_before: Deleted rows to restore
+
+        Returns:
+            True if successful
+        """
+        try:
+            if affected_rows_before.empty:
+                self.log.warning("No affected rows to restore")
+                return False
+
+            # Restore deleted rows
+            self.main_window.analysis_results_df = pd.concat(
+                [self.main_window.analysis_results_df, affected_rows_before],
+                ignore_index=True
+            )
+
+            deleted_orders = params.get("deleted_orders", 0)
+            deleted_items = params.get("deleted_items", len(affected_rows_before))
+            self.log.info(f"Restored {deleted_orders} deleted orders ({deleted_items} items)")
+
+            return True
+
+        except Exception as e:
+            self.log.error(f"Failed to undo bulk delete: {e}", exc_info=True)
+            return False
