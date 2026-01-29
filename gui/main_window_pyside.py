@@ -17,12 +17,13 @@ from shopify_tool.utils import resource_path
 from shopify_tool.analysis import recalculate_statistics
 from shopify_tool.profile_manager import ProfileManager, NetworkError
 from shopify_tool.session_manager import SessionManager
+from shopify_tool.groups_manager import GroupsManager
 from shopify_tool.undo_manager import UndoManager
 from gui.log_handler import QtLogHandler
 from gui.ui_manager import UIManager
 from gui.file_handler import FileHandler
 from gui.actions_handler import ActionsHandler
-from gui.client_selector_widget import ClientSelectorWidget
+from gui.client_settings_dialog import ClientSelectorWidget
 from gui.session_browser_widget import SessionBrowserWidget
 from gui.profile_manager_dialog import ProfileManagerDialog
 from gui.tag_management_panel import TagManagementPanel
@@ -107,7 +108,7 @@ class MainWindow(QMainWindow):
         self.setup_logging()
 
     def _init_managers(self):
-        """Initialize ProfileManager and SessionManager for the new architecture."""
+        """Initialize ProfileManager, SessionManager, and GroupsManager for the new architecture."""
         # ProfileManager now auto-detects environment:
         # 1. First checks FULFILLMENT_SERVER_PATH environment variable (dev mode)
         # 2. Falls back to default production path
@@ -117,7 +118,13 @@ class MainWindow(QMainWindow):
         try:
             self.profile_manager = ProfileManager()  # Auto-detects from environment
             self.session_manager = SessionManager(self.profile_manager)
-            logging.info("ProfileManager and SessionManager initialized successfully")
+
+            # Initialize GroupsManager
+            self.groups_manager = GroupsManager(
+                base_path=str(self.profile_manager.base_path)
+            )
+
+            logging.info("ProfileManager, SessionManager, and GroupsManager initialized successfully")
         except NetworkError as e:
             QMessageBox.critical(
                 self,
@@ -217,8 +224,12 @@ class MainWindow(QMainWindow):
         window, including button clicks, text changes, and custom signals
         from handler classes. This makes the UI event flow easier to trace.
         """
-        # Client selection (new architecture)
-        self.client_selector.client_changed.connect(self.on_client_changed)
+        # Client selection (new architecture) - use sidebar if it exists, otherwise fallback to client_selector
+        if hasattr(self, 'client_sidebar'):
+            self.client_sidebar.client_selected.connect(self.on_client_changed)
+            self.client_sidebar.refresh_requested.connect(self.on_sidebar_refresh)
+        elif hasattr(self, 'client_selector'):
+            self.client_selector.client_changed.connect(self.on_client_changed)
 
         # Session browser (new architecture)
         self.session_browser.session_selected.connect(self.on_session_selected)
@@ -633,6 +644,14 @@ class MainWindow(QMainWindow):
         """
         logging.info(f"Client changed to: {client_id}")
 
+        # Update sidebar active state if sidebar exists
+        if hasattr(self, 'client_sidebar'):
+            self.client_sidebar.set_active_client(client_id)
+
+        # Update header label if it exists
+        if hasattr(self, 'current_client_label'):
+            self.current_client_label.setText(f"CLIENT_{client_id}")
+
         # Store current client ID
         self.current_client_id = client_id
 
@@ -677,6 +696,16 @@ class MainWindow(QMainWindow):
                 "Error",
                 f"Failed to change client: {str(e)}"
             )
+
+    def on_sidebar_refresh(self):
+        """Handle manual sidebar refresh request."""
+        try:
+            if hasattr(self, 'client_sidebar'):
+                self.client_sidebar.refresh()
+                self.log_activity("UI", "Client sidebar refreshed")
+        except Exception as e:
+            logging.error(f"Sidebar refresh failed: {e}")
+            QMessageBox.warning(self, "Refresh Error", str(e))
 
     def on_session_selected(self, session_path: str):
         """Handle session selection from session browser.
