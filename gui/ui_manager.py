@@ -317,7 +317,7 @@ class UIManager:
 
     def _create_client_selector_group(self):
         """Creates the 'Client Selection' QGroupBox with ClientSelectorWidget."""
-        from gui.client_selector_widget import ClientSelectorWidget
+        from gui.client_settings_dialog import ClientSelectorWidget
 
         group = QGroupBox("Client Selection")
         layout = QHBoxLayout()

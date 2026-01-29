@@ -15,7 +15,7 @@ os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
 
-from gui.client_selector_widget import ClientSelectorWidget, ClientCreationDialog
+from gui.client_settings_dialog import ClientSelectorWidget, ClientCreationDialog
 from shopify_tool.profile_manager import ProfileManager, ValidationError
 
 
@@ -87,7 +87,7 @@ def test_client_creation_dialog_validation(qtbot, mock_profile_manager):
 
     # Test empty client ID
     with patch.object(ProfileManager, 'validate_client_id', return_value=(False, "Client ID is required")):
-        with patch('gui.client_selector_widget.QMessageBox.warning') as mock_warning:
+        with patch('gui.client_settings_dialog.QMessageBox.warning') as mock_warning:
             dialog.validate_and_accept()
             mock_warning.assert_called_once()
 
@@ -104,7 +104,7 @@ def test_client_creation_dialog_success(qtbot, mock_profile_manager):
     dialog.client_name_input.setText("Test Client")
 
     with patch.object(ProfileManager, 'validate_client_id', return_value=(True, "")):
-        with patch('gui.client_selector_widget.QMessageBox.information') as mock_info:
+        with patch('gui.client_settings_dialog.QMessageBox.information') as mock_info:
             dialog.validate_and_accept()
             mock_info.assert_called_once()
             mock_profile_manager.create_client_profile.assert_called_once_with("TEST", "Test Client")
