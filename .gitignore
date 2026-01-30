@@ -85,6 +85,11 @@ fulfillment-server-mock/
 # IDE
 .vscode/
 .idea/
+.vs/
 *.swp
 *.swo
 *~
+
+# Temporary audit/analysis files
+PROJECT_AUDIT.txt
+*_AUDIT.txt

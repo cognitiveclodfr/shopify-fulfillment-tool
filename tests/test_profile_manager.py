@@ -700,5 +700,321 @@ class TestSetDecoderMethods:
         assert "SET-3" in sets
 
 
+class TestUISettings:
+    """Test UI settings management."""
+
+    def test_update_ui_settings(self, profile_manager):
+        """Test updating UI settings."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        # Update UI settings
+        success = profile_manager.update_ui_settings("M", {
+            "is_pinned": True,
+            "group_id": "test-group-uuid",
+            "custom_color": "#FF0000"
+        })
+        assert success
+
+        # Verify settings were saved
+        config = profile_manager.load_client_config("M")
+        assert config["ui_settings"]["is_pinned"] is True
+        assert config["ui_settings"]["group_id"] == "test-group-uuid"
+        assert config["ui_settings"]["custom_color"] == "#FF0000"
+
+    def test_update_ui_settings_partial(self, profile_manager):
+        """Test partial update of UI settings."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        # Initial update
+        profile_manager.update_ui_settings("M", {"is_pinned": True, "custom_color": "#FF0000"})
+
+        # Partial update (only change is_pinned)
+        profile_manager.update_ui_settings("M", {"is_pinned": False})
+
+        # Verify only is_pinned changed, custom_color preserved
+        config = profile_manager.load_client_config("M")
+        assert config["ui_settings"]["is_pinned"] is False
+        assert config["ui_settings"]["custom_color"] == "#FF0000"
+
+    def test_get_ui_settings_defaults(self, profile_manager):
+        """Test getting UI settings returns defaults if not set."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        ui_settings = profile_manager.get_ui_settings("M")
+
+        # Verify defaults
+        assert ui_settings["is_pinned"] is False
+        assert ui_settings["group_id"] is None
+        assert ui_settings["custom_color"] == "#4CAF50"
+        assert ui_settings["custom_badges"] == []
+        assert ui_settings["display_order"] == 0
+
+    def test_get_ui_settings_nonexistent_client(self, profile_manager):
+        """Test getting UI settings for non-existent client returns defaults."""
+        ui_settings = profile_manager.get_ui_settings("NONEXISTENT")
+
+        # Should return defaults, not raise error
+        assert ui_settings["is_pinned"] is False
+        assert ui_settings["group_id"] is None
+
+    def test_update_ui_settings_nonexistent_client(self, profile_manager):
+        """Test updating UI settings for non-existent client fails."""
+        with pytest.raises(ProfileManagerError):
+            profile_manager.update_ui_settings("NONEXISTENT", {"is_pinned": True})
+
+
+class TestMetadata:
+    """Test metadata calculation."""
+
+    def test_calculate_metadata_no_sessions(self, profile_manager):
+        """Test metadata calculation when client has no sessions."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        metadata = profile_manager.calculate_metadata("M")
+
+        assert metadata["total_sessions"] == 0
+        assert metadata["last_session_date"] is None
+        assert "last_accessed" in metadata
+
+    def test_calculate_metadata_with_sessions(self, profile_manager, temp_base_path):
+        """Test metadata calculation with existing sessions."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        # Create mock session directories
+        sessions_dir = temp_base_path / "Sessions" / "CLIENT_M"
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create session folders
+        (sessions_dir / "2025-01-15_1").mkdir()
+        (sessions_dir / "2025-01-20_1").mkdir()
+        (sessions_dir / "2025-01-20_2").mkdir()
+
+        metadata = profile_manager.calculate_metadata("M")
+
+        assert metadata["total_sessions"] == 3
+        assert metadata["last_session_date"] == "2025-01-20"
+
+    def test_calculate_metadata_ignores_non_session_folders(self, profile_manager, temp_base_path):
+        """Test that metadata calculation ignores non-session folders."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        sessions_dir = temp_base_path / "Sessions" / "CLIENT_M"
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create valid session
+        (sessions_dir / "2025-01-15_1").mkdir()
+
+        # Create invalid folders (should be ignored)
+        (sessions_dir / "random_folder").mkdir()
+        (sessions_dir / "not-a-session").mkdir()
+
+        metadata = profile_manager.calculate_metadata("M")
+
+        assert metadata["total_sessions"] == 1
+        assert metadata["last_session_date"] == "2025-01-15"
+
+    def test_update_last_accessed(self, profile_manager):
+        """Test updating last_accessed timestamp."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        # Update last accessed
+        success = profile_manager.update_last_accessed("M")
+        assert success
+
+        # Verify timestamp was set
+        config = profile_manager.load_client_config("M")
+        assert "metadata" in config
+        assert "last_accessed" in config["metadata"]
+
+        # Verify timestamp is recent (within last 5 seconds)
+        from datetime import datetime
+        last_accessed = datetime.fromisoformat(config["metadata"]["last_accessed"])
+        now = datetime.now()
+        diff_seconds = (now - last_accessed).total_seconds()
+        assert diff_seconds < 5
+
+    def test_update_last_accessed_nonexistent_client(self, profile_manager):
+        """Test updating last_accessed for non-existent client fails gracefully."""
+        success = profile_manager.update_last_accessed("NONEXISTENT")
+        assert success is False
+
+
+class TestMigration:
+    """Test configuration migration."""
+
+    def test_migration_adds_ui_settings(self, profile_manager, temp_base_path):
+        """Test that migration adds ui_settings to old configs."""
+        # Create client directory
+        client_dir = temp_base_path / "Clients" / "CLIENT_M"
+        client_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create old-format config (without ui_settings)
+        old_config = {
+            "client_id": "M",
+            "client_name": "M Cosmetics",
+            "created_at": "2025-01-01T00:00:00"
+        }
+
+        config_path = client_dir / "client_config.json"
+        with open(config_path, 'w', encoding='utf-8') as f:
+            json.dump(old_config, f)
+
+        # Load config (should trigger migration)
+        config = profile_manager.load_client_config("M")
+
+        # Verify ui_settings was added
+        assert "ui_settings" in config
+        assert config["ui_settings"]["is_pinned"] is False
+        assert config["ui_settings"]["group_id"] is None
+
+        # Verify migration was saved
+        with open(config_path, 'r', encoding='utf-8') as f:
+            saved_config = json.load(f)
+        assert "ui_settings" in saved_config
+
+    def test_migration_preserves_existing_data(self, profile_manager, temp_base_path):
+        """Test that migration preserves existing fields."""
+        client_dir = temp_base_path / "Clients" / "CLIENT_M"
+        client_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create old-format config with custom fields
+        old_config = {
+            "client_id": "M",
+            "client_name": "M Cosmetics",
+            "created_at": "2025-01-01T00:00:00",
+            "custom_field": "custom_value"
+        }
+
+        config_path = client_dir / "client_config.json"
+        with open(config_path, 'w', encoding='utf-8') as f:
+            json.dump(old_config, f)
+
+        # Load config (triggers migration)
+        config = profile_manager.load_client_config("M")
+
+        # Verify existing fields preserved
+        assert config["client_id"] == "M"
+        assert config["client_name"] == "M Cosmetics"
+        assert config["custom_field"] == "custom_value"
+        # And ui_settings added
+        assert "ui_settings" in config
+
+    def test_migration_idempotent(self, profile_manager):
+        """Test that migration is idempotent (safe to run multiple times)."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        # Load config multiple times
+        config1 = profile_manager.load_client_config("M")
+        config2 = profile_manager.load_client_config("M")
+        config3 = profile_manager.load_client_config("M")
+
+        # All should have ui_settings
+        assert "ui_settings" in config1
+        assert "ui_settings" in config2
+        assert "ui_settings" in config3
+
+        # Settings should be identical
+        assert config1["ui_settings"] == config2["ui_settings"]
+        assert config2["ui_settings"] == config3["ui_settings"]
+
+
+class TestExtendedConfig:
+    """Test extended configuration retrieval."""
+
+    def test_get_client_config_extended(self, profile_manager):
+        """Test getting extended config with metadata."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        config = profile_manager.get_client_config_extended("M")
+
+        # Verify all sections present
+        assert "client_id" in config
+        assert "ui_settings" in config
+        assert "metadata" in config
+
+        # Verify metadata structure
+        assert "total_sessions" in config["metadata"]
+        assert "last_session_date" in config["metadata"]
+        assert "last_accessed" in config["metadata"]
+
+    def test_extended_config_includes_calculated_metadata(self, profile_manager, temp_base_path):
+        """Test that extended config includes calculated metadata."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        # Create mock sessions
+        sessions_dir = temp_base_path / "Sessions" / "CLIENT_M"
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+        (sessions_dir / "2025-01-15_1").mkdir()
+        (sessions_dir / "2025-01-20_1").mkdir()
+
+        config = profile_manager.get_client_config_extended("M")
+
+        # Verify metadata was calculated
+        assert config["metadata"]["total_sessions"] == 2
+        assert config["metadata"]["last_session_date"] == "2025-01-20"
+
+    def test_extended_config_nonexistent_client(self, profile_manager):
+        """Test getting extended config for non-existent client returns empty dict."""
+        config = profile_manager.get_client_config_extended("NONEXISTENT")
+        assert config == {}
+
+
+class TestSaveClientConfig:
+    """Test save_client_config method."""
+
+    def test_save_client_config_success(self, profile_manager):
+        """Test saving client config."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        # Modify config
+        config = profile_manager.load_client_config("M")
+        config["custom_field"] = "test_value"
+
+        # Save
+        success = profile_manager.save_client_config("M", config)
+        assert success
+
+        # Verify saved
+        loaded_config = profile_manager.load_client_config("M")
+        assert loaded_config["custom_field"] == "test_value"
+
+    def test_save_client_config_adds_timestamps(self, profile_manager):
+        """Test that save_client_config adds last_updated timestamp."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        config = profile_manager.load_client_config("M")
+
+        # Save
+        profile_manager.save_client_config("M", config)
+
+        # Verify timestamps added
+        loaded_config = profile_manager.load_client_config("M")
+        assert "last_updated" in loaded_config
+        assert "updated_by" in loaded_config
+
+    def test_save_client_config_creates_backup(self, profile_manager, temp_base_path):
+        """Test that save_client_config creates backup."""
+        profile_manager.create_client_profile("M", "M Cosmetics")
+
+        config = profile_manager.load_client_config("M")
+        config["test_field"] = "test"
+
+        # Save (should create backup)
+        profile_manager.save_client_config("M", config)
+
+        # Check backup exists
+        backups_dir = temp_base_path / "Clients" / "CLIENT_M" / "backups"
+        if backups_dir.exists():
+            backups = list(backups_dir.glob("client_config_*.json"))
+            assert len(backups) >= 1
+
+    def test_save_client_config_nonexistent_client(self, profile_manager):
+        """Test saving config for non-existent client fails."""
+        with pytest.raises(ProfileManagerError) as exc_info:
+            profile_manager.save_client_config("NONEXISTENT", {})
+
+        assert "does not exist" in str(exc_info.value).lower()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

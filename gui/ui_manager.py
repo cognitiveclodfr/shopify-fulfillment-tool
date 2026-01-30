@@ -41,23 +41,54 @@ class UIManager:
         self.log = logging.getLogger(__name__)
 
     def create_widgets(self):
-        """Creates and lays out all widgets with new tab-based structure.
+        """Creates and lays out all widgets with new tab-based structure and sidebar.
 
         This is the main entry point for building the UI. It constructs the
-        entire widget hierarchy for the `MainWindow` with a modern tab-based layout.
+        entire widget hierarchy for the `MainWindow` with a modern tab-based layout
+        and collapsible client sidebar.
         """
-        self.log.info("Creating UI widgets with new tab-based structure.")
+        self.log.info("Creating UI widgets with new tab-based structure and sidebar.")
+
+        # Create central widget with horizontal layout for sidebar + main content
         central_widget = QWidget()
         self.mw.setCentralWidget(central_widget)
-        main_layout = QVBoxLayout(central_widget)
-        main_layout.setSpacing(5)
-        main_layout.setContentsMargins(5, 5, 5, 5)
+        main_horizontal = QHBoxLayout(central_widget)
+        main_horizontal.setSpacing(0)
+        main_horizontal.setContentsMargins(0, 0, 0, 0)
+
+        # Create sidebar
+        from gui.client_sidebar import ClientSidebar
+        self.mw.client_sidebar = ClientSidebar(
+            profile_manager=self.mw.profile_manager,
+            groups_manager=self.mw.groups_manager,
+            parent=self.mw
+        )
+        main_horizontal.addWidget(self.mw.client_sidebar)
+
+        # Create right side container (header + tabs)
+        right_side = QWidget()
+        right_layout = QVBoxLayout(right_side)
+        right_layout.setSpacing(5)
+        right_layout.setContentsMargins(5, 5, 5, 5)
 
         # Step 1: Create global header (always visible)
         header_widget = self._create_global_header()
-        main_layout.addWidget(header_widget)
+        right_layout.addWidget(header_widget)
 
-        # Step 2: Create main tab widget with 4 tabs
+        # Step 2: Create main tab widget with 5 tabs
+        self._create_tabs()
+        right_layout.addWidget(self.mw.main_tabs, 1)  # Stretch factor: 1
+
+        # Add right side to horizontal layout
+        main_horizontal.addWidget(right_side, 1)  # Stretch tabs
+
+        # Setup status bar
+        self.mw.statusBar().showMessage("Ready")
+
+        self.log.info("UI widgets created successfully with tab-based structure and sidebar.")
+
+    def _create_tabs(self):
+        """Create main tab widget with 5 tabs."""
         self.mw.main_tabs = QTabWidget()
         self.mw.main_tabs.setDocumentMode(True)  # Cleaner look
         self.mw.main_tabs.setTabPosition(QTabWidget.North)
@@ -68,33 +99,26 @@ class UIManager:
         tab2 = self._create_tab2_analysis_results()
         tab3 = self._create_tab3_session_browser()
         tab4 = self._create_tab4_information()
-        tab5 = self._create_tab5_tools()  # NEW
+        tab5 = self._create_tab5_tools()
 
         # Add tabs with icons (using QStyle built-in icons)
         file_icon = self.mw.style().standardIcon(QStyle.SP_FileIcon)
         table_icon = self.mw.style().standardIcon(QStyle.SP_FileDialogDetailedView)
         folder_icon = self.mw.style().standardIcon(QStyle.SP_DirIcon)
         info_icon = self.mw.style().standardIcon(QStyle.SP_MessageBoxInformation)
-        tools_icon = self.mw.style().standardIcon(QStyle.SP_FileDialogContentsView)  # NEW
+        tools_icon = self.mw.style().standardIcon(QStyle.SP_FileDialogContentsView)
 
         self.mw.main_tabs.addTab(tab1, file_icon, "Session Setup")
         self.mw.main_tabs.addTab(tab2, table_icon, "Analysis Results")
         self.mw.main_tabs.addTab(tab3, folder_icon, "Session Browser")
         self.mw.main_tabs.addTab(tab4, info_icon, "Information")
-        self.mw.main_tabs.addTab(tab5, tools_icon, "Tools")  # NEW
+        self.mw.main_tabs.addTab(tab5, tools_icon, "Tools")
 
         # Add keyboard shortcuts for tab switching
         self._setup_tab_shortcuts()
 
-        main_layout.addWidget(self.mw.main_tabs, 1)  # Stretch factor: 1
-
-        # Setup status bar
-        self.mw.statusBar().showMessage("Ready")
-
-        self.log.info("UI widgets created successfully with tab-based structure.")
-
     def _create_global_header(self):
-        """Create global header with client selector and session info.
+        """Create global header with sidebar toggle, current client, and session info.
 
         Always visible above tabs.
         """
@@ -104,13 +128,24 @@ class UIManager:
         layout.setContentsMargins(5, 5, 5, 5)
         layout.setSpacing(5)
 
-        # Row 1: Client selector (existing widget)
-        from gui.client_selector_widget import ClientSelectorWidget
-        self.mw.client_selector = ClientSelectorWidget(
-            self.mw.profile_manager,
-            self.mw
+        # Row 1: Sidebar toggle + current client label
+        toggle_row = QHBoxLayout()
+
+        self.mw.sidebar_toggle_btn = QPushButton("☰")
+        self.mw.sidebar_toggle_btn.setMaximumWidth(40)
+        self.mw.sidebar_toggle_btn.setToolTip("Toggle client sidebar")
+        self.mw.sidebar_toggle_btn.clicked.connect(
+            lambda: self.mw.client_sidebar.toggle_expanded()
         )
-        layout.addWidget(self.mw.client_selector)
+        toggle_row.addWidget(self.mw.sidebar_toggle_btn)
+
+        self.mw.current_client_label = QLabel("No client selected")
+        self.mw.current_client_label.setStyleSheet("font-weight: bold; font-size: 11pt;")
+        toggle_row.addWidget(self.mw.current_client_label)
+
+        toggle_row.addStretch()
+
+        layout.addLayout(toggle_row)
 
         # Row 2: Session info
         session_row = QHBoxLayout()
@@ -282,7 +317,7 @@ class UIManager:
 
     def _create_client_selector_group(self):
         """Creates the 'Client Selection' QGroupBox with ClientSelectorWidget."""
-        from gui.client_selector_widget import ClientSelectorWidget
+        from gui.client_settings_dialog import ClientSelectorWidget
 
         group = QGroupBox("Client Selection")
         layout = QHBoxLayout()

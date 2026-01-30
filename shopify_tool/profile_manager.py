@@ -20,7 +20,7 @@ import shutil
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("ShopifyToolLogger")
 
@@ -65,6 +65,9 @@ class ProfileManager:
     _config_cache: Dict[str, Tuple[Dict, datetime]] = {}
     CACHE_TIMEOUT_SECONDS = 60  # Cache valid for 1 minute
 
+    # Class-level constants for metadata cache
+    METADATA_CACHE_TIMEOUT_SECONDS = 300  # 5 minutes
+
     def __init__(self, base_path: str = None):
         """Initialize ProfileManager with automatic environment detection.
 
@@ -93,6 +96,9 @@ class ProfileManager:
         self.sessions_dir = self.base_path / "Sessions"
         self.stats_dir = self.base_path / "Stats"
         self.logs_dir = self.base_path / "Logs" / "shopify_tool"
+
+        # Instance-level metadata cache
+        self._metadata_cache: Dict[str, Tuple[Dict, datetime]] = {}
 
         self.connection_timeout = 5
         self.is_network_available = self._test_connection()
@@ -583,6 +589,8 @@ class ProfileManager:
     def load_client_config(self, client_id: str) -> Optional[Dict]:
         """Load general configuration for a client.
 
+        Automatically migrates old configs to add ui_settings if missing.
+
         Args:
             client_id (str): Client ID
 
@@ -599,6 +607,15 @@ class ProfileManager:
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 config = json.load(f)
+
+            # Check if migrations are needed
+            migrated = self._migrate_add_ui_settings(client_id, config)
+
+            if migrated:
+                # If config was migrated, save it immediately
+                self.save_client_config(client_id, config)
+                logger.info(f"Config migrations completed for CLIENT_{client_id}")
+
             return config
 
         except PermissionError as e:
@@ -1017,6 +1034,338 @@ class ProfileManager:
 
         except Exception as e:
             logger.warning(f"Failed to create backup: {e}")
+
+    def _migrate_add_ui_settings(self, client_id: str, config: Dict) -> bool:
+        """Add ui_settings section if missing.
+
+        Args:
+            client_id: Client ID (for logging)
+            config: Configuration dictionary to migrate (modified in-place)
+
+        Returns:
+            bool: True if migration was performed, False if already has ui_settings
+        """
+        if "ui_settings" in config:
+            return False
+
+        config["ui_settings"] = {
+            "is_pinned": False,
+            "group_id": None,
+            "custom_color": "#4CAF50",
+            "custom_badges": [],
+            "display_order": 0
+        }
+
+        logger.info(f"Added ui_settings for CLIENT_{client_id}")
+        return True
+
+    def save_client_config(self, client_id: str, config: Dict) -> bool:
+        """Save client_config.json with file locking and backup.
+
+        Similar to save_shopify_config but for client_config.json.
+        Uses file locking to prevent concurrent write conflicts.
+        Creates automatic backup before saving.
+
+        Args:
+            client_id: Client ID
+            config: Configuration dict
+
+        Returns:
+            bool: True if saved successfully
+
+        Raises:
+            ProfileManagerError: If save fails after retries
+        """
+        client_id = client_id.upper()
+        client_dir = self.clients_dir / f"CLIENT_{client_id}"
+        config_path = client_dir / "client_config.json"
+
+        if not client_dir.exists():
+            raise ProfileManagerError(f"Client profile does not exist: CLIENT_{client_id}")
+
+        # Create backup before saving
+        if config_path.exists():
+            self._create_backup(client_id, config_path, "client_config")
+
+        # Update timestamp
+        config["last_updated"] = datetime.now().isoformat()
+        config["updated_by"] = os.environ.get('COMPUTERNAME', 'Unknown')
+
+        max_retries = 10
+        retry_delay = 1.0
+
+        for attempt in range(max_retries):
+            try:
+                # Use platform-specific file locking
+                if os.name == 'nt':  # Windows
+                    success = self._save_with_windows_lock(config_path, config)
+                else:  # Unix-like
+                    success = self._save_with_unix_lock(config_path, config)
+
+                if success:
+                    logger.info(
+                        f"Client config saved successfully for CLIENT_{client_id} "
+                        f"(attempt {attempt + 1}/{max_retries})"
+                    )
+                    return True
+                else:
+                    # File lock failed, retry
+                    if attempt < max_retries - 1:
+                        logger.warning(
+                            f"Save failed (attempt {attempt + 1}/{max_retries}), "
+                            f"retrying in {retry_delay}s: File is locked"
+                        )
+                        time.sleep(retry_delay)
+
+            except (IOError, OSError) as e:
+                if attempt < max_retries - 1:
+                    logger.warning(
+                        f"Save failed (attempt {attempt + 1}/{max_retries}), "
+                        f"retrying in {retry_delay}s: {e}"
+                    )
+                    time.sleep(retry_delay)
+                else:
+                    error_msg = f"Failed to save client config after {max_retries} attempts: {e}"
+                    logger.error(error_msg)
+                    raise ProfileManagerError(error_msg)
+
+        # If we get here, all retries failed
+        error_msg = f"Failed to save client config after {max_retries} attempts"
+        logger.error(error_msg)
+        raise ProfileManagerError(error_msg)
+
+    def update_ui_settings(self, client_id: str, ui_settings: Dict[str, Any]) -> bool:
+        """Update client UI settings with partial updates support.
+
+        Args:
+            client_id: Client ID
+            ui_settings: Dict with optional keys:
+                - is_pinned (bool)
+                - group_id (str | None)
+                - custom_color (str)
+                - custom_badges (List[str])
+                - display_order (int)
+
+        Returns:
+            bool: True if saved successfully
+
+        Raises:
+            ProfileManagerError: If client doesn't exist or save fails
+
+        Example:
+            pm.update_ui_settings("M", {"is_pinned": True})
+        """
+        # Load current config
+        config = self.load_client_config(client_id)
+        if config is None:
+            raise ProfileManagerError(f"Client profile not found: CLIENT_{client_id}")
+
+        # Ensure ui_settings section exists
+        if "ui_settings" not in config:
+            config["ui_settings"] = {
+                "is_pinned": False,
+                "group_id": None,
+                "custom_color": "#4CAF50",
+                "custom_badges": [],
+                "display_order": 0
+            }
+
+        # Merge updates (partial update)
+        for key, value in ui_settings.items():
+            config["ui_settings"][key] = value
+
+        # Save
+        return self.save_client_config(client_id, config)
+
+    def get_ui_settings(self, client_id: str) -> Dict[str, Any]:
+        """Get client UI settings.
+
+        Returns default values if not set:
+        {
+            "is_pinned": False,
+            "group_id": None,
+            "custom_color": "#4CAF50",
+            "custom_badges": [],
+            "display_order": 0
+        }
+
+        Args:
+            client_id: Client ID
+
+        Returns:
+            Dict with ui_settings
+        """
+        config = self.load_client_config(client_id)
+
+        if config is None:
+            # Return defaults if client doesn't exist
+            return {
+                "is_pinned": False,
+                "group_id": None,
+                "custom_color": "#4CAF50",
+                "custom_badges": [],
+                "display_order": 0
+            }
+
+        # Return ui_settings or defaults
+        return config.get("ui_settings", {
+            "is_pinned": False,
+            "group_id": None,
+            "custom_color": "#4CAF50",
+            "custom_badges": [],
+            "display_order": 0
+        })
+
+    def calculate_metadata(self, client_id: str, force_refresh: bool = False) -> Dict[str, Any]:
+        """Calculate client metadata from filesystem with 5-minute caching.
+
+        Args:
+            client_id: Client ID
+            force_refresh: If True, bypass cache and recalculate
+
+        Returns:
+            Dict with total_sessions, last_session_date, last_accessed
+        """
+        import re
+        import time
+
+        client_id = client_id.upper()
+        cache_key = f"CLIENT_{client_id}"
+
+        # Check cache (unless force refresh)
+        if not force_refresh and cache_key in self._metadata_cache:
+            cached_data, cached_time = self._metadata_cache[cache_key]
+            age_seconds = (datetime.now() - cached_time).total_seconds()
+
+            if age_seconds < self.METADATA_CACHE_TIMEOUT_SECONDS:
+                logger.debug(
+                    f"Metadata cache HIT for {cache_key} "
+                    f"(age: {age_seconds:.1f}s, TTL: {self.METADATA_CACHE_TIMEOUT_SECONDS}s)"
+                )
+                return cached_data
+
+        # Cache miss - calculate metadata
+        start_time = time.time()
+        sessions_dir = self.sessions_dir / cache_key
+
+        if not sessions_dir.exists():
+            metadata = {
+                "total_sessions": 0,
+                "last_session_date": None,
+                "last_accessed": datetime.now().isoformat()
+            }
+            self._metadata_cache[cache_key] = (metadata, datetime.now())
+            return metadata
+
+        try:
+            session_folders = [
+                d for d in sessions_dir.iterdir()
+                if d.is_dir() and re.match(r'\d{4}-\d{2}-\d{2}_\d+', d.name)
+            ]
+
+            total_sessions = len(session_folders)
+
+            last_session_date = None
+            if session_folders:
+                latest = sorted(session_folders, key=lambda d: d.name)[-1]
+                date_part = latest.name.split('_')[0]
+                last_session_date = date_part
+
+            metadata = {
+                "total_sessions": total_sessions,
+                "last_session_date": last_session_date,
+                "last_accessed": datetime.now().isoformat()
+            }
+
+            self._metadata_cache[cache_key] = (metadata, datetime.now())
+
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.debug(f"Metadata calculated for {cache_key} in {elapsed_ms:.1f}ms")
+
+            return metadata
+
+        except Exception as e:
+            logger.warning(f"Failed to calculate metadata for {cache_key}: {e}")
+            metadata = {
+                "total_sessions": 0,
+                "last_session_date": None,
+                "last_accessed": datetime.now().isoformat()
+            }
+            self._metadata_cache[cache_key] = (metadata, datetime.now())
+            return metadata
+
+    def invalidate_metadata_cache(self, client_id: Optional[str] = None):
+        """Invalidate metadata cache.
+
+        Args:
+            client_id: Specific client to invalidate, or None to clear all
+        """
+        if client_id:
+            cache_key = f"CLIENT_{client_id.upper()}"
+            if cache_key in self._metadata_cache:
+                del self._metadata_cache[cache_key]
+                logger.debug(f"Invalidated metadata cache for {cache_key}")
+        else:
+            self._metadata_cache.clear()
+            logger.debug("Cleared entire metadata cache")
+
+    def update_last_accessed(self, client_id: str) -> bool:
+        """Update last_accessed timestamp in metadata.
+
+        Args:
+            client_id: Client ID
+
+        Returns:
+            bool: True if updated successfully
+        """
+        config = self.load_client_config(client_id)
+        if config is None:
+            logger.warning(f"Cannot update last_accessed: CLIENT_{client_id} not found")
+            return False
+
+        # Ensure metadata section exists
+        if "metadata" not in config:
+            config["metadata"] = {}
+
+        # Update timestamp
+        config["metadata"]["last_accessed"] = datetime.now().isoformat()
+
+        # Save
+        return self.save_client_config(client_id, config)
+
+    def get_client_config_extended(self, client_id: str) -> Dict[str, Any]:
+        """Load client config with ui_settings and metadata merged.
+
+        Automatically adds default ui_settings if missing.
+        Calculates metadata on demand.
+
+        Args:
+            client_id: Client ID
+
+        Returns:
+            Dict with client_config.json + ui_settings + metadata
+        """
+        # Load base config
+        config = self.load_client_config(client_id)
+
+        if config is None:
+            logger.warning(f"Client config not found: CLIENT_{client_id}")
+            return {}
+
+        # Ensure ui_settings exists (should be added by load_client_config migration)
+        if "ui_settings" not in config:
+            config["ui_settings"] = {
+                "is_pinned": False,
+                "group_id": None,
+                "custom_color": "#4CAF50",
+                "custom_badges": [],
+                "display_order": 0
+            }
+
+        # Calculate and add metadata
+        config["metadata"] = self.calculate_metadata(client_id)
+
+        return config
 
     def get_clients_root(self) -> Path:
         """Get path to clients root directory.
