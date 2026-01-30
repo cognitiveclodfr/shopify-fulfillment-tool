@@ -819,3 +819,330 @@ def test_deprecated_action_types_log_warnings(sample_df, caplog):
     assert "Priority" not in result_df.columns
     assert "_is_excluded" not in result_df.columns
     assert "Packaging_Tags" not in result_df.columns
+
+
+# ====================================================================
+# NEW OPERATORS TESTS (v1.9.0)
+# ====================================================================
+
+
+@pytest.fixture
+def date_sample_df():
+    """Provides a sample DataFrame with date fields for testing date operators."""
+    data = {
+        "Order_Number": ["#2001", "#2002", "#2003", "#2004", "#2005"],
+        "Order_Date": ["2024-01-15", "2024-01-30", "2024-02-15", "30/01/2024", "15.02.2024"],
+        "Shipping_Provider": ["DHL", "PostOne", "DPD", "DHL", "PostOne"],
+        "Total_Price": [50, 75, 100, 125, 150],
+        "SKU": ["SKU-1234", "SKU-ABCD", "OTHER-001", "SKU-5678", "MISC-999"],
+        "Status_Note": ["", "", "", "", ""],
+        "Internal_Tags": ["[]", "[]", "[]", "[]", "[]"],
+    }
+    return pd.DataFrame(data)
+
+
+# --- List Operators Tests ---
+
+
+@pytest.mark.parametrize(
+    "operator,value,expected_matches",
+    [
+        ("in list", "DHL,PostOne", ["#1001", "#1002", "#1004"]),
+        ("in list", "DHL, PostOne, DPD", ["#1001", "#1002", "#1003", "#1004"]),
+        ("in list", "dhl,postone", ["#1001", "#1002", "#1004"]),  # Case insensitive
+        ("in list", " DHL , PostOne ", ["#1001", "#1002", "#1004"]),  # Whitespace handling
+        ("in list", "FedEx", []),  # No matches
+        ("not in list", "DHL,PostOne", ["#1003"]),
+        ("not in list", "DPD", ["#1001", "#1002", "#1004"]),
+    ],
+)
+def test_list_operators(sample_df, operator, value, expected_matches):
+    """Tests 'in list' and 'not in list' operators with various inputs."""
+    rules = [
+        {
+            "match": "ALL",
+            "conditions": [{"field": "Shipping_Provider", "operator": operator, "value": value}],
+            "actions": [{"type": "ADD_INTERNAL_TAG", "value": "matched"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+    result_df = engine.apply(sample_df.copy())
+
+    matched_orders = result_df[result_df["Internal_Tags"].str.contains("matched", na=False)]["Order_Number"].unique()
+    assert sorted(matched_orders) == sorted(expected_matches)
+
+
+def test_list_operators_empty_value(sample_df):
+    """Test 'in list' operator with empty value."""
+    rules = [
+        {
+            "match": "ALL",
+            "conditions": [{"field": "Shipping_Provider", "operator": "in list", "value": ""}],
+            "actions": [{"type": "ADD_INTERNAL_TAG", "value": "matched"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+    result_df = engine.apply(sample_df.copy())
+
+    # Should not match any rows
+    matched_orders = result_df[result_df["Internal_Tags"].str.contains("matched", na=False)]
+    assert len(matched_orders) == 0
+
+
+# --- Range Operators Tests ---
+
+
+@pytest.mark.parametrize(
+    "operator,value,expected_matches",
+    [
+        ("between", "50-150", ["#1001", "#1002", "#1004"]),
+        ("between", "100-200", ["#1002", "#1003"]),
+        ("between", "50-50", ["#1001"]),  # Exact match (inclusive)
+        ("between", "60-140", ["#1004"]),  # Only #1004 has Total_Price=80
+        ("not between", "50-150", ["#1003"]),
+        ("not between", "100-200", ["#1001", "#1004"]),
+    ],
+)
+def test_range_operators_numeric(sample_df, operator, value, expected_matches):
+    """Tests 'between' and 'not between' operators with numeric values."""
+    rules = [
+        {
+            "match": "ALL",
+            "conditions": [{"field": "Total_Price", "operator": operator, "value": value}],
+            "actions": [{"type": "ADD_INTERNAL_TAG", "value": "matched"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+    result_df = engine.apply(sample_df.copy())
+
+    matched_orders = result_df[result_df["Internal_Tags"].str.contains("matched", na=False)]["Order_Number"].unique()
+    assert sorted(matched_orders) == sorted(expected_matches)
+
+
+@pytest.mark.parametrize(
+    "invalid_range",
+    [
+        "100-10",  # Reversed range
+        "10-",     # Missing end
+        "-100",    # Missing start
+        "abc-xyz", # Non-numeric
+        "invalid", # Invalid format
+        "",        # Empty
+    ],
+)
+def test_range_operators_invalid_input(sample_df, invalid_range, caplog):
+    """Test 'between' operator with invalid range formats."""
+    import logging
+
+    rules = [
+        {
+            "match": "ALL",
+            "conditions": [{"field": "Total_Price", "operator": "between", "value": invalid_range}],
+            "actions": [{"type": "ADD_INTERNAL_TAG", "value": "matched"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+
+    with caplog.at_level(logging.WARNING):
+        result_df = engine.apply(sample_df.copy())
+
+    # Should not match any rows
+    matched_orders = result_df[result_df["Internal_Tags"].str.contains("matched", na=False)]
+    assert len(matched_orders) == 0
+
+    # Should log warning for non-empty invalid inputs
+    if invalid_range and invalid_range.strip():
+        assert any("Invalid range" in record.message or "range format" in record.message for record in caplog.records)
+
+
+# --- Date Operators Tests ---
+
+
+@pytest.mark.parametrize(
+    "operator,value,expected_matches",
+    [
+        ("date before", "2024-01-30", ["#2001"]),
+        ("date before", "2024-02-01", ["#2001", "#2002", "#2004"]),
+        ("date after", "2024-01-30", ["#2003", "#2005"]),
+        ("date after", "2024-01-14", ["#2001", "#2002", "#2003", "#2004", "#2005"]),
+        ("date equals", "2024-01-30", ["#2002", "#2004"]),
+        ("date equals", "2024-02-15", ["#2003", "#2005"]),
+        ("date equals", "2024-01-15", ["#2001"]),
+    ],
+)
+def test_date_operators(date_sample_df, operator, value, expected_matches):
+    """Tests 'date before', 'date after', and 'date equals' operators."""
+    rules = [
+        {
+            "match": "ALL",
+            "conditions": [{"field": "Order_Date", "operator": operator, "value": value}],
+            "actions": [{"type": "ADD_INTERNAL_TAG", "value": "matched"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+    result_df = engine.apply(date_sample_df.copy())
+
+    matched_orders = result_df[result_df["Internal_Tags"].str.contains("matched", na=False)]["Order_Number"].unique()
+    assert sorted(matched_orders) == sorted(expected_matches)
+
+
+def test_date_operators_multiple_formats(date_sample_df):
+    """Test that date operators handle multiple date formats correctly."""
+    # All dates should be normalized to same comparison format
+    rules = [
+        {
+            "match": "ALL",
+            "conditions": [{"field": "Order_Date", "operator": "date equals", "value": "30/01/2024"}],
+            "actions": [{"type": "ADD_INTERNAL_TAG", "value": "matched"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+    result_df = engine.apply(date_sample_df.copy())
+
+    # Should match rows with "2024-01-30" and "30/01/2024"
+    matched_orders = result_df[result_df["Internal_Tags"].str.contains("matched", na=False)]["Order_Number"].unique()
+    assert sorted(matched_orders) == sorted(["#2002", "#2004"])
+
+
+@pytest.mark.parametrize(
+    "invalid_date",
+    [
+        "not-a-date",
+        "2024-13-45",  # Invalid month/day
+        "32/01/2024",  # Invalid day
+        "",
+        "invalid",
+    ],
+)
+def test_date_operators_invalid_input(date_sample_df, invalid_date, caplog):
+    """Test date operators with invalid date formats."""
+    import logging
+
+    rules = [
+        {
+            "match": "ALL",
+            "conditions": [{"field": "Order_Date", "operator": "date before", "value": invalid_date}],
+            "actions": [{"type": "ADD_INTERNAL_TAG", "value": "matched"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+
+    with caplog.at_level(logging.WARNING):
+        result_df = engine.apply(date_sample_df.copy())
+
+    # Should not match any rows
+    matched_orders = result_df[result_df["Internal_Tags"].str.contains("matched", na=False)]
+    assert len(matched_orders) == 0
+
+    # Should log warning
+    if invalid_date and invalid_date not in ["", "not-a-date", "invalid"]:
+        assert any("Invalid rule date" in record.message for record in caplog.records)
+
+
+# --- Regex Operator Tests ---
+
+
+@pytest.mark.parametrize(
+    "pattern,expected_matches",
+    [
+        (r"^SKU-\d{4}$", ["#2001", "#2004"]),
+        (r"SKU-", ["#2001", "#2002", "#2004"]),  # Contains "SKU-"
+        (r"^SKU-[A-Z]{4}$", ["#2002"]),
+        (r"^OTHER", ["#2003"]),
+        (r"-999$", ["#2005"]),  # Ends with -999
+        (r".*", ["#2001", "#2002", "#2003", "#2004", "#2005"]),  # Match all
+    ],
+)
+def test_regex_operator(date_sample_df, pattern, expected_matches):
+    """Tests 'matches regex' operator with various patterns."""
+    rules = [
+        {
+            "match": "ALL",
+            "conditions": [{"field": "SKU", "operator": "matches regex", "value": pattern}],
+            "actions": [{"type": "ADD_INTERNAL_TAG", "value": "matched"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+    result_df = engine.apply(date_sample_df.copy())
+
+    matched_orders = result_df[result_df["Internal_Tags"].str.contains("matched", na=False)]["Order_Number"].unique()
+    assert sorted(matched_orders) == sorted(expected_matches)
+
+
+@pytest.mark.parametrize(
+    "invalid_pattern",
+    [
+        "[invalid",     # Unclosed bracket
+        "(?P<invalid",  # Unclosed group
+        "*invalid",     # Invalid quantifier
+        "(?P<>)",       # Empty group name
+    ],
+)
+def test_regex_operator_invalid_pattern(date_sample_df, invalid_pattern, caplog):
+    """Test 'matches regex' operator with invalid regex patterns."""
+    import logging
+
+    rules = [
+        {
+            "match": "ALL",
+            "conditions": [{"field": "SKU", "operator": "matches regex", "value": invalid_pattern}],
+            "actions": [{"type": "ADD_INTERNAL_TAG", "value": "matched"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+
+    with caplog.at_level(logging.WARNING):
+        result_df = engine.apply(date_sample_df.copy())
+
+    # Should not match any rows
+    matched_orders = result_df[result_df["Internal_Tags"].str.contains("matched", na=False)]
+    assert len(matched_orders) == 0
+
+    # Should log warning about invalid regex
+    assert any("Invalid regex pattern" in record.message for record in caplog.records)
+
+
+# --- Integration Test ---
+
+
+def test_all_new_operators_integration(sample_df, date_sample_df):
+    """Integration test combining all new operators in a realistic scenario."""
+    # Combine both DataFrames for comprehensive testing
+    combined_df = pd.concat([sample_df, date_sample_df], ignore_index=True)
+
+    rules = [
+        {
+            "name": "List operator rule",
+            "match": "ALL",
+            "conditions": [{"field": "Shipping_Provider", "operator": "in list", "value": "DHL,PostOne"}],
+            "actions": [{"type": "ADD_INTERNAL_TAG", "value": "priority_courier"}],
+        },
+        {
+            "name": "Range operator rule",
+            "match": "ALL",
+            "conditions": [{"field": "Total_Price", "operator": "between", "value": "75-150"}],
+            "actions": [{"type": "ADD_INTERNAL_TAG", "value": "mid_value"}],
+        },
+        {
+            "name": "Regex operator rule",
+            "match": "ALL",
+            "conditions": [{"field": "SKU", "operator": "matches regex", "value": r"^SKU-\d{4}$"}],
+            "actions": [{"type": "ADD_INTERNAL_TAG", "value": "standard_sku"}],
+        },
+    ]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(combined_df.copy())
+
+    # Verify multiple tags can be applied
+    priority_count = result_df[result_df["Internal_Tags"].str.contains("priority_courier", na=False)]
+    assert len(priority_count) > 0
+
+    mid_value_count = result_df[result_df["Internal_Tags"].str.contains("mid_value", na=False)]
+    assert len(mid_value_count) > 0
+
+    standard_sku_count = result_df[result_df["Internal_Tags"].str.contains("standard_sku", na=False)]
+    assert len(standard_sku_count) > 0
+
+    # Verify tags don't interfere with each other
+    assert len(result_df) == len(combined_df)

@@ -1296,6 +1296,273 @@ result = _op_starts_with(df["SKU"], "DHL-")
 
 ---
 
+### New Helper Functions (v1.9.0)
+
+#### `_parse_date_safe(date_str)`
+
+**Purpose**: Safely parse date strings with multiple format support.
+
+**Location**: `shopify_tool/rules.py:~150`
+
+**Parameters**:
+| Name | Type | Description |
+|------|------|-------------|
+| `date_str` | str | Date string to parse |
+
+**Returns**: `Optional[pd.Timestamp]` - Parsed timestamp or None if invalid
+
+**Supported Formats**:
+1. ISO format: `YYYY-MM-DD` (e.g., "2024-01-30")
+2. European slash: `DD/MM/YYYY` (e.g., "30/01/2024")
+3. European dot: `DD.MM.YYYY` (e.g., "30.01.2024")
+
+**Features**:
+- Tries formats sequentially
+- Returns None for invalid dates
+- Logs warnings for unparseable dates with `[RULE ENGINE]` prefix
+
+**Example**:
+```python
+date1 = _parse_date_safe("2024-01-30")  # pd.Timestamp('2024-01-30')
+date2 = _parse_date_safe("30/01/2024")  # pd.Timestamp('2024-01-30')
+date3 = _parse_date_safe("invalid")     # None (logs warning)
+```
+
+---
+
+#### `_compile_regex_safe(pattern)`
+
+**Purpose**: Safely compile regex patterns with LRU caching for performance.
+
+**Location**: `shopify_tool/rules.py:~190`
+
+**Parameters**:
+| Name | Type | Description |
+|------|------|-------------|
+| `pattern` | str | Regular expression pattern |
+
+**Returns**: `Optional[re.Pattern]` - Compiled pattern or None if invalid
+
+**Features**:
+- **LRU Cache**: `@lru_cache(maxsize=128)` to avoid recompiling patterns
+- Validates pattern before compilation
+- Returns None for invalid patterns
+- Logs warnings for regex errors
+
+**Example**:
+```python
+pattern = _compile_regex_safe(r"^SKU-\d{4}$")  # Compiled pattern
+invalid = _compile_regex_safe("[invalid")       # None (logs warning)
+
+# Cached - no recompilation on second call
+pattern2 = _compile_regex_safe(r"^SKU-\d{4}$")  # Returns cached result
+```
+
+---
+
+#### `_parse_range(range_str)`
+
+**Purpose**: Parse range strings in "start-end" format.
+
+**Location**: `shopify_tool/rules.py:~218`
+
+**Parameters**:
+| Name | Type | Description |
+|------|------|-------------|
+| `range_str` | str | Range string (e.g., "10-100") |
+
+**Returns**: `Optional[tuple[float, float]]` - (start, end) tuple or None if invalid
+
+**Features**:
+- Validates range format
+- Converts to floats (supports decimals: "5.5-15.5")
+- Rejects reversed ranges (e.g., "100-10")
+- Logs warnings for invalid inputs
+
+**Example**:
+```python
+range1 = _parse_range("10-100")     # (10.0, 100.0)
+range2 = _parse_range("5.5-15.5")   # (5.5, 15.5)
+range3 = _parse_range("100-10")     # None (logs warning: reversed)
+range4 = _parse_range("invalid")    # None (logs warning)
+```
+
+---
+
+### New Operator Functions (v1.9.0)
+
+#### `_op_in_list(series_val, rule_val)`
+
+**Purpose**: Check if series value matches any item in comma-separated list.
+
+**Location**: `shopify_tool/rules.py:~260`
+
+**Parameters**:
+| Name | Type | Description |
+|------|------|-------------|
+| `series_val` | pd.Series | Column values to check |
+| `rule_val` | str | Comma-separated list (e.g., "DHL,PostOne,FedEx") |
+
+**Returns**: `pd.Series[bool]` - True where value is in list
+
+**Features**:
+- Case-insensitive matching
+- Automatic whitespace trimming
+- Handles empty values gracefully
+
+**Example**:
+```python
+result = _op_in_list(df["Courier"], "DHL, PostOne, FedEx")
+# Matches "dhl", "DHL", " PostOne ", etc.
+```
+
+---
+
+#### `_op_not_in_list(series_val, rule_val)`
+
+**Purpose**: Check if series value does NOT match any item in list.
+
+**Location**: `shopify_tool/rules.py:~290`
+
+**Returns**: `pd.Series[bool]` - Inverse of `_op_in_list()`
+
+---
+
+#### `_op_between(series_val, rule_val)`
+
+**Purpose**: Check if series value falls within inclusive numeric range.
+
+**Location**: `shopify_tool/rules.py:~315`
+
+**Parameters**:
+| Name | Type | Description |
+|------|------|-------------|
+| `series_val` | pd.Series | Column values to check |
+| `rule_val` | str | Range in format "start-end" (e.g., "10-100") |
+
+**Returns**: `pd.Series[bool]` - True where value is in [start, end]
+
+**Features**:
+- Inclusive boundaries (10 and 100 both match in "10-100")
+- Tries numeric comparison first
+- Falls back to string comparison for non-numeric values
+- Uses `_parse_range()` helper for validation
+
+**Example**:
+```python
+result = _op_between(df["Price"], "50-150")
+# Matches 50, 75, 100, 150 (inclusive)
+```
+
+---
+
+#### `_op_not_between(series_val, rule_val)`
+
+**Purpose**: Check if series value does NOT fall within range.
+
+**Location**: `shopify_tool/rules.py:~345`
+
+**Returns**: `pd.Series[bool]` - Inverse of `_op_between()`
+
+---
+
+#### `_op_date_before(series_val, rule_val)`
+
+**Purpose**: Check if series date is before rule date.
+
+**Location**: `shopify_tool/rules.py:~370`
+
+**Parameters**:
+| Name | Type | Description |
+|------|------|-------------|
+| `series_val` | pd.Series | Column with date values |
+| `rule_val` | str | Date string (e.g., "2024-01-30") |
+
+**Returns**: `pd.Series[bool]` - True where date < rule date
+
+**Features**:
+- Supports multiple date formats (uses `_parse_date_safe()`)
+- Ignores time components (normalizes to midnight)
+- Handles invalid dates gracefully (returns False)
+
+**Example**:
+```python
+result = _op_date_before(df["Order_Date"], "2024-01-30")
+# Matches dates before January 30, 2024
+```
+
+---
+
+#### `_op_date_after(series_val, rule_val)`
+
+**Purpose**: Check if series date is after rule date.
+
+**Location**: `shopify_tool/rules.py:~410`
+
+**Returns**: `pd.Series[bool]` - True where date > rule date
+
+**Features**: Same as `_op_date_before()`
+
+---
+
+#### `_op_date_equals(series_val, rule_val)`
+
+**Purpose**: Check if series date equals rule date (time ignored).
+
+**Location**: `shopify_tool/rules.py:~450`
+
+**Returns**: `pd.Series[bool]` - True where date == rule date
+
+**Features**: Same as `_op_date_before()`
+
+**Example**:
+```python
+result = _op_date_equals(df["Order_Date"], "30/01/2024")
+# Matches "2024-01-30", "30/01/2024", "30.01.2024" (all normalized)
+```
+
+---
+
+#### `_op_matches_regex(series_val, rule_val)`
+
+**Purpose**: Check if series value matches regular expression pattern.
+
+**Location**: `shopify_tool/rules.py:~520`
+
+**Parameters**:
+| Name | Type | Description |
+|------|------|-------------|
+| `series_val` | pd.Series | Column values to check |
+| `rule_val` | str | Regular expression pattern |
+
+**Returns**: `pd.Series[bool]` - True where value matches pattern
+
+**Features**:
+- Full regex syntax support
+- Uses `_compile_regex_safe()` for caching
+- Invalid patterns return False (with warning)
+- Vectorized with `series.str.contains()`
+
+**Example**:
+```python
+# Match SKUs with format "SKU-####"
+result = _op_matches_regex(df["SKU"], r"^SKU-\d{4}$")
+# Matches "SKU-1234", "SKU-5678", etc.
+
+# Match phone numbers
+result = _op_matches_regex(df["Phone"], r"^\d{3}-\d{3}-\d{4}$")
+# Matches "123-456-7890"
+```
+
+**Common Patterns**:
+- Starts with: `^PREFIX`
+- Ends with: `SUFFIX$`
+- Contains digits: `\d+`
+- Alphanumeric: `[A-Za-z0-9]+`
+- Optional groups: `(pattern)?`
+
+---
+
 ## packing_lists.py
 
 #### `create_packing_list(analysis_df, output_file, report_name="Packing List", filters=None, exclude_skus=None)`

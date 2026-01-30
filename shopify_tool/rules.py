@@ -1,4 +1,7 @@
 import pandas as pd
+import re
+from functools import lru_cache
+from typing import Optional
 
 
 """Implements a configurable rule engine to process and modify order data.
@@ -32,6 +35,18 @@ OPERATOR_MAP = {
     "ends with": "_op_ends_with",
     "is empty": "_op_is_empty",
     "is not empty": "_op_is_not_empty",
+    # NEW: List operators
+    "in list": "_op_in_list",
+    "not in list": "_op_not_in_list",
+    # NEW: Range operators
+    "between": "_op_between",
+    "not between": "_op_not_between",
+    # NEW: Date operators
+    "date before": "_op_date_before",
+    "date after": "_op_date_after",
+    "date equals": "_op_date_equals",
+    # NEW: Regex operator
+    "matches regex": "_op_matches_regex",
 }
 
 # --- Operator Implementations ---
@@ -122,6 +137,426 @@ def _op_is_empty(series_val, rule_val):
 def _op_is_not_empty(series_val, rule_val):
     """Returns True where the series value is not null and not an empty string."""
     return series_val.notna() & (series_val != "")
+
+
+# --- Helper Functions for New Operators ---
+
+
+def _parse_date_safe(date_str: str) -> Optional[pd.Timestamp]:
+    """Safely parse date string with multiple format support.
+
+    Tries 3 common date formats in sequence:
+    1. YYYY-MM-DD (ISO format)
+    2. DD/MM/YYYY (European format)
+    3. DD.MM.YYYY (European format with dots)
+
+    Args:
+        date_str: Date string to parse
+
+    Returns:
+        pd.Timestamp if successfully parsed, None otherwise
+
+    Example:
+        >>> _parse_date_safe("2024-01-30")
+        Timestamp('2024-01-30 00:00:00')
+        >>> _parse_date_safe("30/01/2024")
+        Timestamp('2024-01-30 00:00:00')
+        >>> _parse_date_safe("invalid")
+        None
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    if not date_str or pd.isna(date_str):
+        return None
+
+    date_str = str(date_str).strip()
+
+    # Try multiple formats
+    formats = ["%Y-%m-%d", "%d/%m/%Y", "%d.%m.%Y"]
+
+    for fmt in formats:
+        try:
+            return pd.to_datetime(date_str, format=fmt)
+        except (ValueError, TypeError):
+            continue
+
+    logger.warning(f"[RULE ENGINE] Invalid rule date format: '{date_str}'")
+    return None
+
+
+@lru_cache(maxsize=128)
+def _compile_regex_safe(pattern: str) -> Optional[re.Pattern]:
+    """Safely compile regex pattern with caching.
+
+    Uses LRU cache to avoid recompiling patterns on repeated calls.
+
+    Args:
+        pattern: Regex pattern string
+
+    Returns:
+        Compiled re.Pattern if valid, None otherwise
+
+    Example:
+        >>> pattern = _compile_regex_safe(r"^SKU-\\d{4}$")
+        >>> pattern.match("SKU-1234")
+        <re.Match object; span=(0, 8), match='SKU-1234'>
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    if not pattern or pd.isna(pattern):
+        return None
+
+    try:
+        return re.compile(str(pattern))
+    except re.error as e:
+        logger.warning(f"[RULE ENGINE] Invalid regex pattern '{pattern}': {e}")
+        return None
+
+
+def _parse_range(range_str: str) -> Optional[tuple[float, float]]:
+    """Parse range string in format 'start-end'.
+
+    Args:
+        range_str: Range string (e.g., "10-100", "5.5-15.5")
+
+    Returns:
+        Tuple of (start, end) as floats if valid, None otherwise
+
+    Example:
+        >>> _parse_range("10-100")
+        (10.0, 100.0)
+        >>> _parse_range("invalid")
+        None
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    if not range_str or pd.isna(range_str):
+        return None
+
+    range_str = str(range_str).strip()
+
+    # Split on dash
+    parts = range_str.split("-")
+    if len(parts) != 2:
+        logger.warning(f"[RULE ENGINE] Invalid range format: '{range_str}' (expected 'start-end')")
+        return None
+
+    try:
+        start = float(parts[0].strip())
+        end = float(parts[1].strip())
+
+        # Validate order
+        if start > end:
+            logger.warning(f"[RULE ENGINE] Invalid range: start ({start}) > end ({end})")
+            return None
+
+        return (start, end)
+    except (ValueError, TypeError) as e:
+        logger.warning(f"[RULE ENGINE] Invalid range values in '{range_str}': {e}")
+        return None
+
+
+# --- New Operator Implementations ---
+
+
+def _op_in_list(series_val, rule_val):
+    """Returns True where the series value is in the comma-separated list.
+
+    Performs case-insensitive matching with automatic whitespace trimming.
+
+    Args:
+        series_val: pandas Series to check
+        rule_val: Comma-separated string (e.g., "DHL,DPD,PostOne")
+
+    Returns:
+        pd.Series[bool]: True where value matches any item in list
+
+    Example:
+        >>> series = pd.Series(["DHL", "PostOne", "FedEx"])
+        >>> _op_in_list(series, "DHL, PostOne")
+        0     True
+        1     True
+        2    False
+        dtype: bool
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    if not rule_val or pd.isna(rule_val):
+        logger.warning("[RULE ENGINE] Empty list value for 'in list' operator")
+        return pd.Series([False] * len(series_val), index=series_val.index)
+
+    # Parse: split, strip, lowercase
+    list_values = [v.strip().lower() for v in str(rule_val).split(",") if v.strip()]
+
+    if not list_values:
+        return pd.Series([False] * len(series_val), index=series_val.index)
+
+    # Case-insensitive comparison
+    series_lower = series_val.astype(str).str.strip().str.lower()
+    return series_lower.isin(list_values)
+
+
+def _op_not_in_list(series_val, rule_val):
+    """Returns True where the series value is NOT in the comma-separated list.
+
+    Performs case-insensitive matching with automatic whitespace trimming.
+
+    Args:
+        series_val: pandas Series to check
+        rule_val: Comma-separated string (e.g., "DHL,DPD,PostOne")
+
+    Returns:
+        pd.Series[bool]: True where value does NOT match any item in list
+
+    Example:
+        >>> series = pd.Series(["DHL", "PostOne", "FedEx"])
+        >>> _op_not_in_list(series, "DHL, PostOne")
+        0    False
+        1    False
+        2     True
+        dtype: bool
+    """
+    return ~_op_in_list(series_val, rule_val)
+
+
+def _op_between(series_val, rule_val):
+    """Returns True where the series value is between start and end (inclusive).
+
+    Tries numeric comparison first, falls back to string comparison.
+
+    Args:
+        series_val: pandas Series to check
+        rule_val: Range string in format "start-end" (e.g., "10-100")
+
+    Returns:
+        pd.Series[bool]: True where value is in range [start, end]
+
+    Example:
+        >>> series = pd.Series([5, 15, 25, 105])
+        >>> _op_between(series, "10-100")
+        0    False
+        1     True
+        2     True
+        3    False
+        dtype: bool
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    range_tuple = _parse_range(rule_val)
+    if range_tuple is None:
+        return pd.Series([False] * len(series_val), index=series_val.index)
+
+    start, end = range_tuple
+
+    # Try numeric comparison
+    series_numeric = pd.to_numeric(series_val, errors="coerce")
+    if series_numeric.notna().any():
+        # Use numeric comparison where possible
+        return (series_numeric >= start) & (series_numeric <= end)
+    else:
+        # Fallback to string comparison
+        logger.info(f"[RULE ENGINE] Using string comparison for 'between' operator")
+        series_str = series_val.astype(str)
+        return (series_str >= str(start)) & (series_str <= str(end))
+
+
+def _op_not_between(series_val, rule_val):
+    """Returns True where the series value is NOT between start and end.
+
+    Tries numeric comparison first, falls back to string comparison.
+
+    Args:
+        series_val: pandas Series to check
+        rule_val: Range string in format "start-end" (e.g., "10-100")
+
+    Returns:
+        pd.Series[bool]: True where value is NOT in range [start, end]
+
+    Example:
+        >>> series = pd.Series([5, 15, 25, 105])
+        >>> _op_not_between(series, "10-100")
+        0     True
+        1    False
+        2    False
+        3     True
+        dtype: bool
+    """
+    return ~_op_between(series_val, rule_val)
+
+
+def _op_date_before(series_val, rule_val):
+    """Returns True where the series date is before the rule date.
+
+    Supports multiple date formats and ignores time components.
+
+    Args:
+        series_val: pandas Series with date values
+        rule_val: Date string (e.g., "2024-01-30", "30/01/2024")
+
+    Returns:
+        pd.Series[bool]: True where date is before rule date
+
+    Example:
+        >>> series = pd.Series(["2024-01-15", "2024-02-15"])
+        >>> _op_date_before(series, "2024-01-30")
+        0     True
+        1    False
+        dtype: bool
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    rule_date = _parse_date_safe(rule_val)
+    if rule_date is None:
+        return pd.Series([False] * len(series_val), index=series_val.index, dtype=bool)
+
+    # Normalize to ignore time
+    rule_date = rule_date.normalize()
+
+    # Parse series dates with multiple format attempts
+    series_dates = pd.Series([None] * len(series_val), index=series_val.index)
+    for idx, val in series_val.items():
+        parsed = _parse_date_safe(val)
+        if parsed is not None:
+            series_dates[idx] = parsed
+
+    # Create boolean result
+    result = pd.Series([False] * len(series_val), index=series_val.index, dtype=bool)
+    valid_mask = series_dates.notna()
+
+    if valid_mask.any():
+        valid_dates = pd.to_datetime(series_dates[valid_mask])
+        result.loc[valid_mask] = valid_dates.dt.normalize() < rule_date
+
+    return result
+
+
+def _op_date_after(series_val, rule_val):
+    """Returns True where the series date is after the rule date.
+
+    Supports multiple date formats and ignores time components.
+
+    Args:
+        series_val: pandas Series with date values
+        rule_val: Date string (e.g., "2024-01-30", "30/01/2024")
+
+    Returns:
+        pd.Series[bool]: True where date is after rule date
+
+    Example:
+        >>> series = pd.Series(["2024-01-15", "2024-02-15"])
+        >>> _op_date_after(series, "2024-01-30")
+        0    False
+        1     True
+        dtype: bool
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    rule_date = _parse_date_safe(rule_val)
+    if rule_date is None:
+        return pd.Series([False] * len(series_val), index=series_val.index, dtype=bool)
+
+    # Normalize to ignore time
+    rule_date = rule_date.normalize()
+
+    # Parse series dates with multiple format attempts
+    series_dates = pd.Series([None] * len(series_val), index=series_val.index)
+    for idx, val in series_val.items():
+        parsed = _parse_date_safe(val)
+        if parsed is not None:
+            series_dates[idx] = parsed
+
+    # Create boolean result
+    result = pd.Series([False] * len(series_val), index=series_val.index, dtype=bool)
+    valid_mask = series_dates.notna()
+
+    if valid_mask.any():
+        valid_dates = pd.to_datetime(series_dates[valid_mask])
+        result.loc[valid_mask] = valid_dates.dt.normalize() > rule_date
+
+    return result
+
+
+def _op_date_equals(series_val, rule_val):
+    """Returns True where the series date equals the rule date.
+
+    Supports multiple date formats and ignores time components.
+
+    Args:
+        series_val: pandas Series with date values
+        rule_val: Date string (e.g., "2024-01-30", "30/01/2024")
+
+    Returns:
+        pd.Series[bool]: True where date equals rule date
+
+    Example:
+        >>> series = pd.Series(["2024-01-30", "2024-02-15"])
+        >>> _op_date_equals(series, "2024-01-30")
+        0     True
+        1    False
+        dtype: bool
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    rule_date = _parse_date_safe(rule_val)
+    if rule_date is None:
+        return pd.Series([False] * len(series_val), index=series_val.index, dtype=bool)
+
+    # Normalize to ignore time
+    rule_date = rule_date.normalize()
+
+    # Parse series dates with multiple format attempts
+    series_dates = pd.Series([None] * len(series_val), index=series_val.index)
+    for idx, val in series_val.items():
+        parsed = _parse_date_safe(val)
+        if parsed is not None:
+            series_dates[idx] = parsed
+
+    # Create boolean result
+    result = pd.Series([False] * len(series_val), index=series_val.index, dtype=bool)
+    valid_mask = series_dates.notna()
+
+    if valid_mask.any():
+        valid_dates = pd.to_datetime(series_dates[valid_mask])
+        result.loc[valid_mask] = valid_dates.dt.normalize() == rule_date
+
+    return result
+
+
+def _op_matches_regex(series_val, rule_val):
+    """Returns True where the series value matches the regex pattern.
+
+    Args:
+        series_val: pandas Series to check
+        rule_val: Regex pattern string
+
+    Returns:
+        pd.Series[bool]: True where value matches pattern
+
+    Example:
+        >>> series = pd.Series(["SKU-1234", "SKU-ABCD", "OTHER"])
+        >>> _op_matches_regex(series, r"^SKU-\\d{4}$")
+        0     True
+        1    False
+        2    False
+        dtype: bool
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    compiled_pattern = _compile_regex_safe(rule_val)
+    if compiled_pattern is None:
+        return pd.Series([False] * len(series_val), index=series_val.index)
+
+    # Use pandas vectorized string contains with regex
+    return series_val.astype(str).str.contains(rule_val, na=False, regex=True)
 
 
 class RuleEngine:

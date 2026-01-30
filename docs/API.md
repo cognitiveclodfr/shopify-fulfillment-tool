@@ -299,10 +299,24 @@ OPERATOR_MAP = {
     "does not contain": "_op_not_contains",
     "is greater than": "_op_greater_than",
     "is less than": "_op_less_than",
+    "is greater than or equal": "_op_greater_than_or_equal",
+    "is less than or equal": "_op_less_than_or_equal",
     "starts with": "_op_starts_with",
     "ends with": "_op_ends_with",
     "is empty": "_op_is_empty",
     "is not empty": "_op_is_not_empty",
+    # NEW (v1.9.0): List operators
+    "in list": "_op_in_list",
+    "not in list": "_op_not_in_list",
+    # NEW (v1.9.0): Range operators
+    "between": "_op_between",
+    "not between": "_op_not_between",
+    # NEW (v1.9.0): Date operators
+    "date before": "_op_date_before",
+    "date after": "_op_date_after",
+    "date equals": "_op_date_equals",
+    # NEW (v1.9.0): Regex operator
+    "matches regex": "_op_matches_regex",
 }
 ```
 
@@ -447,6 +461,179 @@ Returns True where series value is null or empty string.
 
 #### `_op_is_not_empty(series_val, rule_val)`
 Returns True where series value is not null and not empty.
+
+### New Operators (v1.9.0)
+
+The rule engine now supports 10 additional operators for more advanced filtering and matching capabilities.
+
+#### List Operators
+
+##### `_op_in_list(series_val, rule_val)`
+Returns True where the series value matches any item in a comma-separated list.
+
+**Features**:
+- Case-insensitive matching
+- Automatic whitespace trimming
+- Handles multiple values: `"DHL, PostOne, DPD"`
+
+**Example**:
+```python
+{
+    "field": "Shipping_Provider",
+    "operator": "in list",
+    "value": "DHL, PostOne, FedEx"
+}
+```
+
+##### `_op_not_in_list(series_val, rule_val)`
+Returns True where the series value does NOT match any item in the list.
+
+**Example**:
+```python
+{
+    "field": "Shipping_Provider",
+    "operator": "not in list",
+    "value": "DPD, UPS"
+}
+```
+
+#### Range Operators
+
+##### `_op_between(series_val, rule_val)`
+Returns True where the series value falls within an inclusive numeric range.
+
+**Format**: `"start-end"` (e.g., `"10-100"`)
+
+**Features**:
+- Inclusive boundaries (10 and 100 both match in "10-100")
+- Supports floats: `"5.5-15.5"`
+- Falls back to string comparison for non-numeric values
+- Validates range order (rejects reversed ranges like "100-10")
+
+**Example**:
+```python
+{
+    "field": "Total_Price",
+    "operator": "between",
+    "value": "50-150"
+}
+```
+
+##### `_op_not_between(series_val, rule_val)`
+Returns True where the series value does NOT fall within the range.
+
+**Example**:
+```python
+{
+    "field": "Total_Price",
+    "operator": "not between",
+    "value": "50-150"
+}
+```
+
+#### Date Operators
+
+All date operators support multiple date formats and ignore time components:
+
+**Supported Formats**:
+- ISO format: `YYYY-MM-DD` (e.g., `"2024-01-30"`)
+- European slash: `DD/MM/YYYY` (e.g., `"30/01/2024"`)
+- European dot: `DD.MM.YYYY` (e.g., `"30.01.2024"`)
+
+##### `_op_date_before(series_val, rule_val)`
+Returns True where the series date is before the rule date.
+
+**Example**:
+```python
+{
+    "field": "Order_Date",
+    "operator": "date before",
+    "value": "2024-01-30"
+}
+```
+
+##### `_op_date_after(series_val, rule_val)`
+Returns True where the series date is after the rule date.
+
+**Example**:
+```python
+{
+    "field": "Order_Date",
+    "operator": "date after",
+    "value": "2024-01-01"
+}
+```
+
+##### `_op_date_equals(series_val, rule_val)`
+Returns True where the series date equals the rule date (time component ignored).
+
+**Example**:
+```python
+{
+    "field": "Order_Date",
+    "operator": "date equals",
+    "value": "30/01/2024"
+}
+```
+
+#### Regex Operator
+
+##### `_op_matches_regex(series_val, rule_val)`
+Returns True where the series value matches a regular expression pattern.
+
+**Features**:
+- Full regex syntax support
+- Pattern caching with LRU cache (maxsize=128) for performance
+- Invalid patterns log warnings and return False
+
+**Example**:
+```python
+{
+    "field": "SKU",
+    "operator": "matches regex",
+    "value": "^SKU-\\d{4}$"  # Matches "SKU-1234", "SKU-5678", etc.
+}
+```
+
+**Common Patterns**:
+- Starts with: `^PREFIX`
+- Ends with: `SUFFIX$`
+- Contains digits: `\\d+`
+- Alphanumeric: `[A-Za-z0-9]+`
+- Phone numbers: `^\\d{3}-\\d{3}-\\d{4}$`
+
+### Error Handling (v1.9.0)
+
+All new operators handle invalid inputs gracefully:
+
+**List Operators**:
+- Empty string → Returns False (no matches)
+- Whitespace only → Returns False
+
+**Range Operators**:
+- Reversed range ("100-10") → Logs warning, returns False
+- Missing start/end ("10-", "-100") → Logs warning, returns False
+- Non-numeric values → Logs warning, returns False
+- Invalid format ("invalid") → Logs warning, returns False
+
+**Date Operators**:
+- Invalid format ("not-a-date") → Logs warning, returns False
+- Invalid month/day ("2024-13-45") → Logs warning, returns False
+- Empty string → Returns False (no warning)
+
+**Regex Operator**:
+- Invalid pattern ("[invalid") → Logs warning, returns False
+- Unclosed groups ("(?P<invalid") → Logs warning, returns False
+- Invalid quantifiers ("*invalid") → Logs warning, returns False
+
+All warnings are logged with `[RULE ENGINE]` prefix for easy filtering.
+
+### Performance Notes (v1.9.0)
+
+- **Regex patterns** are cached using `@lru_cache(maxsize=128)` to avoid recompilation
+- **Vectorized operations** ensure efficient processing of large datasets
+- **Date parsing** happens row-by-row only for date operators to support multiple formats
+- Expected performance: <1 second for 100 orders, <30 seconds for 10,000 orders
 
 ---
 

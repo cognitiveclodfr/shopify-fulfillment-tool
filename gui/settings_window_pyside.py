@@ -96,6 +96,14 @@ class SettingsWindow(QDialog):
         "ends with",
         "is empty",
         "is not empty",
+        "in list",
+        "not in list",
+        "between",
+        "not between",
+        "date before",
+        "date after",
+        "date equals",
+        "matches regex",
     ]
     ACTION_TYPES = [
         "ADD_TAG",
@@ -587,9 +595,23 @@ class SettingsWindow(QDialog):
             if initial_value and str(initial_value) in unique_values:
                 new_widget.setCurrentText(str(initial_value))
         else:
-            # Default to QLineEdit
+            # Default to QLineEdit with smart placeholders
             new_widget = QLineEdit()
-            new_widget.setPlaceholderText("Value")
+
+            # Set operator-specific placeholders
+            placeholder = "Value"  # Default
+
+            if op in ["in list", "not in list"]:
+                placeholder = "Value1, Value2, Value3"
+            elif op in ["between", "not between"]:
+                placeholder = "10-100"
+            elif op in ["date before", "date after", "date equals"]:
+                placeholder = "2024-01-30"
+            elif op == "matches regex":
+                placeholder = "^SKU-\\d{4}$"
+
+            new_widget.setPlaceholderText(placeholder)
+
             if initial_value is not None:
                 new_widget.setText(str(initial_value))
 
