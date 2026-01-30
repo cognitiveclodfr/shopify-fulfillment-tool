@@ -99,13 +99,9 @@ class SettingsWindow(QDialog):
     ]
     ACTION_TYPES = [
         "ADD_TAG",
-        "SET_STATUS",
-        "SET_PRIORITY",
-        "EXCLUDE_FROM_REPORT",
-        "EXCLUDE_SKU",
-        "SET_PACKAGING_TAG",
         "ADD_ORDER_TAG",
         "ADD_INTERNAL_TAG",
+        "SET_STATUS",
     ]
 
     def __init__(self, client_id, client_config, profile_manager, analysis_df=None, parent=None):
@@ -146,19 +142,14 @@ class SettingsWindow(QDialog):
         if "rules" not in self.config_data:
             self.config_data["rules"] = []
 
-        # Ensure order_rules exists
-        if "order_rules" not in self.config_data:
-            self.config_data["order_rules"] = []
-
         if "packing_list_configs" not in self.config_data:
             self.config_data["packing_list_configs"] = []
 
         if "stock_export_configs" not in self.config_data:
             self.config_data["stock_export_configs"] = []
 
-        # Widget lists (existing + NEW)
+        # Widget lists
         self.rule_widgets = []
-        self.order_rule_widgets = []  # NEW
         self.packing_list_widgets = []
         self.stock_export_widgets = []
         self.courier_mapping_widgets = []
@@ -174,7 +165,6 @@ class SettingsWindow(QDialog):
         # Create all tabs
         self.create_general_tab()
         self.create_rules_tab()
-        self.create_order_rules_tab()  # NEW TAB
         self.create_packing_lists_tab()
         self.create_stock_exports_tab()
         self.create_mappings_tab()
@@ -637,143 +627,6 @@ class SettingsWindow(QDialog):
         delete_btn.clicked.connect(
             lambda: self._delete_row_from_list(row_widget, rule_widget_refs["actions"], action_refs)
         )
-
-    def create_order_rules_tab(self):
-        """Creates the 'Order Rules' tab for order-level automation rules.
-
-        Order rules work on entire orders (not line items).
-        Useful for tagging, prioritizing, or filtering orders based on order-level criteria.
-        """
-        tab = QWidget()
-        main_layout = QVBoxLayout(tab)
-
-        # Instructions
-        instructions = QLabel(
-            "Order Rules apply to entire orders (not individual line items).\n"
-            "Use these for order-level decisions like tagging, prioritizing, or excluding orders."
-        )
-        instructions.setWordWrap(True)
-        instructions.setStyleSheet("color: gray; font-style: italic; font-size: 10pt;")
-        main_layout.addWidget(instructions)
-
-        # Scroll area for rules
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-
-        scroll_widget = QWidget()
-        self.order_rules_layout = QVBoxLayout(scroll_widget)
-        scroll.setWidget(scroll_widget)
-
-        main_layout.addWidget(scroll)
-
-        # Add Rule button
-        add_rule_btn = QPushButton("+ Add Order Rule")
-        add_rule_btn.clicked.connect(lambda: self.add_order_rule_widget())
-        main_layout.addWidget(add_rule_btn, 0, Qt.AlignLeft)
-
-        self.tab_widget.addTab(tab, "Order Rules")
-
-        # Populate existing order rules
-        for rule_config in self.config_data.get("order_rules", []):
-            self.add_order_rule_widget(rule_config)
-
-    def add_order_rule_widget(self, config=None):
-        """Adds a new order rule widget.
-
-        Order rules have the same structure as regular rules but work on order level.
-
-        Args:
-            config (dict, optional): Existing rule configuration to load
-        """
-        if not isinstance(config, dict):
-            config = {
-                "name": "New Order Rule",
-                "match": "ALL",
-                "conditions": [],
-                "actions": []
-            }
-
-        # Create rule box
-        rule_box = QGroupBox()
-        rule_layout = QVBoxLayout(rule_box)
-
-        # Header with name and delete button
-        header_layout = QHBoxLayout()
-        header_layout.addWidget(QLabel("Rule Name:"))
-
-        name_edit = QLineEdit(config.get("name", ""))
-        name_edit.setPlaceholderText("E.g., 'High Value Orders', 'Express Shipping'")
-        header_layout.addWidget(name_edit, 1)
-
-        delete_rule_btn = QPushButton("Delete Rule")
-        delete_rule_btn.setStyleSheet("color: red;")
-        header_layout.addWidget(delete_rule_btn)
-
-        rule_layout.addLayout(header_layout)
-
-        # Conditions section
-        conditions_box = QGroupBox("IF")
-        conditions_layout = QVBoxLayout(conditions_box)
-
-        match_layout = QHBoxLayout()
-        match_layout.addWidget(QLabel("Execute actions if"))
-
-        match_combo = WheelIgnoreComboBox()
-        match_combo.addItems(["ALL", "ANY"])
-        match_combo.setCurrentText(config.get("match", "ALL"))
-        match_layout.addWidget(match_combo)
-
-        match_layout.addWidget(QLabel("of the following conditions are met:"))
-        match_layout.addStretch()
-        conditions_layout.addLayout(match_layout)
-
-        conditions_rows_layout = QVBoxLayout()
-        conditions_layout.addLayout(conditions_rows_layout)
-
-        add_condition_btn = QPushButton("Add Condition")
-        conditions_layout.addWidget(add_condition_btn, 0, Qt.AlignLeft)
-
-        rule_layout.addWidget(conditions_box)
-
-        # Actions section
-        actions_box = QGroupBox("THEN perform these actions:")
-        actions_layout = QVBoxLayout(actions_box)
-
-        actions_rows_layout = QVBoxLayout()
-        actions_layout.addLayout(actions_rows_layout)
-
-        add_action_btn = QPushButton("Add Action")
-        actions_layout.addWidget(add_action_btn, 0, Qt.AlignLeft)
-
-        rule_layout.addWidget(actions_box)
-
-        # Add to layout
-        self.order_rules_layout.addWidget(rule_box)
-
-        # Store widget references
-        widget_refs = {
-            "group_box": rule_box,
-            "name_edit": name_edit,
-            "match_combo": match_combo,
-            "conditions_layout": conditions_rows_layout,
-            "actions_layout": actions_rows_layout,
-            "conditions": [],
-            "actions": [],
-        }
-        self.order_rule_widgets.append(widget_refs)
-
-        # Connect buttons
-        add_condition_btn.clicked.connect(lambda: self.add_condition_row(widget_refs))
-        add_action_btn.clicked.connect(lambda: self.add_action_row(widget_refs))
-        delete_rule_btn.clicked.connect(
-            lambda: self._delete_widget_from_list(widget_refs, self.order_rule_widgets)
-        )
-
-        # Populate existing conditions and actions
-        for cond_config in config.get("conditions", []):
-            self.add_condition_row(widget_refs, cond_config)
-        for act_config in config.get("actions", []):
-            self.add_action_row(widget_refs, act_config)
 
     def create_packing_lists_tab(self):
         """Creates the 'Packing Lists' tab for managing report configurations."""
@@ -1477,44 +1330,6 @@ class SettingsWindow(QDialog):
                 })
 
             self.config_data["rules"] = new_rules
-
-            # ========================================
-            # Order Rules Tab - Order-Level Rules
-            # ========================================
-            new_order_rules = []
-            for rule_w in self.order_rule_widgets:
-                conditions = []
-                for c in rule_w["conditions"]:
-                    value_widget = c.get("value_widget")
-                    val = ""
-                    if value_widget:
-                        if isinstance(value_widget, QComboBox):
-                            val = value_widget.currentText()
-                        else:
-                            val = value_widget.text()
-
-                    conditions.append({
-                        "field": c["field"].currentText(),
-                        "operator": c["op"].currentText(),
-                        "value": val,
-                    })
-
-                actions = [
-                    {
-                        "type": a["type"].currentText(),
-                        "value": a["value"].text()
-                    }
-                    for a in rule_w["actions"]
-                ]
-
-                new_order_rules.append({
-                    "name": rule_w["name_edit"].text(),
-                    "match": rule_w["match_combo"].currentText(),
-                    "conditions": conditions,
-                    "actions": actions,
-                })
-
-            self.config_data["order_rules"] = new_order_rules
 
             # ========================================
             # Packing Lists Tab

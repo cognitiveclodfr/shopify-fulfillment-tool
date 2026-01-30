@@ -216,7 +216,7 @@ class RuleEngine:
                     if matches:
                         # Separate actions by scope:
                         # - ADD_TAG applies to ALL rows (for packing list filtering - don't lose unmarked items)
-                        # - ADD_ORDER_TAG, SET_PACKAGING_TAG apply to FIRST row only (for counting)
+                        # - ADD_ORDER_TAG applies to FIRST row only (for counting)
                         actions = rule.get("actions", [])
 
                         # Actions that apply to ALL rows in order (for filtering)
@@ -252,7 +252,7 @@ class RuleEngine:
         """Ensures the DataFrame has the columns required for rule actions.
 
         Scans all rules to find out which columns will be modified or created
-        by the actions (e.g., 'Priority', 'Status_Note'). If these columns
+        by the actions (e.g., 'Status_Note', 'Internal_Tags'). If these columns
         do not already exist in the DataFrame, they are created and initialized
         with a default value. This prevents errors when an action tries to
         modify a non-existent column.
@@ -265,26 +265,15 @@ class RuleEngine:
         for rule in self.rules:
             for action in rule.get("actions", []):
                 action_type = action.get("type", "").upper()
-                if action_type == "SET_PRIORITY":
-                    needed_columns.add("Priority")
-                elif action_type == "EXCLUDE_FROM_REPORT":
-                    needed_columns.add("_is_excluded")
-                elif action_type in ["EXCLUDE_SKU", "ADD_TAG", "ADD_ORDER_TAG"]:
+                if action_type in ["ADD_TAG", "ADD_ORDER_TAG"]:
                     needed_columns.add("Status_Note")
-                elif action_type == "SET_PACKAGING_TAG":
-                    needed_columns.add("Packaging_Tags")
                 elif action_type == "ADD_INTERNAL_TAG":
                     needed_columns.add("Internal_Tags")
+                # SET_STATUS uses existing Order_Fulfillment_Status column
 
         # Add only the necessary columns if they don't already exist
-        if "Priority" in needed_columns and "Priority" not in df.columns:
-            df["Priority"] = "Normal"
-        if "_is_excluded" in needed_columns and "_is_excluded" not in df.columns:
-            df["_is_excluded"] = False
         if "Status_Note" in needed_columns and "Status_Note" not in df.columns:
             df["Status_Note"] = ""
-        if "Packaging_Tags" in needed_columns and "Packaging_Tags" not in df.columns:
-            df["Packaging_Tags"] = ""
         if "Internal_Tags" in needed_columns and "Internal_Tags" not in df.columns:
             df["Internal_Tags"] = "[]"
 
@@ -382,9 +371,21 @@ class RuleEngine:
                 to apply the actions to.
             actions (list[dict]): A list of action dictionaries to execute.
         """
+        import logging
+        logger = logging.getLogger(__name__)
+
         for action in actions:
             action_type = action.get("type", "").upper()
             value = action.get("value")
+
+            # Check for deprecated action types
+            deprecated_actions = ["SET_PRIORITY", "EXCLUDE_FROM_REPORT", "SET_PACKAGING_TAG", "EXCLUDE_SKU"]
+            if action_type in deprecated_actions:
+                logger.warning(
+                    f"[RULE ENGINE] Deprecated action type '{action_type}' encountered and will be ignored. "
+                    f"Recommendation: Use ADD_INTERNAL_TAG for structured metadata instead."
+                )
+                continue  # Skip execution
 
             if action_type == "ADD_TAG":
                 # Per user feedback, ADD_TAG should modify Status_Note, not Tags
@@ -411,10 +412,6 @@ class RuleEngine:
                 new_notes = current_notes.apply(append_note)
                 df.loc[matches, "Status_Note"] = new_notes
 
-            elif action_type == "SET_PACKAGING_TAG":
-                # Set packaging tag (overwrite existing)
-                df.loc[matches, "Packaging_Tags"] = value
-
             elif action_type == "ADD_INTERNAL_TAG":
                 # Add tag to Internal_Tags column using tag_manager
                 from shopify_tool.tag_manager import add_tag
@@ -425,25 +422,6 @@ class RuleEngine:
 
             elif action_type == "SET_STATUS":
                 df.loc[matches, "Order_Fulfillment_Status"] = value
-
-            elif action_type == "SET_PRIORITY":
-                df.loc[matches, "Priority"] = value
-
-            elif action_type == "EXCLUDE_FROM_REPORT":
-                df.loc[matches, "_is_excluded"] = True
-
-            elif action_type == "EXCLUDE_SKU":
-                # This is a complex, destructive action.
-                # For now, we will just mark it for potential later processing.
-                # A full implementation would require re-evaluating the entire order.
-                # A simple approach is to set its quantity to 0 and flag it.
-                if "SKU" in df.columns and "Quantity" in df.columns:
-                    sku_to_exclude = value
-                    # We need to find rows that match the rule AND the SKU
-                    sku_matches = df["SKU"] == sku_to_exclude
-                    final_matches = matches & sku_matches
-                    df.loc[final_matches, "Quantity"] = 0
-                    df.loc[final_matches, "Status_Note"] = df.loc[final_matches, "Status_Note"] + " SKU_EXCLUDED"
 
     def _evaluate_order_conditions(self, order_df, conditions, match_type):
         """

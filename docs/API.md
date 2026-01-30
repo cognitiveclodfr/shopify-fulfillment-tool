@@ -339,8 +339,8 @@ def __init__(self, rules_config)
             "value": "HighValue"
         },
         {
-            "type": "SET_PRIORITY",
-            "value": "High"
+            "type": "ADD_INTERNAL_TAG",
+            "value": "priority:high"
         }
     ]
 }
@@ -399,12 +399,20 @@ Executes a list of actions on matching rows.
 - `matches` (pd.Series[bool]): Boolean series of rows to modify
 - `actions` (list[dict]): List of action configurations
 
-**Action Types**:
-- `ADD_TAG`: Appends value to Status_Note
+**Active Action Types** (as of v1.9.0):
+- `ADD_TAG`: Appends value to Status_Note column
+- `ADD_ORDER_TAG`: Appends value to Status_Note (order-level only)
+- `ADD_INTERNAL_TAG`: Adds structured tag to Internal_Tags JSON column (recommended for metadata)
 - `SET_STATUS`: Changes Order_Fulfillment_Status
-- `SET_PRIORITY`: Sets Priority field
-- `EXCLUDE_FROM_REPORT`: Marks row as excluded
-- `EXCLUDE_SKU`: Sets quantity to 0 for specific SKU
+
+**Deprecated Action Types** (removed in v1.9.0):
+The following action types have been removed: `SET_PRIORITY`, `EXCLUDE_FROM_REPORT`, `SET_PACKAGING_TAG`, `EXCLUDE_SKU`.
+If encountered, these actions will log a warning and be skipped. Use `ADD_INTERNAL_TAG` for structured metadata instead.
+
+**Migration Examples**:
+- `SET_PRIORITY: "High"` → `ADD_INTERNAL_TAG: "priority:high"`
+- `EXCLUDE_FROM_REPORT` → `ADD_INTERNAL_TAG: "exclude_from_report"`
+- `SET_PACKAGING_TAG: "BOX"` → `ADD_INTERNAL_TAG: "packaging:box"`
 
 ### Operator Functions
 
@@ -1328,8 +1336,7 @@ CONDITION_OPERATORS = [
 ]
 
 ACTION_TYPES = [
-    "ADD_TAG", "SET_STATUS", "SET_PRIORITY",
-    "EXCLUDE_FROM_REPORT", "EXCLUDE_SKU"
+    "ADD_TAG", "ADD_ORDER_TAG", "ADD_INTERNAL_TAG", "SET_STATUS"
 ]
 ```
 

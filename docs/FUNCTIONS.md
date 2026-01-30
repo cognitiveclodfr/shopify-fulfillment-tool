@@ -834,8 +834,8 @@ return str(method).title()
             "value": "HighValue"
         },
         {
-            "type": "SET_PRIORITY",
-            "value": "High"
+            "type": "ADD_INTERNAL_TAG",
+            "value": "priority:high"
         }
     ]
 }
@@ -918,13 +918,13 @@ processed_df = engine.apply(orders_df)
    - `_is_excluded`: Default False
    - `Status_Note`: Default ""
 
-**Column Requirements by Action**:
+**Column Requirements by Action** (Active Actions Only):
 | Action Type | Required Column | Default Value |
 |-------------|-----------------|---------------|
-| SET_PRIORITY | Priority | "Normal" |
-| EXCLUDE_FROM_REPORT | _is_excluded | False |
-| EXCLUDE_SKU | Status_Note | "" |
 | ADD_TAG | Status_Note | "" |
+| ADD_ORDER_TAG | Status_Note | "" |
+| ADD_INTERNAL_TAG | Internal_Tags | "[]" |
+| SET_STATUS | Order_Fulfillment_Status | (existing) |
 
 ---
 
@@ -1000,9 +1000,13 @@ matches = _get_matching_rows(df, rule)
 
 **Action Types and Behavior**:
 
+> **Note:** As of v1.9.0, `SET_PRIORITY`, `EXCLUDE_FROM_REPORT`, `SET_PACKAGING_TAG`, and `EXCLUDE_SKU` have been deprecated. Use `ADD_INTERNAL_TAG` for structured metadata.
+
+**Active Action Types:**
+
 **1. ADD_TAG**:
 ```python
-# Appends to Status_Note, prevents duplicates
+# Appends to Status_Note column, prevents duplicates
 current_notes = df.loc[matches, "Status_Note"]
 new_notes = current_notes.apply(lambda note:
     note if value in note.split(", ") else f"{note}, {value}" if note else value
@@ -1010,29 +1014,35 @@ new_notes = current_notes.apply(lambda note:
 df.loc[matches, "Status_Note"] = new_notes
 ```
 
-**2. SET_STATUS**:
+**2. ADD_ORDER_TAG**:
+```python
+# Appends to Status_Note (order-level only, applies to first row)
+# Same behavior as ADD_TAG but used in order-level rules
+current_notes = df.loc[matches, "Status_Note"]
+new_notes = current_notes.apply(lambda note:
+    note if value in note.split(", ") else f"{note}, {value}" if note else value
+)
+df.loc[matches, "Status_Note"] = new_notes
+```
+
+**3. ADD_INTERNAL_TAG** (Recommended):
+```python
+# Adds structured tag to Internal_Tags JSON column
+from shopify_tool.tag_manager import add_tag
+current_tags = df.loc[matches, "Internal_Tags"]
+new_tags = current_tags.apply(lambda t: add_tag(t, value))
+df.loc[matches, "Internal_Tags"] = new_tags
+```
+
+**4. SET_STATUS**:
 ```python
 df.loc[matches, "Order_Fulfillment_Status"] = value
 ```
 
-**3. SET_PRIORITY**:
-```python
-df.loc[matches, "Priority"] = value
-```
-
-**4. EXCLUDE_FROM_REPORT**:
-```python
-df.loc[matches, "_is_excluded"] = True
-```
-
-**5. EXCLUDE_SKU** (Complex):
-```python
-# Only affects rows matching both the rule AND the specific SKU
-sku_matches = df["SKU"] == value
-final_matches = matches & sku_matches
-df.loc[final_matches, "Quantity"] = 0
-df.loc[final_matches, "Status_Note"] += " SKU_EXCLUDED"
-```
+**Migration Examples:**
+- `SET_PRIORITY: "High"` → `ADD_INTERNAL_TAG: "priority:high"`
+- `EXCLUDE_FROM_REPORT` → `ADD_INTERNAL_TAG: "exclude_from_report"`
+- `SET_PACKAGING_TAG: "BOX"` → `ADD_INTERNAL_TAG: "packaging:box"`
 
 ---
 
