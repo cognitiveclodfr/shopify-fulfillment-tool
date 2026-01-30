@@ -65,8 +65,7 @@ class ProfileManager:
     _config_cache: Dict[str, Tuple[Dict, datetime]] = {}
     CACHE_TIMEOUT_SECONDS = 60  # Cache valid for 1 minute
 
-    # Metadata cache with 5-minute TTL
-    _metadata_cache: Dict[str, Tuple[Dict, datetime]] = {}
+    # Class-level constants for metadata cache
     METADATA_CACHE_TIMEOUT_SECONDS = 300  # 5 minutes
 
     def __init__(self, base_path: str = None):
@@ -97,6 +96,9 @@ class ProfileManager:
         self.sessions_dir = self.base_path / "Sessions"
         self.stats_dir = self.base_path / "Stats"
         self.logs_dir = self.base_path / "Logs" / "shopify_tool"
+
+        # Instance-level metadata cache
+        self._metadata_cache: Dict[str, Tuple[Dict, datetime]] = {}
 
         self.connection_timeout = 5
         self.is_network_available = self._test_connection()
@@ -1292,8 +1294,7 @@ class ProfileManager:
             self._metadata_cache[cache_key] = (metadata, datetime.now())
             return metadata
 
-    @classmethod
-    def invalidate_metadata_cache(cls, client_id: Optional[str] = None):
+    def invalidate_metadata_cache(self, client_id: Optional[str] = None):
         """Invalidate metadata cache.
 
         Args:
@@ -1301,11 +1302,11 @@ class ProfileManager:
         """
         if client_id:
             cache_key = f"CLIENT_{client_id.upper()}"
-            if cache_key in cls._metadata_cache:
-                del cls._metadata_cache[cache_key]
+            if cache_key in self._metadata_cache:
+                del self._metadata_cache[cache_key]
                 logger.debug(f"Invalidated metadata cache for {cache_key}")
         else:
-            cls._metadata_cache.clear()
+            self._metadata_cache.clear()
             logger.debug("Cleared entire metadata cache")
 
     def update_last_accessed(self, client_id: str) -> bool:
