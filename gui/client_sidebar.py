@@ -20,7 +20,7 @@ from shopify_tool.profile_manager import ProfileManager
 from shopify_tool.groups_manager import GroupsManager
 from gui.client_card import ClientCard
 from gui.groups_management_dialog import GroupsManagementDialog
-from gui.client_settings_dialog import ClientSettingsDialog
+from gui.client_settings_dialog import ClientSettingsDialog, ClientCreationDialog
 
 logger = logging.getLogger(__name__)
 
@@ -238,7 +238,7 @@ class ClientSidebar(QWidget):
 
         header_layout.addLayout(row1)
 
-        # Row 2: Refresh + Manage Groups buttons
+        # Row 2: Refresh + Create + Manage Groups buttons
         row2 = QHBoxLayout()
 
         self.refresh_btn = QPushButton("⟳")
@@ -246,6 +246,12 @@ class ClientSidebar(QWidget):
         self.refresh_btn.setToolTip("Refresh client list")
         self.refresh_btn.clicked.connect(self.refresh)
         row2.addWidget(self.refresh_btn)
+
+        # NEW: Create button
+        self.create_btn = QPushButton("+ Create")
+        self.create_btn.setToolTip("Create new client")
+        self.create_btn.clicked.connect(self._open_create_client_dialog)
+        row2.addWidget(self.create_btn)
 
         self.manage_groups_btn = QPushButton("Manage Groups")
         self.manage_groups_btn.setToolTip("Create/edit/delete groups")
@@ -257,38 +263,57 @@ class ClientSidebar(QWidget):
         layout.addWidget(header_widget)
 
     def refresh(self):
-        """Refresh client list and rebuild sections."""
+        """Refresh client list and rebuild sections with performance logging."""
+        import time
+
         try:
-            logger.info("Refreshing client sidebar")
+            overall_start = time.time()
+            logger.info("Starting sidebar refresh")
+
+            # Disable updates during rebuild
+            self.setUpdatesEnabled(False)
 
             # Clear existing sections
-            while self.sections_layout.count() > 1:  # Keep stretch
+            clear_start = time.time()
+            while self.sections_layout.count() > 1:
                 item = self.sections_layout.takeAt(0)
                 if item.widget():
                     item.widget().deleteLater()
 
-            # Clear client cards tracking
             self.client_cards.clear()
+            clear_elapsed = (time.time() - clear_start) * 1000
+            logger.debug(f"Cleared sections in {clear_elapsed:.1f}ms")
 
             # Load groups
+            groups_start = time.time()
             groups_data = self.groups_manager.load_groups()
             special_groups = groups_data.get("special_groups", {})
             custom_groups = self.groups_manager.list_groups()
+            groups_elapsed = (time.time() - groups_start) * 1000
+            logger.debug(f"Loaded groups in {groups_elapsed:.1f}ms")
 
             # Get all clients
+            clients_start = time.time()
             all_clients = self.profile_manager.list_clients()
+            clients_elapsed = (time.time() - clients_start) * 1000
+            logger.debug(f"Listed {len(all_clients)} clients in {clients_elapsed:.1f}ms")
 
             # Build sections
             clients_in_sections = set()
+            sections_start = time.time()
 
             # 1. Pinned section
+            pinned_start = time.time()
             pinned_config = special_groups.get("pinned", {})
             pinned_section = self._create_pinned_section(all_clients, pinned_config)
             if pinned_section.card_count() > 0:
                 self.sections_layout.insertWidget(self.sections_layout.count() - 1, pinned_section)
                 clients_in_sections.update(self._get_section_client_ids(pinned_section))
+            pinned_elapsed = (time.time() - pinned_start) * 1000
+            logger.debug(f"Created pinned section ({pinned_section.card_count()} cards) in {pinned_elapsed:.1f}ms")
 
             # 2. Custom groups
+            groups_section_start = time.time()
             for group in custom_groups:
                 group_id = group.get("id")
                 group_name = group.get("name", "Unknown")
@@ -298,27 +323,39 @@ class ClientSidebar(QWidget):
                 if group_section.card_count() > 0:
                     self.sections_layout.insertWidget(self.sections_layout.count() - 1, group_section)
                     clients_in_sections.update(self._get_section_client_ids(group_section))
+            groups_section_elapsed = (time.time() - groups_section_start) * 1000
+            logger.debug(f"Created {len(custom_groups)} group sections in {groups_section_elapsed:.1f}ms")
 
-            # 3. All Clients section (clients not in other sections)
+            # 3. All Clients section
+            all_start = time.time()
             all_config = special_groups.get("all", {})
             remaining_clients = [c for c in all_clients if c not in clients_in_sections]
             if remaining_clients:
                 all_section = self._create_all_section(remaining_clients, all_config)
                 self.sections_layout.insertWidget(self.sections_layout.count() - 1, all_section)
+            all_elapsed = (time.time() - all_start) * 1000
+            logger.debug(f"Created all section ({len(remaining_clients)} cards) in {all_elapsed:.1f}ms")
+
+            sections_elapsed = (time.time() - sections_start) * 1000
+
+            # Re-enable updates
+            self.setUpdatesEnabled(True)
 
             # Re-highlight active client
             if self.active_client_id:
                 self.set_active_client(self.active_client_id)
 
-            logger.info(f"Sidebar refreshed: {len(all_clients)} clients, {len(custom_groups)} groups")
+            overall_elapsed = (time.time() - overall_start) * 1000
+            logger.info(
+                f"Sidebar refresh complete: {len(all_clients)} clients, "
+                f"{len(custom_groups)} groups in {overall_elapsed:.1f}ms "
+                f"(sections: {sections_elapsed:.1f}ms)"
+            )
 
         except Exception as e:
+            self.setUpdatesEnabled(True)
             logger.error(f"Failed to refresh sidebar: {e}", exc_info=True)
-            QMessageBox.warning(
-                self,
-                "Refresh Error",
-                f"Failed to refresh sidebar:\n{str(e)}"
-            )
+            QMessageBox.warning(self, "Refresh Error", f"Failed to refresh sidebar:\n{str(e)}")
 
     def _create_pinned_section(self, all_clients: List[str], config: Dict) -> SectionWidget:
         """Create Pinned section.
@@ -493,11 +530,11 @@ class ClientSidebar(QWidget):
 
         # Show/hide sections and header elements
         if self.is_expanded:
-            # Collapsing
-            animation.finished.connect(lambda: self._set_collapsed_state(True))
+            # Collapsing: Hide content BEFORE animation starts
+            self._set_collapsed_state(True)
         else:
-            # Expanding
-            self._set_collapsed_state(False)
+            # Expanding: Show content AFTER animation completes
+            animation.finished.connect(lambda: self._set_collapsed_state(False))
 
         animation.start()
         min_animation.start()
@@ -528,6 +565,7 @@ class ClientSidebar(QWidget):
             self.scroll_area.hide()
             self.title_label.hide()
             self.refresh_btn.hide()
+            self.create_btn.hide()
             self.manage_groups_btn.hide()
 
             # Show collapsed indicator
@@ -542,6 +580,7 @@ class ClientSidebar(QWidget):
             self.scroll_area.show()
             self.title_label.show()
             self.refresh_btn.show()
+            self.create_btn.show()
             self.manage_groups_btn.show()
 
             # Hide collapsed indicator
@@ -687,3 +726,26 @@ class ClientSidebar(QWidget):
         if dialog.exec():
             # Refresh sidebar after changes
             self.refresh()
+
+    def _open_create_client_dialog(self):
+        """Open dialog for creating new client."""
+        dialog = ClientCreationDialog(
+            profile_manager=self.profile_manager,
+            groups_manager=self.groups_manager,
+            parent=self
+        )
+
+        if dialog.exec():
+            # Get the created client ID
+            created_client_id = dialog.client_id_input.text().strip().upper()
+
+            # Refresh sidebar to show new client
+            self.refresh()
+
+            # Set as active and highlight
+            self.set_active_client(created_client_id)
+
+            # Emit signal so main window can switch to it
+            self.client_selected.emit(created_client_id)
+
+            logger.info(f"Created and selected new client: CLIENT_{created_client_id}")

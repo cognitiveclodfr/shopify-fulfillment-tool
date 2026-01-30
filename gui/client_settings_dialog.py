@@ -25,9 +25,15 @@ logger = logging.getLogger(__name__)
 class ClientCreationDialog(QDialog):
     """Dialog for creating a new client profile."""
 
-    def __init__(self, profile_manager: ProfileManager, parent=None):
+    def __init__(
+        self,
+        profile_manager: ProfileManager,
+        groups_manager: Optional[GroupsManager] = None,
+        parent=None
+    ):
         super().__init__(parent)
         self.profile_manager = profile_manager
+        self.groups_manager = groups_manager
         self.setWindowTitle("Create New Client")
         self.setModal(True)
         self.setMinimumWidth(400)
@@ -52,7 +58,35 @@ class ClientCreationDialog(QDialog):
         self.client_name_input.setToolTip("Full name of the client")
         form_layout.addRow("Client Name:", self.client_name_input)
 
+        # Group dropdown
+        self.group_combo = QComboBox()
+        self.group_combo.addItem("(No group)", None)
+        self.group_combo.setToolTip("Assign client to a group")
+        form_layout.addRow("Group:", self.group_combo)
+
+        # Color picker
+        color_layout = QHBoxLayout()
+        self.color_display = QLabel()
+        self.color_display.setFixedSize(40, 30)
+        self.color_display.setStyleSheet("border: 1px solid #ccc; background-color: #4CAF50;")
+        color_layout.addWidget(self.color_display)
+
+        self.color_button = QPushButton("Choose Color")
+        self.color_button.clicked.connect(self._choose_color)
+        color_layout.addWidget(self.color_button)
+        color_layout.addStretch()
+
+        self.current_color = "#4CAF50"  # Default
+        form_layout.addRow("Color:", color_layout)
+
+        # Pin checkbox
+        self.pin_checkbox = QCheckBox("Pin to top of sidebar")
+        form_layout.addRow("Pinned:", self.pin_checkbox)
+
         layout.addLayout(form_layout)
+
+        # Load groups (will disable combo if manager not provided)
+        self._load_groups()
 
         # Add info label
         info_label = QLabel(
@@ -70,6 +104,30 @@ class ClientCreationDialog(QDialog):
         button_box.accepted.connect(self.validate_and_accept)
         button_box.rejected.connect(self.reject)
         layout.addWidget(button_box)
+
+    def _choose_color(self):
+        """Open color picker dialog."""
+        current_color = QColor(self.current_color)
+        color = QColorDialog.getColor(current_color, self, "Choose Client Color")
+
+        if color.isValid():
+            self.current_color = color.name()
+            self.color_display.setStyleSheet(
+                f"background-color: {self.current_color}; border: 1px solid #ccc;"
+            )
+
+    def _load_groups(self):
+        """Load available groups into dropdown."""
+        if not self.groups_manager:
+            self.group_combo.setEnabled(False)
+            return
+
+        groups = self.groups_manager.list_groups()
+        for group in groups:
+            self.group_combo.addItem(
+                group.get("name", "Unknown"),
+                group.get("id")
+            )
 
     def validate_and_accept(self):
         """Validate inputs and create client profile."""
@@ -95,6 +153,16 @@ class ClientCreationDialog(QDialog):
         try:
             success = self.profile_manager.create_client_profile(client_id, client_name)
             if success:
+                # Update ui_settings with optional fields
+                ui_settings = {
+                    "is_pinned": self.pin_checkbox.isChecked(),
+                    "group_id": self.group_combo.currentData(),
+                    "custom_color": self.current_color,
+                    "custom_badges": [],
+                    "display_order": 0
+                }
+                self.profile_manager.update_ui_settings(client_id, ui_settings)
+
                 QMessageBox.information(
                     self,
                     "Success",

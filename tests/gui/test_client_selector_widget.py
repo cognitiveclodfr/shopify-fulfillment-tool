@@ -17,6 +17,7 @@ from PySide6.QtCore import Qt
 
 from gui.client_settings_dialog import ClientSelectorWidget, ClientCreationDialog
 from shopify_tool.profile_manager import ProfileManager, ValidationError
+from shopify_tool.groups_manager import GroupsManager
 
 
 @pytest.fixture
@@ -120,3 +121,139 @@ def test_set_current_client_id(client_selector):
     """Test setting current client ID."""
     client_selector.set_current_client_id("B")
     assert client_selector.client_combo.currentText() == "B"
+
+
+# ==================== Enhanced ClientCreationDialog Tests ====================
+
+
+@pytest.fixture
+def mock_groups_manager():
+    """Create a mock GroupsManager."""
+    gm = Mock(spec=GroupsManager)
+    gm.list_groups.return_value = [
+        {"id": "group-1", "name": "VIP Clients", "color": "#FF5722"},
+        {"id": "group-2", "name": "Priority", "color": "#2196F3"}
+    ]
+    return gm
+
+
+def test_client_creation_dialog_with_groups_manager(qtbot, mock_profile_manager, mock_groups_manager):
+    """Test that dialog with groups_manager populates dropdown."""
+    dialog = ClientCreationDialog(
+        profile_manager=mock_profile_manager,
+        groups_manager=mock_groups_manager
+    )
+    qtbot.addWidget(dialog)
+
+    # Should load groups into combo
+    mock_groups_manager.list_groups.assert_called_once()
+
+    # Combo should have 3 items: "(No group)" + 2 groups
+    assert dialog.group_combo.count() == 3
+    assert dialog.group_combo.itemText(0) == "(No group)"
+    assert dialog.group_combo.itemText(1) == "VIP Clients"
+    assert dialog.group_combo.itemText(2) == "Priority"
+
+
+def test_client_creation_dialog_without_groups_manager(qtbot, mock_profile_manager):
+    """Test that dialog without groups_manager disables dropdown."""
+    dialog = ClientCreationDialog(
+        profile_manager=mock_profile_manager,
+        groups_manager=None
+    )
+    qtbot.addWidget(dialog)
+
+    # Group combo should be disabled
+    assert not dialog.group_combo.isEnabled()
+
+
+def test_client_creation_dialog_color_picker(qtbot, mock_profile_manager):
+    """Test color picker changes current_color."""
+    dialog = ClientCreationDialog(mock_profile_manager)
+    qtbot.addWidget(dialog)
+
+    # Default color should be set
+    assert dialog.current_color == "#4CAF50"
+
+    # Mock color dialog to return new color
+    from PySide6.QtGui import QColor
+    with patch('gui.client_settings_dialog.QColorDialog.getColor') as mock_color_dialog:
+        new_color = QColor("#FF0000")
+        mock_color_dialog.return_value = new_color
+
+        # Click color button
+        dialog.color_button.click()
+
+        # Color should be updated
+        assert dialog.current_color == "#ff0000"  # Qt normalizes to lowercase
+
+
+def test_client_creation_dialog_pin_checkbox(qtbot, mock_profile_manager):
+    """Test pin checkbox state."""
+    dialog = ClientCreationDialog(mock_profile_manager)
+    qtbot.addWidget(dialog)
+
+    # Initially unchecked
+    assert not dialog.pin_checkbox.isChecked()
+
+    # Check it
+    dialog.pin_checkbox.setChecked(True)
+    assert dialog.pin_checkbox.isChecked()
+
+
+def test_client_creation_dialog_saves_ui_settings(qtbot, mock_profile_manager, mock_groups_manager):
+    """Test that ui_settings are saved on creation."""
+    mock_profile_manager.create_client_profile.return_value = True
+
+    dialog = ClientCreationDialog(
+        profile_manager=mock_profile_manager,
+        groups_manager=mock_groups_manager
+    )
+    qtbot.addWidget(dialog)
+
+    # Set form values
+    dialog.client_id_input.setText("TEST")
+    dialog.client_name_input.setText("Test Client")
+    dialog.pin_checkbox.setChecked(True)
+    dialog.group_combo.setCurrentIndex(1)  # Select first group
+    dialog.current_color = "#FF5722"
+
+    with patch.object(ProfileManager, 'validate_client_id', return_value=(True, "")):
+        with patch('gui.client_settings_dialog.QMessageBox.information'):
+            dialog.validate_and_accept()
+
+            # Should create profile
+            mock_profile_manager.create_client_profile.assert_called_once_with("TEST", "Test Client")
+
+            # Should update ui_settings
+            mock_profile_manager.update_ui_settings.assert_called_once()
+            call_args = mock_profile_manager.update_ui_settings.call_args
+            client_id = call_args[0][0]
+            ui_settings = call_args[0][1]
+
+            assert client_id == "TEST"
+            assert ui_settings["is_pinned"] is True
+            assert ui_settings["custom_color"] == "#FF5722"
+            assert ui_settings["group_id"] == "group-1"  # First group ID
+            assert ui_settings["custom_badges"] == []
+            assert ui_settings["display_order"] == 0
+
+
+def test_client_creation_dialog_color_picker_cancel(qtbot, mock_profile_manager):
+    """Test that canceling color picker keeps original color."""
+    dialog = ClientCreationDialog(mock_profile_manager)
+    qtbot.addWidget(dialog)
+
+    original_color = dialog.current_color
+
+    # Mock color dialog to return invalid color (user canceled)
+    from PySide6.QtGui import QColor
+    with patch('gui.client_settings_dialog.QColorDialog.getColor') as mock_color_dialog:
+        invalid_color = QColor()  # Invalid color
+        mock_color_dialog.return_value = invalid_color
+
+        # Click color button
+        dialog.color_button.click()
+
+        # Color should remain unchanged
+        assert dialog.current_color == original_color

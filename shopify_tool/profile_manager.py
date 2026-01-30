@@ -65,6 +65,10 @@ class ProfileManager:
     _config_cache: Dict[str, Tuple[Dict, datetime]] = {}
     CACHE_TIMEOUT_SECONDS = 60  # Cache valid for 1 minute
 
+    # Metadata cache with 5-minute TTL
+    _metadata_cache: Dict[str, Tuple[Dict, datetime]] = {}
+    METADATA_CACHE_TIMEOUT_SECONDS = 300  # 5 minutes
+
     def __init__(self, base_path: str = None):
         """Initialize ProfileManager with automatic environment detection.
 
@@ -1210,41 +1214,48 @@ class ProfileManager:
             "display_order": 0
         })
 
-    def calculate_metadata(self, client_id: str) -> Dict[str, Any]:
-        """Calculate client metadata from filesystem.
-
-        Queries Sessions/CLIENT_{id}/ directory to count sessions
-        and find most recent session timestamp.
+    def calculate_metadata(self, client_id: str, force_refresh: bool = False) -> Dict[str, Any]:
+        """Calculate client metadata from filesystem with 5-minute caching.
 
         Args:
             client_id: Client ID
+            force_refresh: If True, bypass cache and recalculate
 
         Returns:
-            Dict with:
-            {
-                "total_sessions": int,
-                "last_session_date": str (ISO format) or None,
-                "last_accessed": str (ISO format)
-            }
-
-        Note:
-            Fast operation (1-10ms), no caching needed
+            Dict with total_sessions, last_session_date, last_accessed
         """
         import re
+        import time
 
         client_id = client_id.upper()
-        sessions_dir = self.sessions_dir / f"CLIENT_{client_id}"
+        cache_key = f"CLIENT_{client_id}"
+
+        # Check cache (unless force refresh)
+        if not force_refresh and cache_key in self._metadata_cache:
+            cached_data, cached_time = self._metadata_cache[cache_key]
+            age_seconds = (datetime.now() - cached_time).total_seconds()
+
+            if age_seconds < self.METADATA_CACHE_TIMEOUT_SECONDS:
+                logger.debug(
+                    f"Metadata cache HIT for {cache_key} "
+                    f"(age: {age_seconds:.1f}s, TTL: {self.METADATA_CACHE_TIMEOUT_SECONDS}s)"
+                )
+                return cached_data
+
+        # Cache miss - calculate metadata
+        start_time = time.time()
+        sessions_dir = self.sessions_dir / cache_key
 
         if not sessions_dir.exists():
-            # Return zero-state metadata
-            return {
+            metadata = {
                 "total_sessions": 0,
                 "last_session_date": None,
                 "last_accessed": datetime.now().isoformat()
             }
+            self._metadata_cache[cache_key] = (metadata, datetime.now())
+            return metadata
 
         try:
-            # Fast directory scan - no recursive traversal
             session_folders = [
                 d for d in sessions_dir.iterdir()
                 if d.is_dir() and re.match(r'\d{4}-\d{2}-\d{2}_\d+', d.name)
@@ -1252,27 +1263,50 @@ class ProfileManager:
 
             total_sessions = len(session_folders)
 
-            # Find most recent session
             last_session_date = None
             if session_folders:
-                # Sort by name (ISO date format sorts correctly)
                 latest = sorted(session_folders, key=lambda d: d.name)[-1]
-                date_part = latest.name.split('_')[0]  # Extract YYYY-MM-DD
+                date_part = latest.name.split('_')[0]
                 last_session_date = date_part
 
-            return {
+            metadata = {
                 "total_sessions": total_sessions,
                 "last_session_date": last_session_date,
                 "last_accessed": datetime.now().isoformat()
             }
 
+            self._metadata_cache[cache_key] = (metadata, datetime.now())
+
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.debug(f"Metadata calculated for {cache_key} in {elapsed_ms:.1f}ms")
+
+            return metadata
+
         except Exception as e:
-            logger.warning(f"Failed to calculate metadata for CLIENT_{client_id}: {e}")
-            return {
+            logger.warning(f"Failed to calculate metadata for {cache_key}: {e}")
+            metadata = {
                 "total_sessions": 0,
                 "last_session_date": None,
                 "last_accessed": datetime.now().isoformat()
             }
+            self._metadata_cache[cache_key] = (metadata, datetime.now())
+            return metadata
+
+    @classmethod
+    def invalidate_metadata_cache(cls, client_id: Optional[str] = None):
+        """Invalidate metadata cache.
+
+        Args:
+            client_id: Specific client to invalidate, or None to clear all
+        """
+        if client_id:
+            cache_key = f"CLIENT_{client_id.upper()}"
+            if cache_key in cls._metadata_cache:
+                del cls._metadata_cache[cache_key]
+                logger.debug(f"Invalidated metadata cache for {cache_key}")
+        else:
+            cls._metadata_cache.clear()
+            logger.debug("Cleared entire metadata cache")
 
     def update_last_accessed(self, client_id: str) -> bool:
         """Update last_accessed timestamp in metadata.
