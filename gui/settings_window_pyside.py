@@ -24,8 +24,9 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QFileDialog,
     QSpinBox,
+    QDateEdit,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer, QDate
 
 from shopify_tool.core import get_unique_column_values
 from gui.column_mapping_widget import ColumnMappingWidget
@@ -96,16 +97,25 @@ class SettingsWindow(QDialog):
         "ends with",
         "is empty",
         "is not empty",
+        "in list",
+        "not in list",
+        "between",
+        "not between",
+        "date before",
+        "date after",
+        "date equals",
+        "matches regex",
     ]
     ACTION_TYPES = [
         "ADD_TAG",
-        "SET_STATUS",
-        "SET_PRIORITY",
-        "EXCLUDE_FROM_REPORT",
-        "EXCLUDE_SKU",
-        "SET_PACKAGING_TAG",
         "ADD_ORDER_TAG",
         "ADD_INTERNAL_TAG",
+        "SET_STATUS",
+        "COPY_FIELD",
+        "CALCULATE",
+        "SET_MULTI_TAGS",
+        "ALERT_NOTIFICATION",
+        "ADD_PRODUCT",
     ]
 
     def __init__(self, client_id, client_config, profile_manager, analysis_df=None, parent=None):
@@ -146,19 +156,14 @@ class SettingsWindow(QDialog):
         if "rules" not in self.config_data:
             self.config_data["rules"] = []
 
-        # Ensure order_rules exists
-        if "order_rules" not in self.config_data:
-            self.config_data["order_rules"] = []
-
         if "packing_list_configs" not in self.config_data:
             self.config_data["packing_list_configs"] = []
 
         if "stock_export_configs" not in self.config_data:
             self.config_data["stock_export_configs"] = []
 
-        # Widget lists (existing + NEW)
+        # Widget lists
         self.rule_widgets = []
-        self.order_rule_widgets = []  # NEW
         self.packing_list_widgets = []
         self.stock_export_widgets = []
         self.courier_mapping_widgets = []
@@ -174,7 +179,6 @@ class SettingsWindow(QDialog):
         # Create all tabs
         self.create_general_tab()
         self.create_rules_tab()
-        self.create_order_rules_tab()  # NEW TAB
         self.create_packing_lists_tab()
         self.create_stock_exports_tab()
         self.create_mappings_tab()
@@ -196,6 +200,78 @@ class SettingsWindow(QDialog):
         """Generic helper to delete a row widget and its reference from a list."""
         row_widget.deleteLater()
         ref_list.remove(ref_dict)
+
+    def _move_rule_up(self, widget_refs):
+        """Moves a rule up in the list (higher priority)."""
+        idx = self.rule_widgets.index(widget_refs)
+        if idx == 0:
+            return  # Already at top
+
+        # Swap in list
+        self.rule_widgets[idx], self.rule_widgets[idx - 1] = \
+            self.rule_widgets[idx - 1], self.rule_widgets[idx]
+
+        # Swap in UI layout
+        layout = self.rules_layout
+        widget = widget_refs["group_box"]
+        prev_widget = self.rule_widgets[idx]["group_box"]
+
+        layout.removeWidget(widget)
+        layout.removeWidget(prev_widget)
+        layout.insertWidget(idx - 1, widget)
+        layout.insertWidget(idx, prev_widget)
+
+        # Update priority labels
+        self._update_priority_labels()
+
+    def _move_rule_down(self, widget_refs):
+        """Moves a rule down in the list (lower priority)."""
+        idx = self.rule_widgets.index(widget_refs)
+        if idx >= len(self.rule_widgets) - 1:
+            return  # Already at bottom
+
+        # Swap in list
+        self.rule_widgets[idx], self.rule_widgets[idx + 1] = \
+            self.rule_widgets[idx + 1], self.rule_widgets[idx]
+
+        # Swap in UI layout
+        layout = self.rules_layout
+        widget = widget_refs["group_box"]
+        next_widget = self.rule_widgets[idx]["group_box"]
+
+        layout.removeWidget(widget)
+        layout.removeWidget(next_widget)
+        layout.insertWidget(idx, next_widget)
+        layout.insertWidget(idx + 1, widget)
+
+        # Update priority labels
+        self._update_priority_labels()
+
+    def _update_priority_labels(self):
+        """Updates priority labels and button states for all rules.
+
+        Groups rules by level (article/order) and shows per-level priority.
+        """
+        # Group by level
+        article_count = 1
+        order_count = 1
+
+        for idx, rule_w in enumerate(self.rule_widgets):
+            level = rule_w["level_combo"].currentText()
+
+            # Update label with level-specific numbering
+            if level == "article":
+                rule_w["priority_label"].setText(f"Article #{article_count}")
+                article_count += 1
+            else:  # order
+                rule_w["priority_label"].setText(f"Order #{order_count}")
+                order_count += 1
+
+            # Disable up button for first rule
+            rule_w["up_btn"].setEnabled(idx > 0)
+
+            # Disable down button for last rule
+            rule_w["down_btn"].setEnabled(idx < len(self.rule_widgets) - 1)
 
     def get_available_rule_fields(self):
         """Get all available fields for rules from DataFrame + common fields.
@@ -368,7 +444,7 @@ class SettingsWindow(QDialog):
         tab = QWidget()
         main_layout = QVBoxLayout(tab)
         add_rule_btn = QPushButton("Add New Rule")
-        add_rule_btn.clicked.connect(self.add_rule_widget)
+        add_rule_btn.clicked.connect(lambda: [self.add_rule_widget(), self._update_priority_labels()])
         main_layout.addWidget(add_rule_btn, 0, Qt.AlignLeft)
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
@@ -380,6 +456,7 @@ class SettingsWindow(QDialog):
         self.tab_widget.addTab(tab, "Rules")
         for rule_config in self.config_data.get("rules", []):
             self.add_rule_widget(rule_config)
+        self._update_priority_labels()  # NEW: Update priority labels after loading rules
 
     def add_rule_widget(self, config=None):
         """Adds a new group of widgets for creating/editing a single rule.
@@ -394,10 +471,50 @@ class SettingsWindow(QDialog):
         rule_box = QGroupBox()
         rule_layout = QVBoxLayout(rule_box)
         header_layout = QHBoxLayout()
+
+        # Priority label (e.g., "Article #1", "Order #2")
+        priority_label = QLabel("")
+        priority_label.setMinimumWidth(70)
+        priority_label.setStyleSheet("font-weight: bold; color: #2196F3; font-size: 11pt;")
+        header_layout.addWidget(priority_label)
+
+        # Up button
+        up_btn = QPushButton("↑")
+        up_btn.setMaximumWidth(30)
+        up_btn.setToolTip("Move rule up (higher priority)")
+        header_layout.addWidget(up_btn)
+
+        # Down button
+        down_btn = QPushButton("↓")
+        down_btn.setMaximumWidth(30)
+        down_btn.setToolTip("Move rule down (lower priority)")
+        header_layout.addWidget(down_btn)
+
+        # Test button
+        test_btn = QPushButton("🧪 Test")
+        test_btn.setMaximumWidth(70)
+        test_btn.setToolTip("Test this rule against current analysis data")
+        test_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+            QPushButton:disabled {
+                background-color: #cccccc;
+                color: #666666;
+            }
+        """)
+        header_layout.addWidget(test_btn)
+
         header_layout.addWidget(QLabel("Rule Name:"))
         name_edit = QLineEdit(config.get("name", ""))
         header_layout.addWidget(name_edit)
         delete_rule_btn = QPushButton("Delete Rule")
+        delete_rule_btn.setStyleSheet("background-color: #f44336; color: white;")
         header_layout.addWidget(delete_rule_btn)
         rule_layout.addLayout(header_layout)
 
@@ -453,6 +570,10 @@ class SettingsWindow(QDialog):
         self.rules_layout.addWidget(rule_box)
         widget_refs = {
             "group_box": rule_box,
+            "priority_label": priority_label,  # NEW
+            "up_btn": up_btn,                  # NEW
+            "down_btn": down_btn,              # NEW
+            "test_btn": test_btn,              # NEW
             "name_edit": name_edit,
             "level_combo": level_combo,
             "match_combo": match_combo,
@@ -465,6 +586,12 @@ class SettingsWindow(QDialog):
         add_condition_btn.clicked.connect(lambda: self.add_condition_row(widget_refs))
         add_action_btn.clicked.connect(lambda: self.add_action_row(widget_refs))
         delete_rule_btn.clicked.connect(lambda: self._delete_widget_from_list(widget_refs, self.rule_widgets))
+        up_btn.clicked.connect(lambda: self._move_rule_up(widget_refs))      # NEW
+        down_btn.clicked.connect(lambda: self._move_rule_down(widget_refs))  # NEW
+        test_btn.clicked.connect(lambda: self._test_rule(widget_refs))       # NEW
+
+        # Update test button state based on data availability
+        self._update_test_button_state(widget_refs)
         for cond_config in config.get("conditions", []):
             self.add_condition_row(widget_refs, cond_config)
         for act_config in config.get("actions", []):
@@ -574,6 +701,16 @@ class SettingsWindow(QDialog):
         field = condition_refs["field"].currentText()
         op = condition_refs["op"].currentText()
 
+        # Clean up validation feedback before removing widget
+        if "feedback_label" in condition_refs:
+            condition_refs["feedback_label"].deleteLater()
+            del condition_refs["feedback_label"]
+
+        # Cancel pending validation timer
+        if "validation_timer" in condition_refs:
+            condition_refs["validation_timer"].stop()
+            del condition_refs["validation_timer"]
+
         # Remove the old value widget, if it exists
         if condition_refs["value_widget"]:
             condition_refs["value_widget"].deleteLater()
@@ -596,10 +733,47 @@ class SettingsWindow(QDialog):
             new_widget.addItems([""] + unique_values)  # Add a blank option
             if initial_value and str(initial_value) in unique_values:
                 new_widget.setCurrentText(str(initial_value))
+
+        # DATE OPERATORS - Use QDateEdit with calendar popup
+        elif op in ["date before", "date after", "date equals"]:
+            from PySide6.QtWidgets import QDateEdit
+            from PySide6.QtCore import QDate
+
+            new_widget = QDateEdit()
+            new_widget.setCalendarPopup(True)  # Enable calendar dropdown
+            new_widget.setDisplayFormat("yyyy-MM-dd")  # ISO format
+
+            # Parse initial value if provided
+            if initial_value:
+                parsed_date = self._parse_date_for_widget(initial_value)
+                if parsed_date:
+                    new_widget.setDate(parsed_date)
+                else:
+                    new_widget.setDate(QDate.currentDate())
+            else:
+                new_widget.setDate(QDate.currentDate())
+
+            new_widget.setToolTip(
+                "Select date from calendar or type manually.\n"
+                "Formats: YYYY-MM-DD, DD/MM/YYYY, timestamp"
+            )
+
         else:
-            # Default to QLineEdit
+            # Default to QLineEdit with smart placeholders
             new_widget = QLineEdit()
-            new_widget.setPlaceholderText("Value")
+
+            # Set operator-specific placeholders
+            placeholder = "Value"  # Default
+
+            if op in ["in list", "not in list"]:
+                placeholder = "Value1, Value2, Value3"
+            elif op in ["between", "not between"]:
+                placeholder = "10-100"
+            elif op == "matches regex":
+                placeholder = "^SKU-\\d{4}$"
+
+            new_widget.setPlaceholderText(placeholder)
+
             if initial_value is not None:
                 new_widget.setText(str(initial_value))
 
@@ -607,9 +781,304 @@ class SettingsWindow(QDialog):
         condition_refs["value_layout"].insertWidget(2, new_widget, 1)
         condition_refs["value_widget"] = new_widget
 
+        # Connect validation for QLineEdit widgets (QLineEdit is already imported globally)
+        if isinstance(new_widget, QLineEdit):
+            new_widget.textChanged.connect(lambda: self._validate_condition_value(condition_refs))
+
+    def _validate_condition_value(self, condition_refs):
+        """
+        Validate condition value based on operator type.
+
+        Validates in real-time with debouncing for regex patterns (500ms).
+        Other operators validate immediately.
+
+        Args:
+            condition_refs (dict): Condition widget references
+        """
+        from PySide6.QtCore import QTimer
+
+        op = condition_refs["op"].currentText()
+
+        # Cancel existing timer for this condition
+        if "validation_timer" in condition_refs:
+            condition_refs["validation_timer"].stop()
+
+        # For regex: debounce 500ms
+        if op == "matches regex":
+            timer = QTimer()
+            timer.setSingleShot(True)
+            timer.timeout.connect(lambda: self._perform_validation(condition_refs))
+            timer.start(500)  # 500ms debounce
+            condition_refs["validation_timer"] = timer
+        else:
+            # For other operators: validate immediately
+            self._perform_validation(condition_refs)
+
+    def _perform_validation(self, condition_refs):
+        """
+        Execute validation based on operator type and show feedback.
+
+        Args:
+            condition_refs (dict): Condition widget references
+        """
+        from gui.rule_validator import (
+            validate_regex,
+            validate_date,
+            validate_range,
+            validate_list,
+            validate_numeric
+        )
+
+        op = condition_refs["op"].currentText()
+        value_widget = condition_refs.get("value_widget")
+
+        if not value_widget:
+            return
+
+        # Get value based on widget type
+        from PySide6.QtWidgets import QComboBox, QLineEdit, QDateEdit
+        if isinstance(value_widget, QComboBox):
+            value = value_widget.currentText()
+        elif isinstance(value_widget, QDateEdit):
+            value = value_widget.date().toString("yyyy-MM-dd")
+        elif isinstance(value_widget, QLineEdit):
+            value = value_widget.text()
+        else:
+            return
+
+        # Validate based on operator
+        if op == "matches regex":
+            is_valid, error_msg = validate_regex(value)
+            if is_valid:
+                self._show_validation_feedback(condition_refs, "clear", "")
+            else:
+                self._show_validation_feedback(condition_refs, "error", error_msg)
+
+        elif op in ["date before", "date after", "date equals"]:
+            # QDateEdit always provides valid dates, skip validation
+            self._show_validation_feedback(condition_refs, "clear", "")
+
+        elif op in ["between", "not between"]:
+            is_valid, error_msg, warning_msg = validate_range(value)
+            if not is_valid:
+                self._show_validation_feedback(condition_refs, "error", error_msg)
+            elif warning_msg:
+                self._show_validation_feedback(condition_refs, "warning", warning_msg)
+            else:
+                self._show_validation_feedback(condition_refs, "clear", "")
+
+        elif op in ["in list", "not in list"]:
+            is_valid, item_count, error_msg = validate_list(value)
+            if not is_valid:
+                self._show_validation_feedback(condition_refs, "error", error_msg)
+            else:
+                self._show_validation_feedback(condition_refs, "success", f"{item_count} items")
+
+        elif op in ["is greater than", "is less than", "is greater than or equal", "is less than or equal"]:
+            is_valid, error_msg = validate_numeric(value)
+            if not is_valid:
+                self._show_validation_feedback(condition_refs, "error", error_msg)
+            else:
+                self._show_validation_feedback(condition_refs, "clear", "")
+
+        else:
+            # No validation needed for other operators
+            self._show_validation_feedback(condition_refs, "clear", "")
+
+    def _show_validation_feedback(self, condition_refs, status, message):
+        """
+        Show validation feedback with visual indicators.
+
+        Args:
+            condition_refs (dict): Condition widget references
+            status (str): "error", "warning", "success", or "clear"
+            message (str): Message to display
+        """
+        from PySide6.QtWidgets import QLabel
+
+        value_widget = condition_refs.get("value_widget")
+        if not value_widget:
+            return
+
+        # Create feedback label if doesn't exist
+        if "feedback_label" not in condition_refs:
+            feedback_label = QLabel()
+            feedback_label.setWordWrap(True)
+            feedback_label.setStyleSheet("font-size: 9pt; margin-top: 2px;")
+            condition_refs["value_layout"].addWidget(feedback_label)
+            condition_refs["feedback_label"] = feedback_label
+
+        feedback_label = condition_refs["feedback_label"]
+
+        if status == "error":
+            value_widget.setStyleSheet("border: 1px solid #f44336; background-color: #ffebee;")
+            feedback_label.setStyleSheet("color: #f44336; font-size: 9pt;")
+            feedback_label.setText(f"⚠ {message}")
+            feedback_label.show()
+
+        elif status == "warning":
+            value_widget.setStyleSheet("border: 1px solid #ff9800; background-color: #fff3e0;")
+            feedback_label.setStyleSheet("color: #ff9800; font-size: 9pt;")
+            feedback_label.setText(f"⚠ {message}")
+            feedback_label.show()
+
+        elif status == "success":
+            value_widget.setStyleSheet("border: 1px solid #4CAF50;")
+            feedback_label.setStyleSheet("color: #4CAF50; font-size: 9pt;")
+            feedback_label.setText(f"✓ {message}")
+            feedback_label.show()
+
+        elif status == "clear":
+            value_widget.setStyleSheet("")
+            feedback_label.hide()
+
+    def _parse_date_for_widget(self, date_str):
+        """
+        Parse date string to QDate for widget initialization.
+
+        Supports multiple formats:
+        - ISO format: "2024-01-30"
+        - European: "30/01/2024", "30.01.2024"
+        - Timestamp: "2026-01-14 18:56:50 +0200"
+
+        Args:
+            date_str: Date string to parse
+
+        Returns:
+            QDate object or None if parsing fails
+        """
+        from PySide6.QtCore import QDate
+        from shopify_tool.rules import _parse_date_safe
+
+        pd_timestamp = _parse_date_safe(date_str)
+        if pd_timestamp:
+            return QDate(pd_timestamp.year, pd_timestamp.month, pd_timestamp.day)
+        return None
+
+    def _test_rule(self, rule_widget_refs):
+        """
+        Test a rule against current analysis data.
+
+        Opens a test dialog showing:
+        - Condition evaluation results
+        - Matched rows preview
+        - Actions to be applied
+        - Preview after actions
+
+        Args:
+            rule_widget_refs (dict): Rule widget references
+        """
+        from PySide6.QtWidgets import QMessageBox
+        from gui.rule_test_dialog import RuleTestDialog
+
+        if self.analysis_df is None or self.analysis_df.empty:
+            QMessageBox.warning(
+                self,
+                "No Data",
+                "No analysis data available to test rule.\n\n"
+                "Please run analysis first in the main window."
+            )
+            return
+
+        # Build rule config from current UI state
+        rule_config = self._build_rule_config_from_widgets(rule_widget_refs)
+
+        # Validate rule has conditions
+        if not rule_config.get("conditions"):
+            QMessageBox.warning(
+                self,
+                "No Conditions",
+                "This rule has no conditions defined.\n\n"
+                "Add at least one condition before testing."
+            )
+            return
+
+        # Open test dialog
+        dialog = RuleTestDialog(rule_config, self.analysis_df, parent=self)
+        dialog.exec()
+
+    def _build_rule_config_from_widgets(self, rule_widget_refs):
+        """
+        Extract current rule configuration from widget state.
+
+        Builds a config dict compatible with RuleEngine from the current
+        UI state of all condition and action widgets.
+
+        Args:
+            rule_widget_refs (dict): Rule widget references
+
+        Returns:
+            dict: Rule configuration compatible with RuleEngine
+        """
+        from PySide6.QtWidgets import QComboBox, QLineEdit, QDateEdit
+
+        # Extract conditions
+        conditions = []
+        for condition_refs in rule_widget_refs["conditions"]:
+            value_widget = condition_refs.get("value_widget")
+            val = ""
+
+            if value_widget:
+                if isinstance(value_widget, QComboBox):
+                    val = value_widget.currentText()
+                elif isinstance(value_widget, QDateEdit):
+                    # Format date as YYYY-MM-DD for rule engine
+                    val = value_widget.date().toString("yyyy-MM-dd")
+                elif isinstance(value_widget, QLineEdit):
+                    val = value_widget.text()
+
+            conditions.append({
+                "field": condition_refs["field"].currentText(),
+                "operator": condition_refs["op"].currentText(),
+                "value": val,
+            })
+
+        # Extract actions
+        actions = []
+        for action_refs in rule_widget_refs["actions"]:
+            action_type = action_refs["type"].currentText()
+            action_dict = {"type": action_type}
+
+            # Extract parameters based on action type
+            param_widgets = action_refs.get("param_widgets", {})
+
+            for param_name, widget in param_widgets.items():
+                if isinstance(widget, QComboBox):
+                    action_dict[param_name] = widget.currentText()
+                elif isinstance(widget, QLineEdit):
+                    action_dict[param_name] = widget.text()
+
+            actions.append(action_dict)
+
+        return {
+            "name": rule_widget_refs["name_edit"].text(),
+            "level": rule_widget_refs["level_combo"].currentText(),
+            "match": rule_widget_refs["match_combo"].currentText(),
+            "conditions": conditions,
+            "actions": actions,
+        }
+
+    def _update_test_button_state(self, rule_widget_refs):
+        """
+        Enable/disable test button based on data availability.
+
+        Args:
+            rule_widget_refs (dict): Rule widget references
+        """
+        has_data = self.analysis_df is not None and not self.analysis_df.empty
+        rule_widget_refs["test_btn"].setEnabled(has_data)
+
+        if not has_data:
+            rule_widget_refs["test_btn"].setToolTip(
+                "Test disabled: No analysis data available.\n"
+                "Run analysis in main window first."
+            )
+        else:
+            rule_widget_refs["test_btn"].setToolTip("Test this rule against current analysis data")
+
 
     def add_action_row(self, rule_widget_refs, config=None):
-        """Adds a new row of widgets for a single action within a rule.
+        """Adds action row with dynamic parameter widgets based on type.
 
         Args:
             rule_widget_refs (dict): A dictionary of widget references for the
@@ -619,161 +1088,180 @@ class SettingsWindow(QDialog):
         """
         if not isinstance(config, dict):
             config = {}
+
         row_layout = QHBoxLayout()
+
+        # Type dropdown
         type_combo = WheelIgnoreComboBox()
         type_combo.addItems(self.ACTION_TYPES)
-        value_edit = QLineEdit()
-        delete_btn = QPushButton("X")
-        row_layout.addWidget(type_combo)
-        row_layout.addWidget(value_edit, 1)
-        row_layout.addWidget(delete_btn)
         type_combo.setCurrentText(config.get("type", self.ACTION_TYPES[0]))
-        value_edit.setText(config.get("value", ""))
+
+        # Delete button
+        delete_btn = QPushButton("X")
+
+        row_layout.addWidget(type_combo)
+        # Параметри будуть вставлені динамічно
+
         row_widget = QWidget()
         row_widget.setLayout(row_layout)
+
+        # Зберегти посилання
+        action_refs = {
+            "widget": row_widget,
+            "type": type_combo,
+            "param_widgets": {},
+            "param_layout": row_layout,
+        }
+
+        # Connect type change
+        type_combo.currentTextChanged.connect(
+            lambda: self._on_action_type_changed(action_refs)
+        )
+
+        # Створити початкові widgets
+        self._on_action_type_changed(action_refs, initial_config=config)
+
+        row_layout.addWidget(delete_btn)
+
         rule_widget_refs["actions_layout"].addWidget(row_widget)
-        action_refs = {"widget": row_widget, "type": type_combo, "value": value_edit}
         rule_widget_refs["actions"].append(action_refs)
+
         delete_btn.clicked.connect(
             lambda: self._delete_row_from_list(row_widget, rule_widget_refs["actions"], action_refs)
         )
 
-    def create_order_rules_tab(self):
-        """Creates the 'Order Rules' tab for order-level automation rules.
+    def _on_action_type_changed(self, action_refs, initial_config=None):
+        """Dynamically updates parameter widgets based on action type."""
+        action_type = action_refs["type"].currentText()
 
-        Order rules work on entire orders (not line items).
-        Useful for tagging, prioritizing, or filtering orders based on order-level criteria.
-        """
-        tab = QWidget()
-        main_layout = QVBoxLayout(tab)
+        # Очистити існуючі параметри
+        for widget in action_refs["param_widgets"].values():
+            widget.deleteLater()
+        action_refs["param_widgets"].clear()
 
-        # Instructions
-        instructions = QLabel(
-            "Order Rules apply to entire orders (not individual line items).\n"
-            "Use these for order-level decisions like tagging, prioritizing, or excluding orders."
-        )
-        instructions.setWordWrap(True)
-        instructions.setStyleSheet("color: gray; font-style: italic; font-size: 10pt;")
-        main_layout.addWidget(instructions)
+        layout = action_refs["param_layout"]
+        insert_pos = 1  # Після type combo
 
-        # Scroll area for rules
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
+        # Створити widgets залежно від типу
+        if action_type in ["ADD_TAG", "ADD_ORDER_TAG", "ADD_INTERNAL_TAG", "SET_STATUS"]:
+            # Простий value field
+            value_edit = QLineEdit()
+            value_edit.setPlaceholderText("Value")
+            if initial_config:
+                value_edit.setText(initial_config.get("value", ""))
+            layout.insertWidget(insert_pos, value_edit, 1)
+            action_refs["param_widgets"]["value"] = value_edit
 
-        scroll_widget = QWidget()
-        self.order_rules_layout = QVBoxLayout(scroll_widget)
-        scroll.setWidget(scroll_widget)
+        elif action_type == "COPY_FIELD":
+            # Source dropdown
+            source_combo = WheelIgnoreComboBox()
+            fields = self.get_available_rule_fields()
+            source_combo.addItems([f for f in fields if not f.startswith("---")])
+            if initial_config:
+                source_combo.setCurrentText(initial_config.get("source", ""))
 
-        main_layout.addWidget(scroll)
+            # Target input
+            target_edit = QLineEdit()
+            target_edit.setPlaceholderText("Target column")
+            if initial_config:
+                target_edit.setText(initial_config.get("target", ""))
 
-        # Add Rule button
-        add_rule_btn = QPushButton("+ Add Order Rule")
-        add_rule_btn.clicked.connect(lambda: self.add_order_rule_widget())
-        main_layout.addWidget(add_rule_btn, 0, Qt.AlignLeft)
+            layout.insertWidget(insert_pos, source_combo, 1)
+            layout.insertWidget(insert_pos + 1, QLabel("→"), 0)
+            layout.insertWidget(insert_pos + 2, target_edit, 1)
 
-        self.tab_widget.addTab(tab, "Order Rules")
+            action_refs["param_widgets"]["source"] = source_combo
+            action_refs["param_widgets"]["target"] = target_edit
 
-        # Populate existing order rules
-        for rule_config in self.config_data.get("order_rules", []):
-            self.add_order_rule_widget(rule_config)
+        elif action_type == "CALCULATE":
+            # Operation dropdown
+            op_combo = WheelIgnoreComboBox()
+            op_combo.addItems(["add", "subtract", "multiply", "divide"])
+            if initial_config:
+                op_combo.setCurrentText(initial_config.get("operation", "add"))
 
-    def add_order_rule_widget(self, config=None):
-        """Adds a new order rule widget.
+            # Field1 & Field2 dropdowns
+            fields = [f for f in self.get_available_rule_fields() if not f.startswith("---")]
 
-        Order rules have the same structure as regular rules but work on order level.
+            field1_combo = WheelIgnoreComboBox()
+            field1_combo.addItems(fields)
+            if initial_config:
+                field1_combo.setCurrentText(initial_config.get("field1", ""))
 
-        Args:
-            config (dict, optional): Existing rule configuration to load
-        """
-        if not isinstance(config, dict):
-            config = {
-                "name": "New Order Rule",
-                "match": "ALL",
-                "conditions": [],
-                "actions": []
-            }
+            field2_combo = WheelIgnoreComboBox()
+            field2_combo.addItems(fields)
+            if initial_config:
+                field2_combo.setCurrentText(initial_config.get("field2", ""))
 
-        # Create rule box
-        rule_box = QGroupBox()
-        rule_layout = QVBoxLayout(rule_box)
+            # Target input
+            target_edit = QLineEdit()
+            target_edit.setPlaceholderText("Result column")
+            if initial_config:
+                target_edit.setText(initial_config.get("target", ""))
 
-        # Header with name and delete button
-        header_layout = QHBoxLayout()
-        header_layout.addWidget(QLabel("Rule Name:"))
+            layout.insertWidget(insert_pos, op_combo, 0)
+            layout.insertWidget(insert_pos + 1, field1_combo, 1)
+            layout.insertWidget(insert_pos + 2, field2_combo, 1)
+            layout.insertWidget(insert_pos + 3, QLabel("→"), 0)
+            layout.insertWidget(insert_pos + 4, target_edit, 1)
 
-        name_edit = QLineEdit(config.get("name", ""))
-        name_edit.setPlaceholderText("E.g., 'High Value Orders', 'Express Shipping'")
-        header_layout.addWidget(name_edit, 1)
+            action_refs["param_widgets"]["operation"] = op_combo
+            action_refs["param_widgets"]["field1"] = field1_combo
+            action_refs["param_widgets"]["field2"] = field2_combo
+            action_refs["param_widgets"]["target"] = target_edit
 
-        delete_rule_btn = QPushButton("Delete Rule")
-        delete_rule_btn.setStyleSheet("color: red;")
-        header_layout.addWidget(delete_rule_btn)
+        elif action_type == "SET_MULTI_TAGS":
+            # Comma-separated tags
+            tags_edit = QLineEdit()
+            tags_edit.setPlaceholderText("TAG1, TAG2, TAG3")
+            if initial_config:
+                tags_value = initial_config.get("tags") or initial_config.get("value", "")
+                if isinstance(tags_value, list):
+                    tags_edit.setText(", ".join(tags_value))
+                else:
+                    tags_edit.setText(tags_value)
 
-        rule_layout.addLayout(header_layout)
+            layout.insertWidget(insert_pos, tags_edit, 1)
+            action_refs["param_widgets"]["value"] = tags_edit
 
-        # Conditions section
-        conditions_box = QGroupBox("IF")
-        conditions_layout = QVBoxLayout(conditions_box)
+        elif action_type == "ALERT_NOTIFICATION":
+            # Message input
+            message_edit = QLineEdit()
+            message_edit.setPlaceholderText("Alert message")
+            if initial_config:
+                message_edit.setText(initial_config.get("message", ""))
 
-        match_layout = QHBoxLayout()
-        match_layout.addWidget(QLabel("Execute actions if"))
+            # Severity dropdown
+            severity_combo = WheelIgnoreComboBox()
+            severity_combo.addItems(["info", "warning", "error"])
+            if initial_config:
+                severity_combo.setCurrentText(initial_config.get("severity", "info"))
 
-        match_combo = WheelIgnoreComboBox()
-        match_combo.addItems(["ALL", "ANY"])
-        match_combo.setCurrentText(config.get("match", "ALL"))
-        match_layout.addWidget(match_combo)
+            layout.insertWidget(insert_pos, message_edit, 1)
+            layout.insertWidget(insert_pos + 1, severity_combo, 0)
 
-        match_layout.addWidget(QLabel("of the following conditions are met:"))
-        match_layout.addStretch()
-        conditions_layout.addLayout(match_layout)
+            action_refs["param_widgets"]["message"] = message_edit
+            action_refs["param_widgets"]["severity"] = severity_combo
 
-        conditions_rows_layout = QVBoxLayout()
-        conditions_layout.addLayout(conditions_rows_layout)
+        elif action_type == "ADD_PRODUCT":
+            # SKU input
+            sku_edit = QLineEdit()
+            sku_edit.setPlaceholderText("Product SKU")
+            if initial_config:
+                sku_edit.setText(initial_config.get("sku", ""))
 
-        add_condition_btn = QPushButton("Add Condition")
-        conditions_layout.addWidget(add_condition_btn, 0, Qt.AlignLeft)
+            # Quantity spinbox
+            qty_spin = QSpinBox()
+            qty_spin.setMinimum(1)
+            qty_spin.setMaximum(9999)
+            qty_spin.setValue(initial_config.get("quantity", 1) if initial_config else 1)
 
-        rule_layout.addWidget(conditions_box)
+            layout.insertWidget(insert_pos, sku_edit, 1)
+            layout.insertWidget(insert_pos + 1, QLabel("Qty:"), 0)
+            layout.insertWidget(insert_pos + 2, qty_spin, 0)
 
-        # Actions section
-        actions_box = QGroupBox("THEN perform these actions:")
-        actions_layout = QVBoxLayout(actions_box)
-
-        actions_rows_layout = QVBoxLayout()
-        actions_layout.addLayout(actions_rows_layout)
-
-        add_action_btn = QPushButton("Add Action")
-        actions_layout.addWidget(add_action_btn, 0, Qt.AlignLeft)
-
-        rule_layout.addWidget(actions_box)
-
-        # Add to layout
-        self.order_rules_layout.addWidget(rule_box)
-
-        # Store widget references
-        widget_refs = {
-            "group_box": rule_box,
-            "name_edit": name_edit,
-            "match_combo": match_combo,
-            "conditions_layout": conditions_rows_layout,
-            "actions_layout": actions_rows_layout,
-            "conditions": [],
-            "actions": [],
-        }
-        self.order_rule_widgets.append(widget_refs)
-
-        # Connect buttons
-        add_condition_btn.clicked.connect(lambda: self.add_condition_row(widget_refs))
-        add_action_btn.clicked.connect(lambda: self.add_action_row(widget_refs))
-        delete_rule_btn.clicked.connect(
-            lambda: self._delete_widget_from_list(widget_refs, self.order_rule_widgets)
-        )
-
-        # Populate existing conditions and actions
-        for cond_config in config.get("conditions", []):
-            self.add_condition_row(widget_refs, cond_config)
-        for act_config in config.get("actions", []):
-            self.add_action_row(widget_refs, act_config)
+            action_refs["param_widgets"]["sku"] = sku_edit
+            action_refs["param_widgets"]["quantity"] = qty_spin
 
     def create_packing_lists_tab(self):
         """Creates the 'Packing Lists' tab for managing report configurations."""
@@ -1443,7 +1931,7 @@ class SettingsWindow(QDialog):
             # Rules Tab - Line Item Rules
             # ========================================
             new_rules = []
-            for rule_w in self.rule_widgets:
+            for idx, rule_w in enumerate(self.rule_widgets):
                 conditions = []
                 for c in rule_w["conditions"]:
                     value_widget = c.get("value_widget")
@@ -1460,16 +1948,41 @@ class SettingsWindow(QDialog):
                         "value": val,
                     })
 
-                actions = [
-                    {
-                        "type": a["type"].currentText(),
-                        "value": a["value"].text()
-                    }
-                    for a in rule_w["actions"]
-                ]
+                actions = []
+                for act_refs in rule_w["actions"]:
+                    action_type = act_refs["type"].currentText()
+                    act = {"type": action_type}
+
+                    # Serialize parameters based on type
+                    if action_type in ["ADD_TAG", "ADD_ORDER_TAG", "ADD_INTERNAL_TAG", "SET_STATUS"]:
+                        act["value"] = act_refs["param_widgets"]["value"].text()
+
+                    elif action_type == "COPY_FIELD":
+                        act["source"] = act_refs["param_widgets"]["source"].currentText()
+                        act["target"] = act_refs["param_widgets"]["target"].text()
+
+                    elif action_type == "CALCULATE":
+                        act["operation"] = act_refs["param_widgets"]["operation"].currentText()
+                        act["field1"] = act_refs["param_widgets"]["field1"].currentText()
+                        act["field2"] = act_refs["param_widgets"]["field2"].currentText()
+                        act["target"] = act_refs["param_widgets"]["target"].text()
+
+                    elif action_type == "SET_MULTI_TAGS":
+                        act["value"] = act_refs["param_widgets"]["value"].text()
+
+                    elif action_type == "ALERT_NOTIFICATION":
+                        act["message"] = act_refs["param_widgets"]["message"].text()
+                        act["severity"] = act_refs["param_widgets"]["severity"].currentText()
+
+                    elif action_type == "ADD_PRODUCT":
+                        act["sku"] = act_refs["param_widgets"]["sku"].text()
+                        act["quantity"] = act_refs["param_widgets"]["quantity"].value()
+
+                    actions.append(act)
 
                 new_rules.append({
                     "name": rule_w["name_edit"].text(),
+                    "priority": idx + 1,  # NEW: Position-based priority
                     "level": rule_w["level_combo"].currentText(),
                     "match": rule_w["match_combo"].currentText(),
                     "conditions": conditions,
@@ -1477,44 +1990,6 @@ class SettingsWindow(QDialog):
                 })
 
             self.config_data["rules"] = new_rules
-
-            # ========================================
-            # Order Rules Tab - Order-Level Rules
-            # ========================================
-            new_order_rules = []
-            for rule_w in self.order_rule_widgets:
-                conditions = []
-                for c in rule_w["conditions"]:
-                    value_widget = c.get("value_widget")
-                    val = ""
-                    if value_widget:
-                        if isinstance(value_widget, QComboBox):
-                            val = value_widget.currentText()
-                        else:
-                            val = value_widget.text()
-
-                    conditions.append({
-                        "field": c["field"].currentText(),
-                        "operator": c["op"].currentText(),
-                        "value": val,
-                    })
-
-                actions = [
-                    {
-                        "type": a["type"].currentText(),
-                        "value": a["value"].text()
-                    }
-                    for a in rule_w["actions"]
-                ]
-
-                new_order_rules.append({
-                    "name": rule_w["name_edit"].text(),
-                    "match": rule_w["match_combo"].currentText(),
-                    "conditions": conditions,
-                    "actions": actions,
-                })
-
-            self.config_data["order_rules"] = new_order_rules
 
             # ========================================
             # Packing Lists Tab

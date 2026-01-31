@@ -1090,7 +1090,7 @@ class MainWindow(QMainWindow):
 
             # Data rows (limit to top 20 for performance)
             for row_idx, sku_data in enumerate(sku_summary[:20], start=1):
-                self.sku_stats_layout.addWidget(QLabel(sku_data.get("SKU", "N/A")), row_idx, 0)
+                self.sku_stats_layout.addWidget(QLabel(str(sku_data.get("SKU", "N/A"))), row_idx, 0)
                 warehouse_name = sku_data.get("Warehouse_Name", "N/A")
                 if warehouse_name == "N/A" or warehouse_name == "" or pd.isna(warehouse_name):
                     warehouse_name = sku_data.get("Product_Name", "N/A")

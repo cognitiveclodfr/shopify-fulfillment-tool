@@ -48,9 +48,9 @@ def test_add_tag_with_simple_rule(sample_df):
     assert "Repeat, DHL-SHIP" in result_df.loc[4, "Status_Note"]
 
 
-def test_set_priority_with_multiple_conditions_all(sample_df):
+def test_add_internal_tag_with_multiple_conditions_all(sample_df):
     """
-    Tests a rule with multiple 'AND' conditions.
+    Tests a rule with multiple 'AND' conditions using ADD_INTERNAL_TAG.
     """
     rules = [
         {
@@ -60,20 +60,20 @@ def test_set_priority_with_multiple_conditions_all(sample_df):
                 {"field": "Order_Type", "operator": "equals", "value": "Multi"},
                 {"field": "Total_Price", "operator": "is greater than", "value": 100},
             ],
-            "actions": [{"type": "SET_PRIORITY", "value": "High"}],
+            "actions": [{"type": "ADD_INTERNAL_TAG", "value": "priority:high"}],
         }
     ]
 
     engine = RuleEngine(rules)
     result_df = engine.apply(sample_df.copy())
 
-    # Order #1002 and #1003 should match
-    assert result_df.loc[result_df["Order_Number"] == "#1002", "Priority"].iloc[0] == "High"
-    assert result_df.loc[result_df["Order_Number"] == "#1003", "Priority"].iloc[0] == "High"
+    # Order #1002 and #1003 should have the tag
+    assert "priority:high" in result_df.loc[result_df["Order_Number"] == "#1002", "Internal_Tags"].iloc[0]
+    assert "priority:high" in result_df.loc[result_df["Order_Number"] == "#1003", "Internal_Tags"].iloc[0]
 
-    # Others should not match
-    assert result_df.loc[result_df["Order_Number"] == "#1001", "Priority"].iloc[0] == "Normal"
-    assert result_df.loc[result_df["Order_Number"] == "#1004", "Priority"].iloc[0] == "Normal"
+    # Others should not have the tag
+    assert "priority:high" not in result_df.loc[result_df["Order_Number"] == "#1001", "Internal_Tags"].iloc[0]
+    assert "priority:high" not in result_df.loc[result_df["Order_Number"] == "#1004", "Internal_Tags"].iloc[0]
 
 
 def test_set_status_with_multiple_conditions_any(sample_df):
@@ -122,33 +122,6 @@ def test_no_action_if_no_match(sample_df):
 
     # The DataFrame should be identical to the original
     pd.testing.assert_frame_equal(original_df, result_df, check_like=True)
-
-
-def test_exclude_sku_action(sample_df):
-    """
-    Tests the 'EXCLUDE_SKU' action.
-    This action should set the quantity of the matching SKU to 0.
-    """
-    rules = [
-        {
-            "name": "Exclude SKU-C from all orders",
-            "match": "ALL",
-            "conditions": [{"field": "SKU", "operator": "equals", "value": "SKU-C"}],
-            "actions": [{"type": "EXCLUDE_SKU", "value": "SKU-C"}],
-        }
-    ]
-
-    engine = RuleEngine(rules)
-    result_df = engine.apply(sample_df.copy())
-
-    # The quantity for SKU-C in order #1002 should now be 0
-    sku_c_row = result_df[result_df["SKU"] == "SKU-C"]
-    assert sku_c_row["Quantity"].iloc[0] == 0
-    assert "SKU_EXCLUDED" in sku_c_row["Status_Note"].iloc[0]
-
-    # Other quantities should be unaffected
-    assert result_df.loc[result_df["SKU"] == "SKU-A", "Quantity"].iloc[0] == 1
-    assert result_df.loc[result_df["SKU"] == "SKU-D", "Quantity"].iloc[0] == 3
 
 
 def test_empty_rules_config(sample_df):
@@ -210,13 +183,13 @@ def test_all_string_operators(sample_df, operator, value, expected_matches):
         {
             "match": "ALL",
             "conditions": [{"field": field, "operator": operator, "value": value}],
-            "actions": [{"type": "SET_PRIORITY", "value": "Match"}],
+            "actions": [{"type": "ADD_INTERNAL_TAG", "value": "matched"}],
         }
     ]
     engine = RuleEngine(rules)
     result_df = engine.apply(sample_df.copy())
 
-    matched_orders = result_df[result_df["Priority"] == "Match"]["Order_Number"].unique()
+    matched_orders = result_df[result_df["Internal_Tags"].str.contains("matched", na=False)]["Order_Number"].unique()
     assert sorted(matched_orders) == sorted(expected_matches)
 
 
@@ -233,13 +206,13 @@ def test_all_numeric_operators(sample_df, operator, value, expected_matches):
         {
             "match": "ALL",
             "conditions": [{"field": "Total_Price", "operator": operator, "value": value}],
-            "actions": [{"type": "SET_PRIORITY", "value": "Match"}],
+            "actions": [{"type": "ADD_INTERNAL_TAG", "value": "matched"}],
         }
     ]
     engine = RuleEngine(rules)
     result_df = engine.apply(sample_df.copy())
 
-    matched_orders = result_df[result_df["Priority"] == "Match"]["Order_Number"].unique()
+    matched_orders = result_df[result_df["Internal_Tags"].str.contains("matched", na=False)]["Order_Number"].unique()
     assert sorted(matched_orders) == sorted(expected_matches)
 
 
@@ -256,29 +229,27 @@ def test_prepare_df_for_actions_creates_columns(sample_df):
     """Tests that the _prepare_df_for_actions method creates missing columns."""
     df = pd.DataFrame({"Order_Number": ["#1001"]})
     rules = [
-        {"actions": [{"type": "SET_PRIORITY"}]},
         {"actions": [{"type": "ADD_TAG"}]},
-        {"actions": [{"type": "EXCLUDE_FROM_REPORT"}]},
+        {"actions": [{"type": "ADD_INTERNAL_TAG"}]},
     ]
     engine = RuleEngine(rules)
     engine._prepare_df_for_actions(df)
-    assert "Priority" in df.columns
     assert "Status_Note" in df.columns
-    assert "_is_excluded" in df.columns
+    assert "Internal_Tags" in df.columns
 
 
 def test_exclude_from_report_action(sample_df):
-    """Tests the EXCLUDE_FROM_REPORT action sets the internal flag correctly."""
+    """Tests using ADD_INTERNAL_TAG for exclude_from_report metadata."""
     rules = [
         {
             "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1002"}],
-            "actions": [{"type": "EXCLUDE_FROM_REPORT"}],
+            "actions": [{"type": "ADD_INTERNAL_TAG", "value": "exclude_from_report"}],
         }
     ]
     engine = RuleEngine(rules)
     result_df = engine.apply(sample_df.copy())
-    assert result_df.loc[result_df["Order_Number"] == "#1002", "_is_excluded"].all()
-    assert not result_df.loc[result_df["Order_Number"] != "#1002", "_is_excluded"].any()
+    assert "exclude_from_report" in result_df.loc[result_df["Order_Number"] == "#1002", "Internal_Tags"].iloc[0]
+    assert "exclude_from_report" not in result_df.loc[result_df["Order_Number"] != "#1002", "Internal_Tags"].iloc[0]
 
 
 def test_add_tag_to_nan_note(sample_df):
@@ -331,7 +302,7 @@ def test_order_level_item_count(order_level_sample_df):
                 {"field": "item_count", "operator": "is less than or equal", "value": "3"}
             ],
             "actions": [
-                {"type": "SET_PACKAGING_TAG", "value": "SMALL_BAG"}
+                {"type": "ADD_INTERNAL_TAG", "value": "packaging:small_bag"}
             ]
         }
     ]
@@ -339,17 +310,17 @@ def test_order_level_item_count(order_level_sample_df):
     engine = RuleEngine(rules)
     result_df = engine.apply(order_level_sample_df.copy())
 
-    # Order #1001 has 3 items, first row should get SMALL_BAG
+    # Order #1001 has 3 items, first row should get packaging:small_bag tag
     order_1001 = result_df[result_df["Order_Number"] == "#1001"]
-    assert order_1001.iloc[0]["Packaging_Tags"] == "SMALL_BAG"
+    assert "packaging:small_bag" in order_1001.iloc[0]["Internal_Tags"]
 
-    # Order #1002 has 2 items, first row should get SMALL_BAG
+    # Order #1002 has 2 items, first row should get packaging:small_bag tag
     order_1002 = result_df[result_df["Order_Number"] == "#1002"]
-    assert order_1002.iloc[0]["Packaging_Tags"] == "SMALL_BAG"
+    assert "packaging:small_bag" in order_1002.iloc[0]["Internal_Tags"]
 
-    # Order #1003 has 1 item, first row should get SMALL_BAG
+    # Order #1003 has 1 item, first row should get packaging:small_bag tag
     order_1003 = result_df[result_df["Order_Number"] == "#1003"]
-    assert order_1003.iloc[0]["Packaging_Tags"] == "SMALL_BAG"
+    assert "packaging:small_bag" in order_1003.iloc[0]["Internal_Tags"]
 
 
 def test_order_level_has_sku(order_level_sample_df):
@@ -363,7 +334,7 @@ def test_order_level_has_sku(order_level_sample_df):
                 {"field": "has_sku", "operator": "equals", "value": "OVERSIZED_001"}
             ],
             "actions": [
-                {"type": "SET_PACKAGING_TAG", "value": "BOX"},
+                {"type": "ADD_INTERNAL_TAG", "value": "packaging:box"},
                 {"type": "ADD_ORDER_TAG", "value": "OVERSIZED"}
             ]
         }
@@ -372,14 +343,14 @@ def test_order_level_has_sku(order_level_sample_df):
     engine = RuleEngine(rules)
     result_df = engine.apply(order_level_sample_df.copy())
 
-    # Order #1002 has OVERSIZED_001, first row should get BOX and OVERSIZED tag
+    # Order #1002 has OVERSIZED_001, first row should get packaging:box tag and OVERSIZED tag
     order_1002 = result_df[result_df["Order_Number"] == "#1002"]
-    assert order_1002.iloc[0]["Packaging_Tags"] == "BOX"
+    assert "packaging:box" in order_1002.iloc[0]["Internal_Tags"]
     assert "OVERSIZED" in order_1002.iloc[0]["Status_Note"]
 
     # Other orders should not have these (checking first row)
     order_1001 = result_df[result_df["Order_Number"] == "#1001"]
-    assert order_1001.iloc[0]["Packaging_Tags"] != "BOX"
+    assert "packaging:box" not in order_1001.iloc[0]["Internal_Tags"]
 
 
 def test_order_level_total_quantity(order_level_sample_df):
@@ -422,7 +393,7 @@ def test_order_and_article_level_rules_together(order_level_sample_df):
                 {"field": "item_count", "operator": "is less than or equal", "value": "6"}
             ],
             "actions": [
-                {"type": "SET_PACKAGING_TAG", "value": "SMALL_BAG"}
+                {"type": "ADD_INTERNAL_TAG", "value": "packaging:small_bag"}
             ]
         },
         # Article-level rule
@@ -442,10 +413,10 @@ def test_order_and_article_level_rules_together(order_level_sample_df):
     engine = RuleEngine(rules)
     result_df = engine.apply(order_level_sample_df.copy())
 
-    # All orders' FIRST ROW should have SMALL_BAG (order-level)
+    # All orders' FIRST ROW should have packaging:small_bag tag (order-level)
     for order_num in result_df["Order_Number"].unique():
         order = result_df[result_df["Order_Number"] == order_num]
-        assert order.iloc[0]["Packaging_Tags"] == "SMALL_BAG"
+        assert "packaging:small_bag" in order.iloc[0]["Internal_Tags"]
 
     # Only OVERSIZED_001 row should have HIGH_VALUE tag (article-level)
     high_value_rows = result_df[result_df["Status_Note"].str.contains("HIGH_VALUE", na=False)]
@@ -539,8 +510,8 @@ def test_order_level_backwards_compatibility(sample_df):
     assert all(dhl_rows["Status_Note"].str.contains("DHL-SHIP"))
 
 
-def test_set_packaging_tag_action(order_level_sample_df):
-    """Tests the SET_PACKAGING_TAG action creates and sets the column correctly."""
+def test_add_internal_tag_for_packaging(order_level_sample_df):
+    """Tests using ADD_INTERNAL_TAG for packaging metadata."""
     rules = [
         {
             "name": "Test packaging tag",
@@ -550,7 +521,7 @@ def test_set_packaging_tag_action(order_level_sample_df):
                 {"field": "item_count", "operator": "is greater than", "value": "0"}
             ],
             "actions": [
-                {"type": "SET_PACKAGING_TAG", "value": "TEST_TAG"}
+                {"type": "ADD_INTERNAL_TAG", "value": "packaging:test_bag"}
             ]
         }
     ]
@@ -558,13 +529,13 @@ def test_set_packaging_tag_action(order_level_sample_df):
     engine = RuleEngine(rules)
     result_df = engine.apply(order_level_sample_df.copy())
 
-    # All rows should have the Packaging_Tags column
-    assert "Packaging_Tags" in result_df.columns
+    # All rows should have the Internal_Tags column
+    assert "Internal_Tags" in result_df.columns
 
-    # First row of each order should have TEST_TAG
+    # First row of each order should have packaging:test_bag tag
     for order_num in result_df["Order_Number"].unique():
         order = result_df[result_df["Order_Number"] == order_num]
-        assert order.iloc[0]["Packaging_Tags"] == "TEST_TAG"
+        assert "packaging:test_bag" in order.iloc[0]["Internal_Tags"]
 
 
 def test_add_order_tag_action(order_level_sample_df):
@@ -633,7 +604,7 @@ def test_add_tag_in_order_level_rule_applies_to_all_rows(order_level_sample_df):
 
 
 def test_mixed_actions_in_order_level_rule(order_level_sample_df):
-    """Tests order-level rule with both ADD_TAG (all rows) and SET_PACKAGING_TAG (first row)."""
+    """Tests order-level rule with both ADD_TAG (all rows) and ADD_INTERNAL_TAG (first row)."""
     rules = [
         {
             "name": "Large orders get special treatment",
@@ -644,7 +615,7 @@ def test_mixed_actions_in_order_level_rule(order_level_sample_df):
             ],
             "actions": [
                 {"type": "ADD_TAG", "value": "LARGE_ORDER"},  # Should apply to all rows
-                {"type": "SET_PACKAGING_TAG", "value": "LARGE_BAG"},  # Should apply to first row only
+                {"type": "ADD_INTERNAL_TAG", "value": "packaging:large_bag"},  # Should apply to first row only
                 {"type": "ADD_ORDER_TAG", "value": "BULK"}  # Should apply to first row only
             ]
         }
@@ -660,13 +631,13 @@ def test_mixed_actions_in_order_level_rule(order_level_sample_df):
     for idx, row in order_1001.iterrows():
         assert "LARGE_ORDER" in row["Status_Note"], f"Row {idx} missing LARGE_ORDER tag"
 
-    # SET_PACKAGING_TAG and ADD_ORDER_TAG should be on FIRST row only
-    assert order_1001.iloc[0]["Packaging_Tags"] == "LARGE_BAG"
+    # ADD_INTERNAL_TAG and ADD_ORDER_TAG should be on FIRST row only
+    assert "packaging:large_bag" in order_1001.iloc[0]["Internal_Tags"]
     assert "BULK" in order_1001.iloc[0]["Status_Note"]
 
     # Other rows should not have packaging tag
     for i in range(1, len(order_1001)):
-        assert order_1001.iloc[i]["Packaging_Tags"] != "LARGE_BAG"
+        assert "packaging:large_bag" not in order_1001.iloc[i]["Internal_Tags"]
 
     # Order #1003 has 1 item - should NOT match
     order_1003 = result_df[result_df["Order_Number"] == "#1003"]
@@ -811,3 +782,969 @@ def test_ui_field_selector_includes_order_level_fields():
     item_count_idx = fields.index("item_count")
     sku_idx = fields.index("SKU")
     assert item_count_idx < sku_idx
+
+
+def test_deprecated_action_types_log_warnings(sample_df, caplog):
+    """Verify that deprecated action types log warnings and are skipped."""
+    import logging
+
+    rules = [
+        {
+            "name": "Test deprecated actions",
+            "match": "ALL",
+            "conditions": [
+                {"field": "Order_Number", "operator": "equals", "value": "#1001"}
+            ],
+            "actions": [
+                {"type": "SET_PRIORITY", "value": "High"},
+                {"type": "EXCLUDE_FROM_REPORT"},
+                {"type": "SET_PACKAGING_TAG", "value": "BOX"},
+                {"type": "EXCLUDE_SKU", "value": "SKU-A"},
+            ],
+        }
+    ]
+
+    engine = RuleEngine(rules)
+
+    with caplog.at_level(logging.WARNING):
+        result_df = engine.apply(sample_df.copy())
+
+    # Verify warnings were logged for all deprecated actions
+    assert any("SET_PRIORITY" in record.message for record in caplog.records)
+    assert any("EXCLUDE_FROM_REPORT" in record.message for record in caplog.records)
+    assert any("SET_PACKAGING_TAG" in record.message for record in caplog.records)
+    assert any("EXCLUDE_SKU" in record.message for record in caplog.records)
+
+    # Verify actions were NOT executed (columns not created)
+    assert "Priority" not in result_df.columns
+    assert "_is_excluded" not in result_df.columns
+    assert "Packaging_Tags" not in result_df.columns
+
+
+# ====================================================================
+# NEW OPERATORS TESTS (v1.9.0)
+# ====================================================================
+
+
+@pytest.fixture
+def date_sample_df():
+    """Provides a sample DataFrame with date fields for testing date operators."""
+    data = {
+        "Order_Number": ["#2001", "#2002", "#2003", "#2004", "#2005"],
+        "Order_Date": ["2024-01-15", "2024-01-30", "2024-02-15", "30/01/2024", "15.02.2024"],
+        "Shipping_Provider": ["DHL", "PostOne", "DPD", "DHL", "PostOne"],
+        "Total_Price": [50, 75, 100, 125, 150],
+        "SKU": ["SKU-1234", "SKU-ABCD", "OTHER-001", "SKU-5678", "MISC-999"],
+        "Status_Note": ["", "", "", "", ""],
+        "Internal_Tags": ["[]", "[]", "[]", "[]", "[]"],
+    }
+    return pd.DataFrame(data)
+
+
+# --- List Operators Tests ---
+
+
+@pytest.mark.parametrize(
+    "operator,value,expected_matches",
+    [
+        ("in list", "DHL,PostOne", ["#1001", "#1002", "#1004"]),
+        ("in list", "DHL, PostOne, DPD", ["#1001", "#1002", "#1003", "#1004"]),
+        ("in list", "dhl,postone", ["#1001", "#1002", "#1004"]),  # Case insensitive
+        ("in list", " DHL , PostOne ", ["#1001", "#1002", "#1004"]),  # Whitespace handling
+        ("in list", "FedEx", []),  # No matches
+        ("not in list", "DHL,PostOne", ["#1003"]),
+        ("not in list", "DPD", ["#1001", "#1002", "#1004"]),
+    ],
+)
+def test_list_operators(sample_df, operator, value, expected_matches):
+    """Tests 'in list' and 'not in list' operators with various inputs."""
+    rules = [
+        {
+            "match": "ALL",
+            "conditions": [{"field": "Shipping_Provider", "operator": operator, "value": value}],
+            "actions": [{"type": "ADD_INTERNAL_TAG", "value": "matched"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+    result_df = engine.apply(sample_df.copy())
+
+    matched_orders = result_df[result_df["Internal_Tags"].str.contains("matched", na=False)]["Order_Number"].unique()
+    assert sorted(matched_orders) == sorted(expected_matches)
+
+
+def test_list_operators_empty_value(sample_df):
+    """Test 'in list' operator with empty value."""
+    rules = [
+        {
+            "match": "ALL",
+            "conditions": [{"field": "Shipping_Provider", "operator": "in list", "value": ""}],
+            "actions": [{"type": "ADD_INTERNAL_TAG", "value": "matched"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+    result_df = engine.apply(sample_df.copy())
+
+    # Should not match any rows
+    matched_orders = result_df[result_df["Internal_Tags"].str.contains("matched", na=False)]
+    assert len(matched_orders) == 0
+
+
+# --- Range Operators Tests ---
+
+
+@pytest.mark.parametrize(
+    "operator,value,expected_matches",
+    [
+        ("between", "50-150", ["#1001", "#1002", "#1004"]),
+        ("between", "100-200", ["#1002", "#1003"]),
+        ("between", "50-50", ["#1001"]),  # Exact match (inclusive)
+        ("between", "60-140", ["#1004"]),  # Only #1004 has Total_Price=80
+        ("not between", "50-150", ["#1003"]),
+        ("not between", "100-200", ["#1001", "#1004"]),
+    ],
+)
+def test_range_operators_numeric(sample_df, operator, value, expected_matches):
+    """Tests 'between' and 'not between' operators with numeric values."""
+    rules = [
+        {
+            "match": "ALL",
+            "conditions": [{"field": "Total_Price", "operator": operator, "value": value}],
+            "actions": [{"type": "ADD_INTERNAL_TAG", "value": "matched"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+    result_df = engine.apply(sample_df.copy())
+
+    matched_orders = result_df[result_df["Internal_Tags"].str.contains("matched", na=False)]["Order_Number"].unique()
+    assert sorted(matched_orders) == sorted(expected_matches)
+
+
+@pytest.mark.parametrize(
+    "invalid_range",
+    [
+        "100-10",  # Reversed range
+        "10-",     # Missing end
+        "-100",    # Missing start
+        "abc-xyz", # Non-numeric
+        "invalid", # Invalid format
+        "",        # Empty
+    ],
+)
+def test_range_operators_invalid_input(sample_df, invalid_range, caplog):
+    """Test 'between' operator with invalid range formats."""
+    import logging
+
+    rules = [
+        {
+            "match": "ALL",
+            "conditions": [{"field": "Total_Price", "operator": "between", "value": invalid_range}],
+            "actions": [{"type": "ADD_INTERNAL_TAG", "value": "matched"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+
+    with caplog.at_level(logging.WARNING):
+        result_df = engine.apply(sample_df.copy())
+
+    # Should not match any rows
+    matched_orders = result_df[result_df["Internal_Tags"].str.contains("matched", na=False)]
+    assert len(matched_orders) == 0
+
+    # Should log warning for non-empty invalid inputs
+    if invalid_range and invalid_range.strip():
+        assert any("Invalid range" in record.message or "range format" in record.message for record in caplog.records)
+
+
+# --- Date Operators Tests ---
+
+
+@pytest.mark.parametrize(
+    "operator,value,expected_matches",
+    [
+        ("date before", "2024-01-30", ["#2001"]),
+        ("date before", "2024-02-01", ["#2001", "#2002", "#2004"]),
+        ("date after", "2024-01-30", ["#2003", "#2005"]),
+        ("date after", "2024-01-14", ["#2001", "#2002", "#2003", "#2004", "#2005"]),
+        ("date equals", "2024-01-30", ["#2002", "#2004"]),
+        ("date equals", "2024-02-15", ["#2003", "#2005"]),
+        ("date equals", "2024-01-15", ["#2001"]),
+    ],
+)
+def test_date_operators(date_sample_df, operator, value, expected_matches):
+    """Tests 'date before', 'date after', and 'date equals' operators."""
+    rules = [
+        {
+            "match": "ALL",
+            "conditions": [{"field": "Order_Date", "operator": operator, "value": value}],
+            "actions": [{"type": "ADD_INTERNAL_TAG", "value": "matched"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+    result_df = engine.apply(date_sample_df.copy())
+
+    matched_orders = result_df[result_df["Internal_Tags"].str.contains("matched", na=False)]["Order_Number"].unique()
+    assert sorted(matched_orders) == sorted(expected_matches)
+
+
+def test_date_operators_multiple_formats(date_sample_df):
+    """Test that date operators handle multiple date formats correctly."""
+    # All dates should be normalized to same comparison format
+    rules = [
+        {
+            "match": "ALL",
+            "conditions": [{"field": "Order_Date", "operator": "date equals", "value": "30/01/2024"}],
+            "actions": [{"type": "ADD_INTERNAL_TAG", "value": "matched"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+    result_df = engine.apply(date_sample_df.copy())
+
+    # Should match rows with "2024-01-30" and "30/01/2024"
+    matched_orders = result_df[result_df["Internal_Tags"].str.contains("matched", na=False)]["Order_Number"].unique()
+    assert sorted(matched_orders) == sorted(["#2002", "#2004"])
+
+
+@pytest.mark.parametrize(
+    "invalid_date",
+    [
+        "not-a-date",
+        "2024-13-45",  # Invalid month/day
+        "32/01/2024",  # Invalid day
+        "",
+        "invalid",
+    ],
+)
+def test_date_operators_invalid_input(date_sample_df, invalid_date, caplog):
+    """Test date operators with invalid date formats."""
+    import logging
+
+    rules = [
+        {
+            "match": "ALL",
+            "conditions": [{"field": "Order_Date", "operator": "date before", "value": invalid_date}],
+            "actions": [{"type": "ADD_INTERNAL_TAG", "value": "matched"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+
+    with caplog.at_level(logging.WARNING):
+        result_df = engine.apply(date_sample_df.copy())
+
+    # Should not match any rows
+    matched_orders = result_df[result_df["Internal_Tags"].str.contains("matched", na=False)]
+    assert len(matched_orders) == 0
+
+    # Should log warning
+    if invalid_date and invalid_date not in ["", "not-a-date", "invalid"]:
+        assert any("Invalid rule date" in record.message for record in caplog.records)
+
+
+# --- Regex Operator Tests ---
+
+
+@pytest.mark.parametrize(
+    "pattern,expected_matches",
+    [
+        (r"^SKU-\d{4}$", ["#2001", "#2004"]),
+        (r"SKU-", ["#2001", "#2002", "#2004"]),  # Contains "SKU-"
+        (r"^SKU-[A-Z]{4}$", ["#2002"]),
+        (r"^OTHER", ["#2003"]),
+        (r"-999$", ["#2005"]),  # Ends with -999
+        (r".*", ["#2001", "#2002", "#2003", "#2004", "#2005"]),  # Match all
+    ],
+)
+def test_regex_operator(date_sample_df, pattern, expected_matches):
+    """Tests 'matches regex' operator with various patterns."""
+    rules = [
+        {
+            "match": "ALL",
+            "conditions": [{"field": "SKU", "operator": "matches regex", "value": pattern}],
+            "actions": [{"type": "ADD_INTERNAL_TAG", "value": "matched"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+    result_df = engine.apply(date_sample_df.copy())
+
+    matched_orders = result_df[result_df["Internal_Tags"].str.contains("matched", na=False)]["Order_Number"].unique()
+    assert sorted(matched_orders) == sorted(expected_matches)
+
+
+@pytest.mark.parametrize(
+    "invalid_pattern",
+    [
+        "[invalid",     # Unclosed bracket
+        "(?P<invalid",  # Unclosed group
+        "*invalid",     # Invalid quantifier
+        "(?P<>)",       # Empty group name
+    ],
+)
+def test_regex_operator_invalid_pattern(date_sample_df, invalid_pattern, caplog):
+    """Test 'matches regex' operator with invalid regex patterns."""
+    import logging
+
+    rules = [
+        {
+            "match": "ALL",
+            "conditions": [{"field": "SKU", "operator": "matches regex", "value": invalid_pattern}],
+            "actions": [{"type": "ADD_INTERNAL_TAG", "value": "matched"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+
+    with caplog.at_level(logging.WARNING):
+        result_df = engine.apply(date_sample_df.copy())
+
+    # Should not match any rows
+    matched_orders = result_df[result_df["Internal_Tags"].str.contains("matched", na=False)]
+    assert len(matched_orders) == 0
+
+    # Should log warning about invalid regex
+    assert any("Invalid regex pattern" in record.message for record in caplog.records)
+
+
+# --- Integration Test ---
+
+
+def test_all_new_operators_integration(sample_df, date_sample_df):
+    """Integration test combining all new operators in a realistic scenario."""
+    # Combine both DataFrames for comprehensive testing
+    combined_df = pd.concat([sample_df, date_sample_df], ignore_index=True)
+
+    rules = [
+        {
+            "name": "List operator rule",
+            "match": "ALL",
+            "conditions": [{"field": "Shipping_Provider", "operator": "in list", "value": "DHL,PostOne"}],
+            "actions": [{"type": "ADD_INTERNAL_TAG", "value": "priority_courier"}],
+        },
+        {
+            "name": "Range operator rule",
+            "match": "ALL",
+            "conditions": [{"field": "Total_Price", "operator": "between", "value": "75-150"}],
+            "actions": [{"type": "ADD_INTERNAL_TAG", "value": "mid_value"}],
+        },
+        {
+            "name": "Regex operator rule",
+            "match": "ALL",
+            "conditions": [{"field": "SKU", "operator": "matches regex", "value": r"^SKU-\d{4}$"}],
+            "actions": [{"type": "ADD_INTERNAL_TAG", "value": "standard_sku"}],
+        },
+    ]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(combined_df.copy())
+
+    # Verify multiple tags can be applied
+    priority_count = result_df[result_df["Internal_Tags"].str.contains("priority_courier", na=False)]
+    assert len(priority_count) > 0
+
+    mid_value_count = result_df[result_df["Internal_Tags"].str.contains("mid_value", na=False)]
+    assert len(mid_value_count) > 0
+
+    standard_sku_count = result_df[result_df["Internal_Tags"].str.contains("standard_sku", na=False)]
+    assert len(standard_sku_count) > 0
+
+    # Verify tags don't interfere with each other
+    assert len(result_df) == len(combined_df)
+
+
+# ========== NEW ACTION TYPES TESTS (v1.10.0) ==========
+
+# COPY_FIELD Tests
+def test_copy_field_basic(sample_df):
+    """Test COPY_FIELD copies values correctly."""
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{"type": "COPY_FIELD", "source": "SKU", "target": "Backup_SKU"}]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(sample_df.copy())
+
+    assert "Backup_SKU" in result_df.columns
+
+    # Matched rows
+    matched = result_df[result_df["Order_Number"] == "#1001"]
+    for _, row in matched.iterrows():
+        assert row["Backup_SKU"] == row["SKU"]
+
+    # Unmatched rows should be empty
+    unmatched = result_df[result_df["Order_Number"] != "#1001"]
+    for _, row in unmatched.iterrows():
+        assert row["Backup_SKU"] == ""
+
+
+def test_copy_field_missing_source(sample_df):
+    """Test COPY_FIELD with missing source column."""
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{"type": "COPY_FIELD", "source": "NonExistent", "target": "Target"}]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(sample_df.copy())
+
+    # Should not crash, Target column should not be created
+    assert "Target" not in result_df.columns
+
+
+def test_copy_field_overwrite_existing(sample_df):
+    """Test COPY_FIELD overwrites existing target column."""
+    df = sample_df.copy()
+    df["Backup_SKU"] = "OLD_VALUE"
+
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{"type": "COPY_FIELD", "source": "SKU", "target": "Backup_SKU"}]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    matched = result_df[result_df["Order_Number"] == "#1001"]
+    for _, row in matched.iterrows():
+        assert row["Backup_SKU"] == row["SKU"]
+        assert row["Backup_SKU"] != "OLD_VALUE"
+
+
+# SET_MULTI_TAGS Tests
+def test_set_multi_tags_comma_separated(sample_df):
+    """Test SET_MULTI_TAGS with comma-separated string."""
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{"type": "SET_MULTI_TAGS", "value": "TAG1, TAG2, TAG3"}]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(sample_df.copy())
+
+    matched = result_df[result_df["Order_Number"] == "#1001"]
+    for _, row in matched.iterrows():
+        note = row["Status_Note"]
+        assert "TAG1" in note
+        assert "TAG2" in note
+        assert "TAG3" in note
+
+
+def test_set_multi_tags_no_duplicates(sample_df):
+    """Test SET_MULTI_TAGS prevents duplicate tags."""
+    df = sample_df.copy()
+    df.loc[df["Order_Number"] == "#1001", "Status_Note"] = "TAG1, Existing"
+
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{"type": "SET_MULTI_TAGS", "value": "TAG1, TAG2"}]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    matched = result_df[result_df["Order_Number"] == "#1001"]
+    for _, row in matched.iterrows():
+        note = row["Status_Note"]
+        # TAG1 should appear only once
+        assert note.count("TAG1") == 1
+        assert "TAG2" in note
+        assert "Existing" in note
+
+
+def test_set_multi_tags_list_format(sample_df):
+    """Test SET_MULTI_TAGS with list format."""
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{"type": "SET_MULTI_TAGS", "tags": ["ALPHA", "BETA", "GAMMA"]}]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(sample_df.copy())
+
+    matched = result_df[result_df["Order_Number"] == "#1001"]
+    for _, row in matched.iterrows():
+        note = row["Status_Note"]
+        assert "ALPHA" in note
+        assert "BETA" in note
+        assert "GAMMA" in note
+
+
+# ALERT_NOTIFICATION Tests
+def test_alert_notification_info(sample_df, caplog):
+    """Test ALERT_NOTIFICATION logs info messages."""
+    import logging
+
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{
+            "type": "ALERT_NOTIFICATION",
+            "message": "Test alert",
+            "severity": "info"
+        }]
+    }]
+
+    with caplog.at_level(logging.INFO):
+        engine = RuleEngine(rules)
+        engine.apply(sample_df.copy())
+
+    assert "Test alert" in caplog.text
+    assert "RULE ALERT" in caplog.text
+
+
+def test_alert_notification_warning(sample_df, caplog):
+    """Test ALERT_NOTIFICATION logs warning messages."""
+    import logging
+
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{
+            "type": "ALERT_NOTIFICATION",
+            "message": "Warning message",
+            "severity": "warning"
+        }]
+    }]
+
+    with caplog.at_level(logging.WARNING):
+        engine = RuleEngine(rules)
+        engine.apply(sample_df.copy())
+
+    assert "Warning message" in caplog.text
+
+
+def test_alert_notification_error(sample_df, caplog):
+    """Test ALERT_NOTIFICATION logs error messages."""
+    import logging
+
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{
+            "type": "ALERT_NOTIFICATION",
+            "message": "Error message",
+            "severity": "error"
+        }]
+    }]
+
+    with caplog.at_level(logging.ERROR):
+        engine = RuleEngine(rules)
+        engine.apply(sample_df.copy())
+
+    assert "Error message" in caplog.text
+
+
+# CALCULATE Tests
+@pytest.mark.parametrize("operation,expected", [
+    ("add", 11),       # 10 + 1
+    ("subtract", 9),   # 10 - 1
+    ("multiply", 10),  # 10 * 1
+    ("divide", 10.0),    # 10 / 1
+])
+def test_calculate_operations(sample_df, operation, expected):
+    """Test CALCULATE with different operations."""
+    df = sample_df.copy()
+    df["Value1"] = 10
+    df["Value2"] = 1
+
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{
+            "type": "CALCULATE",
+            "operation": operation,
+            "field1": "Value1",
+            "field2": "Value2",
+            "target": "Result"
+        }]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    matched = result_df[result_df["Order_Number"] == "#1001"]
+    for _, row in matched.iterrows():
+        assert row["Result"] == expected
+
+
+def test_calculate_division_by_zero(sample_df):
+    """Test CALCULATE handles division by zero."""
+    df = sample_df.copy()
+    df["Value1"] = 10
+    df["Value2"] = 0
+
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{
+            "type": "CALCULATE",
+            "operation": "divide",
+            "field1": "Value1",
+            "field2": "Value2",
+            "target": "Result"
+        }]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    matched = result_df[result_df["Order_Number"] == "#1001"]
+    for _, row in matched.iterrows():
+        assert pd.isna(row["Result"])  # Should be NaN
+
+
+def test_calculate_with_quantity(sample_df):
+    """Test CALCULATE using existing Quantity field."""
+    df = sample_df.copy()
+    df["Price"] = 10.5
+
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{
+            "type": "CALCULATE",
+            "operation": "multiply",
+            "field1": "Quantity",
+            "field2": "Price",
+            "target": "Line_Total"
+        }]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    matched = result_df[result_df["Order_Number"] == "#1001"]
+    for _, row in matched.iterrows():
+        expected = row["Quantity"] * row["Price"]
+        assert row["Line_Total"] == expected
+
+
+# ADD_PRODUCT Tests
+def test_add_product_basic(sample_df):
+    """Test ADD_PRODUCT adds new rows."""
+    original_len = len(sample_df)
+
+    # #1001 has 2 rows
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{"type": "ADD_PRODUCT", "sku": "BONUS-001", "quantity": 1}]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(sample_df.copy())
+
+    # Should add 2 bonus rows (one per matched row)
+    assert len(result_df) == original_len + 2
+
+    bonus_rows = result_df[result_df["SKU"] == "BONUS-001"]
+    assert len(bonus_rows) == 2
+    assert all(bonus_rows["Order_Number"] == "#1001")
+    assert all(bonus_rows["Quantity"] == 1)
+
+
+def test_add_product_quantity(sample_df):
+    """Test ADD_PRODUCT respects quantity parameter."""
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{"type": "ADD_PRODUCT", "sku": "BONUS-001", "quantity": 5}]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(sample_df.copy())
+
+    bonus_rows = result_df[result_df["SKU"] == "BONUS-001"]
+    assert all(bonus_rows["Quantity"] == 5)
+
+
+def test_add_product_tagging(sample_df):
+    """Test ADD_PRODUCT tags new rows with rule_added_product."""
+    df = sample_df.copy()
+    # Додамо Internal_Tags колонку якщо її немає
+    if "Internal_Tags" not in df.columns:
+        df["Internal_Tags"] = "[]"
+
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{"type": "ADD_PRODUCT", "sku": "BONUS-001", "quantity": 1}]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    bonus_rows = result_df[result_df["SKU"] == "BONUS-001"]
+    for _, row in bonus_rows.iterrows():
+        assert "rule_added_product" in row["Internal_Tags"]
+
+
+def test_add_product_clears_status_note(sample_df):
+    """Test ADD_PRODUCT clears Status_Note for new rows."""
+    df = sample_df.copy()
+    df.loc[df["Order_Number"] == "#1001", "Status_Note"] = "EXISTING_TAG"
+
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{"type": "ADD_PRODUCT", "sku": "BONUS-001", "quantity": 1}]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    bonus_rows = result_df[result_df["SKU"] == "BONUS-001"]
+    for _, row in bonus_rows.iterrows():
+        assert row["Status_Note"] == ""
+
+
+def test_add_product_multiple_orders(sample_df):
+    """Test ADD_PRODUCT works with multiple matching orders."""
+    rules = [{
+        "conditions": [{"field": "Total_Price", "operator": "is greater than", "value": "60"}],
+        "actions": [{"type": "ADD_PRODUCT", "sku": "GIFT-001", "quantity": 1}]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(sample_df.copy())
+
+    # Should add gift products for orders with Total_Price > 60
+    gift_rows = result_df[result_df["SKU"] == "GIFT-001"]
+    assert len(gift_rows) > 0
+
+    # Verify all gifts have correct quantity
+    assert all(gift_rows["Quantity"] == 1)
+
+
+def test_add_product_uses_stock_data(sample_df):
+    """Test ADD_PRODUCT uses Product_Name and Warehouse_Name from existing SKU in stock."""
+    df = sample_df.copy()
+
+    # Add a product with specific warehouse info to simulate stock data
+    df.loc[len(df)] = {
+        "Order_Number": "#9999",  # Different order
+        "Order_Type": "Single",
+        "Shipping_Provider": "DHL",
+        "Total_Price": 10,
+        "Tags": "",
+        "Status_Note": "",
+        "Order_Fulfillment_Status": "Fulfillable",
+        "SKU": "BONUS-SKU",
+        "Quantity": 100,  # Stock quantity
+    }
+
+    # Add Warehouse_Name and Product_Name columns
+    df["Warehouse_Name"] = df["SKU"].copy()
+    df["Product_Name"] = df["SKU"].copy()
+
+    # Set specific values for our stock SKU
+    df.loc[df["SKU"] == "BONUS-SKU", "Warehouse_Name"] = "Special Warehouse"
+    df.loc[df["SKU"] == "BONUS-SKU", "Product_Name"] = "Bonus Product"
+    df.loc[df["SKU"] == "BONUS-SKU", "Stock"] = 500
+
+    # Now add this product to order #1001
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{"type": "ADD_PRODUCT", "sku": "BONUS-SKU", "quantity": 1}]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    # Find added bonus products in order #1001
+    bonus_in_order = result_df[(result_df["SKU"] == "BONUS-SKU") & (result_df["Order_Number"] == "#1001")]
+
+    assert len(bonus_in_order) == 2  # #1001 has 2 rows, so 2 bonus products added
+
+    # Verify that Warehouse_Name and Product_Name come from stock data, not from order rows
+    for _, row in bonus_in_order.iterrows():
+        assert row["Warehouse_Name"] == "Special Warehouse", f"Expected 'Special Warehouse', got '{row['Warehouse_Name']}'"
+        assert row["Product_Name"] == "Bonus Product", f"Expected 'Bonus Product', got '{row['Product_Name']}'"
+        assert row["Quantity"] == 1  # Quantity from action, not stock
+        if "Stock" in row:
+            assert row["Stock"] == 500  # Stock value from stock data
+
+
+# Integration Test
+def test_all_new_actions_integration(sample_df):
+    """Integration test using all 5 new action types."""
+    df = sample_df.copy()
+    df["Price"] = 10.0
+
+    rules = [
+        {
+            "name": "Test all actions",
+            "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+            "actions": [
+                {"type": "COPY_FIELD", "source": "SKU", "target": "Original_SKU"},
+                {"type": "CALCULATE", "operation": "multiply", "field1": "Quantity", "field2": "Price", "target": "Total"},
+                {"type": "SET_MULTI_TAGS", "value": "PROCESSED, CALCULATED"},
+                {"type": "ALERT_NOTIFICATION", "message": "Integration test", "severity": "info"},
+                {"type": "ADD_PRODUCT", "sku": "BONUS-001", "quantity": 1},
+            ]
+        }
+    ]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    # Verify COPY_FIELD
+    assert "Original_SKU" in result_df.columns
+
+    # Verify CALCULATE
+    assert "Total" in result_df.columns
+    matched = result_df[(result_df["Order_Number"] == "#1001") & (result_df["SKU"] != "BONUS-001")]
+    for _, row in matched.iterrows():
+        assert row["Total"] == row["Quantity"] * row["Price"]
+
+    # Verify SET_MULTI_TAGS
+    for _, row in matched.iterrows():
+        assert "PROCESSED" in row["Status_Note"]
+        assert "CALCULATED" in row["Status_Note"]
+
+    # Verify ADD_PRODUCT
+    bonus_rows = result_df[result_df["SKU"] == "BONUS-001"]
+    assert len(bonus_rows) == 2  # #1001 has 2 original rows
+
+
+# ============================================================================
+# Priority System Tests
+# ============================================================================
+
+def test_rules_execute_in_priority_order(sample_df):
+    """Verify rules execute in priority order (1, 2, 3), not definition order."""
+    df = sample_df.copy()
+
+    rules = [
+        {
+            "name": "Should Execute Second",
+            "priority": 2,
+            "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+            "actions": [{"type": "ADD_TAG", "value": "SECOND"}]
+        },
+        {
+            "name": "Should Execute First",
+            "priority": 1,
+            "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+            "actions": [{"type": "ADD_TAG", "value": "FIRST"}]
+        },
+        {
+            "name": "Should Execute Third",
+            "priority": 3,
+            "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+            "actions": [{"type": "ADD_TAG", "value": "THIRD"}]
+        },
+    ]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    # Verify tags appear in priority order
+    rows_1001 = result_df[result_df["Order_Number"] == "#1001"]
+    for _, row in rows_1001.iterrows():
+        note = row["Status_Note"]
+        assert note == "FIRST, SECOND, THIRD", f"Expected 'FIRST, SECOND, THIRD', got '{note}'"
+
+
+def test_dependent_rules_with_priorities(sample_df):
+    """Test rules that depend on results of other rules (CALCULATE → TAG)."""
+    df = sample_df.copy()
+    df["Price"] = [10.0, 20.0, 5.0, 15.0, 30.0]
+
+    rules = [
+        {
+            "name": "Tag Based on Total (depends on calculation)",
+            "priority": 2,  # Execute AFTER calculation
+            "conditions": [{"field": "Total", "operator": "is greater than", "value": "30"}],
+            "actions": [{"type": "ADD_TAG", "value": "HIGH_VALUE"}]
+        },
+        {
+            "name": "Calculate Total",
+            "priority": 1,  # Execute FIRST
+            "conditions": [{"field": "Quantity", "operator": "is greater than", "value": "0"}],
+            "actions": [{
+                "type": "CALCULATE",
+                "operation": "multiply",
+                "field1": "Quantity",
+                "field2": "Price",
+                "target": "Total"
+            }]
+        },
+    ]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    # Verify Total column was created
+    assert "Total" in result_df.columns
+
+    # Verify high-value orders are tagged
+    high_value_rows = result_df[result_df["Total"] > 30]
+    if len(high_value_rows) > 0:
+        for _, row in high_value_rows.iterrows():
+            assert "HIGH_VALUE" in row["Status_Note"]
+
+
+def test_backward_compatibility_no_priority(sample_df):
+    """Verify rules without priority field work (assigned default 1000+)."""
+    df = sample_df.copy()
+
+    # Old-style rules (no priority field)
+    rules = [
+        {
+            "name": "Old Rule 1",
+            "conditions": [{"field": "SKU", "operator": "equals", "value": "SKU-A"}],
+            "actions": [{"type": "ADD_TAG", "value": "RULE1"}]
+        },
+        {
+            "name": "Old Rule 2",
+            "conditions": [{"field": "SKU", "operator": "equals", "value": "SKU-B"}],
+            "actions": [{"type": "ADD_TAG", "value": "RULE2"}]
+        },
+    ]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    # Verify rules executed
+    assert result_df[result_df["SKU"] == "SKU-A"]["Status_Note"].iloc[0] == "RULE1"
+    assert result_df[result_df["SKU"] == "SKU-B"]["Status_Note"].iloc[0] == "RULE2"
+
+    # Verify default priorities assigned
+    assert engine.rules[0]["priority"] == 1000
+    assert engine.rules[1]["priority"] == 1001
+
+
+def test_reorder_rules_helper():
+    """Test RuleEngine.reorder_rules() static method."""
+    rules = [
+        {"name": "Rule A", "priority": 1},
+        {"name": "Rule B", "priority": 2},
+        {"name": "Rule C", "priority": 3},
+    ]
+
+    # Move Rule C (index 2) to position 0
+    reordered = RuleEngine.reorder_rules(rules.copy(), 2, 0)
+    assert reordered[0]["name"] == "Rule C"
+    assert reordered[1]["name"] == "Rule A"
+    assert reordered[2]["name"] == "Rule B"
+
+    # Test invalid indices (should return unchanged)
+    invalid = RuleEngine.reorder_rules(rules.copy(), 10, 0)
+    assert invalid == rules
+
+
+def test_mixed_priority_config(sample_df):
+    """Test config with some rules having priority, some not."""
+    df = sample_df.copy()
+
+    rules = [
+        {
+            "name": "Has Priority 5",
+            "priority": 5,
+            "conditions": [{"field": "SKU", "operator": "equals", "value": "SKU-A"}],
+            "actions": [{"type": "ADD_TAG", "value": "PRIORITY"}]
+        },
+        {
+            "name": "No Priority",  # Should get default 1000
+            "conditions": [{"field": "SKU", "operator": "equals", "value": "SKU-B"}],
+            "actions": [{"type": "ADD_TAG", "value": "DEFAULT"}]
+        },
+    ]
+
+    engine = RuleEngine(rules)
+
+    # Rule with priority 5 should execute first (lower number)
+    assert engine.rules[0]["priority"] == 5
+    assert engine.rules[0]["name"] == "Has Priority 5"
+
+    # Rule without priority should get default 1000
+    assert engine.rules[1]["priority"] == 1000
+    assert engine.rules[1]["name"] == "No Priority"

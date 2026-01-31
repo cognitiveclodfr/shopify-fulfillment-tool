@@ -834,8 +834,8 @@ return str(method).title()
             "value": "HighValue"
         },
         {
-            "type": "SET_PRIORITY",
-            "value": "High"
+            "type": "ADD_INTERNAL_TAG",
+            "value": "priority:high"
         }
     ]
 }
@@ -898,6 +898,63 @@ engine = RuleEngine(rules)
 processed_df = engine.apply(orders_df)
 ```
 
+**Example with Dependent Rules (Using Priority)**:
+
+When one rule creates data that another rule uses, set priorities to control execution order:
+
+```python
+# Scenario: Calculate total price, then tag expensive orders
+
+rules = [
+    {
+        "name": "Calculate Total Price",
+        "priority": 1,  # Execute FIRST
+        "level": "article",
+        "match": "ALL",
+        "conditions": [
+            {"field": "Quantity", "operator": "is greater than", "value": "0"}
+        ],
+        "actions": [
+            {
+                "type": "CALCULATE",
+                "operation": "multiply",
+                "field1": "Quantity",
+                "field2": "Unit_Price",
+                "target": "Total_Price"
+            }
+        ]
+    },
+    {
+        "name": "Tag Expensive Orders",
+        "priority": 2,  # Execute SECOND (after Total_Price is calculated)
+        "level": "article",
+        "match": "ALL",
+        "conditions": [
+            {"field": "Total_Price", "operator": "is greater than", "value": "100"}
+        ],
+        "actions": [
+            {"type": "ADD_TAG", "value": "EXPENSIVE"}
+        ]
+    }
+]
+
+engine = RuleEngine(rules)
+processed_df = engine.apply(orders_df)
+
+# Result: Rule 1 calculates Total_Price column first,
+#         then Rule 2 checks Total_Price and tags rows > 100
+```
+
+**Priority System**:
+- **Lower number = higher priority = executes first** (1, 2, 3, ...)
+- Rules without `priority` field get default 1000 (executed last)
+- Article rules and order rules have **separate priority sequences**
+- Execution order:
+  1. Rule 1 (Priority 1) calculates `Total_Price` column
+  2. Rule 2 (Priority 2) checks `Total_Price` and tags accordingly
+
+Without priorities, Rule 2 might execute before Rule 1, causing the condition to fail because `Total_Price` doesn't exist yet.
+
 ---
 
 #### `RuleEngine._prepare_df_for_actions(df)`
@@ -918,13 +975,13 @@ processed_df = engine.apply(orders_df)
    - `_is_excluded`: Default False
    - `Status_Note`: Default ""
 
-**Column Requirements by Action**:
+**Column Requirements by Action** (Active Actions Only):
 | Action Type | Required Column | Default Value |
 |-------------|-----------------|---------------|
-| SET_PRIORITY | Priority | "Normal" |
-| EXCLUDE_FROM_REPORT | _is_excluded | False |
-| EXCLUDE_SKU | Status_Note | "" |
 | ADD_TAG | Status_Note | "" |
+| ADD_ORDER_TAG | Status_Note | "" |
+| ADD_INTERNAL_TAG | Internal_Tags | "[]" |
+| SET_STATUS | Order_Fulfillment_Status | (existing) |
 
 ---
 
@@ -1000,9 +1057,13 @@ matches = _get_matching_rows(df, rule)
 
 **Action Types and Behavior**:
 
+> **Note:** As of v1.9.0, `SET_PRIORITY`, `EXCLUDE_FROM_REPORT`, `SET_PACKAGING_TAG`, and `EXCLUDE_SKU` have been deprecated. Use `ADD_INTERNAL_TAG` for structured metadata.
+
+**Active Action Types:**
+
 **1. ADD_TAG**:
 ```python
-# Appends to Status_Note, prevents duplicates
+# Appends to Status_Note column, prevents duplicates
 current_notes = df.loc[matches, "Status_Note"]
 new_notes = current_notes.apply(lambda note:
     note if value in note.split(", ") else f"{note}, {value}" if note else value
@@ -1010,29 +1071,35 @@ new_notes = current_notes.apply(lambda note:
 df.loc[matches, "Status_Note"] = new_notes
 ```
 
-**2. SET_STATUS**:
+**2. ADD_ORDER_TAG**:
+```python
+# Appends to Status_Note (order-level only, applies to first row)
+# Same behavior as ADD_TAG but used in order-level rules
+current_notes = df.loc[matches, "Status_Note"]
+new_notes = current_notes.apply(lambda note:
+    note if value in note.split(", ") else f"{note}, {value}" if note else value
+)
+df.loc[matches, "Status_Note"] = new_notes
+```
+
+**3. ADD_INTERNAL_TAG** (Recommended):
+```python
+# Adds structured tag to Internal_Tags JSON column
+from shopify_tool.tag_manager import add_tag
+current_tags = df.loc[matches, "Internal_Tags"]
+new_tags = current_tags.apply(lambda t: add_tag(t, value))
+df.loc[matches, "Internal_Tags"] = new_tags
+```
+
+**4. SET_STATUS**:
 ```python
 df.loc[matches, "Order_Fulfillment_Status"] = value
 ```
 
-**3. SET_PRIORITY**:
-```python
-df.loc[matches, "Priority"] = value
-```
-
-**4. EXCLUDE_FROM_REPORT**:
-```python
-df.loc[matches, "_is_excluded"] = True
-```
-
-**5. EXCLUDE_SKU** (Complex):
-```python
-# Only affects rows matching both the rule AND the specific SKU
-sku_matches = df["SKU"] == value
-final_matches = matches & sku_matches
-df.loc[final_matches, "Quantity"] = 0
-df.loc[final_matches, "Status_Note"] += " SKU_EXCLUDED"
-```
+**Migration Examples:**
+- `SET_PRIORITY: "High"` → `ADD_INTERNAL_TAG: "priority:high"`
+- `EXCLUDE_FROM_REPORT` → `ADD_INTERNAL_TAG: "exclude_from_report"`
+- `SET_PACKAGING_TAG: "BOX"` → `ADD_INTERNAL_TAG: "packaging:box"`
 
 ---
 
@@ -1283,6 +1350,273 @@ result = _op_starts_with(df["SKU"], "DHL-")
 **Location**: `shopify_tool/rules.py:84`
 
 **Returns**: `series_val.notna() & (series_val != "")`
+
+---
+
+### New Helper Functions (v1.9.0)
+
+#### `_parse_date_safe(date_str)`
+
+**Purpose**: Safely parse date strings with multiple format support.
+
+**Location**: `shopify_tool/rules.py:~150`
+
+**Parameters**:
+| Name | Type | Description |
+|------|------|-------------|
+| `date_str` | str | Date string to parse |
+
+**Returns**: `Optional[pd.Timestamp]` - Parsed timestamp or None if invalid
+
+**Supported Formats**:
+1. ISO format: `YYYY-MM-DD` (e.g., "2024-01-30")
+2. European slash: `DD/MM/YYYY` (e.g., "30/01/2024")
+3. European dot: `DD.MM.YYYY` (e.g., "30.01.2024")
+
+**Features**:
+- Tries formats sequentially
+- Returns None for invalid dates
+- Logs warnings for unparseable dates with `[RULE ENGINE]` prefix
+
+**Example**:
+```python
+date1 = _parse_date_safe("2024-01-30")  # pd.Timestamp('2024-01-30')
+date2 = _parse_date_safe("30/01/2024")  # pd.Timestamp('2024-01-30')
+date3 = _parse_date_safe("invalid")     # None (logs warning)
+```
+
+---
+
+#### `_compile_regex_safe(pattern)`
+
+**Purpose**: Safely compile regex patterns with LRU caching for performance.
+
+**Location**: `shopify_tool/rules.py:~190`
+
+**Parameters**:
+| Name | Type | Description |
+|------|------|-------------|
+| `pattern` | str | Regular expression pattern |
+
+**Returns**: `Optional[re.Pattern]` - Compiled pattern or None if invalid
+
+**Features**:
+- **LRU Cache**: `@lru_cache(maxsize=128)` to avoid recompiling patterns
+- Validates pattern before compilation
+- Returns None for invalid patterns
+- Logs warnings for regex errors
+
+**Example**:
+```python
+pattern = _compile_regex_safe(r"^SKU-\d{4}$")  # Compiled pattern
+invalid = _compile_regex_safe("[invalid")       # None (logs warning)
+
+# Cached - no recompilation on second call
+pattern2 = _compile_regex_safe(r"^SKU-\d{4}$")  # Returns cached result
+```
+
+---
+
+#### `_parse_range(range_str)`
+
+**Purpose**: Parse range strings in "start-end" format.
+
+**Location**: `shopify_tool/rules.py:~218`
+
+**Parameters**:
+| Name | Type | Description |
+|------|------|-------------|
+| `range_str` | str | Range string (e.g., "10-100") |
+
+**Returns**: `Optional[tuple[float, float]]` - (start, end) tuple or None if invalid
+
+**Features**:
+- Validates range format
+- Converts to floats (supports decimals: "5.5-15.5")
+- Rejects reversed ranges (e.g., "100-10")
+- Logs warnings for invalid inputs
+
+**Example**:
+```python
+range1 = _parse_range("10-100")     # (10.0, 100.0)
+range2 = _parse_range("5.5-15.5")   # (5.5, 15.5)
+range3 = _parse_range("100-10")     # None (logs warning: reversed)
+range4 = _parse_range("invalid")    # None (logs warning)
+```
+
+---
+
+### New Operator Functions (v1.9.0)
+
+#### `_op_in_list(series_val, rule_val)`
+
+**Purpose**: Check if series value matches any item in comma-separated list.
+
+**Location**: `shopify_tool/rules.py:~260`
+
+**Parameters**:
+| Name | Type | Description |
+|------|------|-------------|
+| `series_val` | pd.Series | Column values to check |
+| `rule_val` | str | Comma-separated list (e.g., "DHL,PostOne,FedEx") |
+
+**Returns**: `pd.Series[bool]` - True where value is in list
+
+**Features**:
+- Case-insensitive matching
+- Automatic whitespace trimming
+- Handles empty values gracefully
+
+**Example**:
+```python
+result = _op_in_list(df["Courier"], "DHL, PostOne, FedEx")
+# Matches "dhl", "DHL", " PostOne ", etc.
+```
+
+---
+
+#### `_op_not_in_list(series_val, rule_val)`
+
+**Purpose**: Check if series value does NOT match any item in list.
+
+**Location**: `shopify_tool/rules.py:~290`
+
+**Returns**: `pd.Series[bool]` - Inverse of `_op_in_list()`
+
+---
+
+#### `_op_between(series_val, rule_val)`
+
+**Purpose**: Check if series value falls within inclusive numeric range.
+
+**Location**: `shopify_tool/rules.py:~315`
+
+**Parameters**:
+| Name | Type | Description |
+|------|------|-------------|
+| `series_val` | pd.Series | Column values to check |
+| `rule_val` | str | Range in format "start-end" (e.g., "10-100") |
+
+**Returns**: `pd.Series[bool]` - True where value is in [start, end]
+
+**Features**:
+- Inclusive boundaries (10 and 100 both match in "10-100")
+- Tries numeric comparison first
+- Falls back to string comparison for non-numeric values
+- Uses `_parse_range()` helper for validation
+
+**Example**:
+```python
+result = _op_between(df["Price"], "50-150")
+# Matches 50, 75, 100, 150 (inclusive)
+```
+
+---
+
+#### `_op_not_between(series_val, rule_val)`
+
+**Purpose**: Check if series value does NOT fall within range.
+
+**Location**: `shopify_tool/rules.py:~345`
+
+**Returns**: `pd.Series[bool]` - Inverse of `_op_between()`
+
+---
+
+#### `_op_date_before(series_val, rule_val)`
+
+**Purpose**: Check if series date is before rule date.
+
+**Location**: `shopify_tool/rules.py:~370`
+
+**Parameters**:
+| Name | Type | Description |
+|------|------|-------------|
+| `series_val` | pd.Series | Column with date values |
+| `rule_val` | str | Date string (e.g., "2024-01-30") |
+
+**Returns**: `pd.Series[bool]` - True where date < rule date
+
+**Features**:
+- Supports multiple date formats (uses `_parse_date_safe()`)
+- Ignores time components (normalizes to midnight)
+- Handles invalid dates gracefully (returns False)
+
+**Example**:
+```python
+result = _op_date_before(df["Order_Date"], "2024-01-30")
+# Matches dates before January 30, 2024
+```
+
+---
+
+#### `_op_date_after(series_val, rule_val)`
+
+**Purpose**: Check if series date is after rule date.
+
+**Location**: `shopify_tool/rules.py:~410`
+
+**Returns**: `pd.Series[bool]` - True where date > rule date
+
+**Features**: Same as `_op_date_before()`
+
+---
+
+#### `_op_date_equals(series_val, rule_val)`
+
+**Purpose**: Check if series date equals rule date (time ignored).
+
+**Location**: `shopify_tool/rules.py:~450`
+
+**Returns**: `pd.Series[bool]` - True where date == rule date
+
+**Features**: Same as `_op_date_before()`
+
+**Example**:
+```python
+result = _op_date_equals(df["Order_Date"], "30/01/2024")
+# Matches "2024-01-30", "30/01/2024", "30.01.2024" (all normalized)
+```
+
+---
+
+#### `_op_matches_regex(series_val, rule_val)`
+
+**Purpose**: Check if series value matches regular expression pattern.
+
+**Location**: `shopify_tool/rules.py:~520`
+
+**Parameters**:
+| Name | Type | Description |
+|------|------|-------------|
+| `series_val` | pd.Series | Column values to check |
+| `rule_val` | str | Regular expression pattern |
+
+**Returns**: `pd.Series[bool]` - True where value matches pattern
+
+**Features**:
+- Full regex syntax support
+- Uses `_compile_regex_safe()` for caching
+- Invalid patterns return False (with warning)
+- Vectorized with `series.str.contains()`
+
+**Example**:
+```python
+# Match SKUs with format "SKU-####"
+result = _op_matches_regex(df["SKU"], r"^SKU-\d{4}$")
+# Matches "SKU-1234", "SKU-5678", etc.
+
+# Match phone numbers
+result = _op_matches_regex(df["Phone"], r"^\d{3}-\d{3}-\d{4}$")
+# Matches "123-456-7890"
+```
+
+**Common Patterns**:
+- Starts with: `^PREFIX`
+- Ends with: `SUFFIX$`
+- Contains digits: `\d+`
+- Alphanumeric: `[A-Za-z0-9]+`
+- Optional groups: `(pattern)?`
 
 ---
 

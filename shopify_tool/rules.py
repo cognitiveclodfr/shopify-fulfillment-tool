@@ -1,4 +1,7 @@
 import pandas as pd
+import re
+from functools import lru_cache
+from typing import Optional
 
 
 """Implements a configurable rule engine to process and modify order data.
@@ -32,6 +35,18 @@ OPERATOR_MAP = {
     "ends with": "_op_ends_with",
     "is empty": "_op_is_empty",
     "is not empty": "_op_is_not_empty",
+    # NEW: List operators
+    "in list": "_op_in_list",
+    "not in list": "_op_not_in_list",
+    # NEW: Range operators
+    "between": "_op_between",
+    "not between": "_op_not_between",
+    # NEW: Date operators
+    "date before": "_op_date_before",
+    "date after": "_op_date_after",
+    "date equals": "_op_date_equals",
+    # NEW: Regex operator
+    "matches regex": "_op_matches_regex",
 }
 
 # --- Operator Implementations ---
@@ -124,6 +139,426 @@ def _op_is_not_empty(series_val, rule_val):
     return series_val.notna() & (series_val != "")
 
 
+# --- Helper Functions for New Operators ---
+
+
+def _parse_date_safe(date_str: str) -> Optional[pd.Timestamp]:
+    """Safely parse date string with multiple format support.
+
+    Tries 3 common date formats in sequence:
+    1. YYYY-MM-DD (ISO format)
+    2. DD/MM/YYYY (European format)
+    3. DD.MM.YYYY (European format with dots)
+
+    Args:
+        date_str: Date string to parse
+
+    Returns:
+        pd.Timestamp if successfully parsed, None otherwise
+
+    Example:
+        >>> _parse_date_safe("2024-01-30")
+        Timestamp('2024-01-30 00:00:00')
+        >>> _parse_date_safe("30/01/2024")
+        Timestamp('2024-01-30 00:00:00')
+        >>> _parse_date_safe("invalid")
+        None
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    if not date_str or pd.isna(date_str):
+        return None
+
+    date_str = str(date_str).strip()
+
+    # Try multiple formats
+    formats = ["%Y-%m-%d", "%d/%m/%Y", "%d.%m.%Y"]
+
+    for fmt in formats:
+        try:
+            return pd.to_datetime(date_str, format=fmt)
+        except (ValueError, TypeError):
+            continue
+
+    logger.warning(f"[RULE ENGINE] Invalid rule date format: '{date_str}'")
+    return None
+
+
+@lru_cache(maxsize=128)
+def _compile_regex_safe(pattern: str) -> Optional[re.Pattern]:
+    """Safely compile regex pattern with caching.
+
+    Uses LRU cache to avoid recompiling patterns on repeated calls.
+
+    Args:
+        pattern: Regex pattern string
+
+    Returns:
+        Compiled re.Pattern if valid, None otherwise
+
+    Example:
+        >>> pattern = _compile_regex_safe(r"^SKU-\\d{4}$")
+        >>> pattern.match("SKU-1234")
+        <re.Match object; span=(0, 8), match='SKU-1234'>
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    if not pattern or pd.isna(pattern):
+        return None
+
+    try:
+        return re.compile(str(pattern))
+    except re.error as e:
+        logger.warning(f"[RULE ENGINE] Invalid regex pattern '{pattern}': {e}")
+        return None
+
+
+def _parse_range(range_str: str) -> Optional[tuple[float, float]]:
+    """Parse range string in format 'start-end'.
+
+    Args:
+        range_str: Range string (e.g., "10-100", "5.5-15.5")
+
+    Returns:
+        Tuple of (start, end) as floats if valid, None otherwise
+
+    Example:
+        >>> _parse_range("10-100")
+        (10.0, 100.0)
+        >>> _parse_range("invalid")
+        None
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    if not range_str or pd.isna(range_str):
+        return None
+
+    range_str = str(range_str).strip()
+
+    # Split on dash
+    parts = range_str.split("-")
+    if len(parts) != 2:
+        logger.warning(f"[RULE ENGINE] Invalid range format: '{range_str}' (expected 'start-end')")
+        return None
+
+    try:
+        start = float(parts[0].strip())
+        end = float(parts[1].strip())
+
+        # Validate order
+        if start > end:
+            logger.warning(f"[RULE ENGINE] Invalid range: start ({start}) > end ({end})")
+            return None
+
+        return (start, end)
+    except (ValueError, TypeError) as e:
+        logger.warning(f"[RULE ENGINE] Invalid range values in '{range_str}': {e}")
+        return None
+
+
+# --- New Operator Implementations ---
+
+
+def _op_in_list(series_val, rule_val):
+    """Returns True where the series value is in the comma-separated list.
+
+    Performs case-insensitive matching with automatic whitespace trimming.
+
+    Args:
+        series_val: pandas Series to check
+        rule_val: Comma-separated string (e.g., "DHL,DPD,PostOne")
+
+    Returns:
+        pd.Series[bool]: True where value matches any item in list
+
+    Example:
+        >>> series = pd.Series(["DHL", "PostOne", "FedEx"])
+        >>> _op_in_list(series, "DHL, PostOne")
+        0     True
+        1     True
+        2    False
+        dtype: bool
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    if not rule_val or pd.isna(rule_val):
+        logger.warning("[RULE ENGINE] Empty list value for 'in list' operator")
+        return pd.Series([False] * len(series_val), index=series_val.index)
+
+    # Parse: split, strip, lowercase
+    list_values = [v.strip().lower() for v in str(rule_val).split(",") if v.strip()]
+
+    if not list_values:
+        return pd.Series([False] * len(series_val), index=series_val.index)
+
+    # Case-insensitive comparison
+    series_lower = series_val.astype(str).str.strip().str.lower()
+    return series_lower.isin(list_values)
+
+
+def _op_not_in_list(series_val, rule_val):
+    """Returns True where the series value is NOT in the comma-separated list.
+
+    Performs case-insensitive matching with automatic whitespace trimming.
+
+    Args:
+        series_val: pandas Series to check
+        rule_val: Comma-separated string (e.g., "DHL,DPD,PostOne")
+
+    Returns:
+        pd.Series[bool]: True where value does NOT match any item in list
+
+    Example:
+        >>> series = pd.Series(["DHL", "PostOne", "FedEx"])
+        >>> _op_not_in_list(series, "DHL, PostOne")
+        0    False
+        1    False
+        2     True
+        dtype: bool
+    """
+    return ~_op_in_list(series_val, rule_val)
+
+
+def _op_between(series_val, rule_val):
+    """Returns True where the series value is between start and end (inclusive).
+
+    Tries numeric comparison first, falls back to string comparison.
+
+    Args:
+        series_val: pandas Series to check
+        rule_val: Range string in format "start-end" (e.g., "10-100")
+
+    Returns:
+        pd.Series[bool]: True where value is in range [start, end]
+
+    Example:
+        >>> series = pd.Series([5, 15, 25, 105])
+        >>> _op_between(series, "10-100")
+        0    False
+        1     True
+        2     True
+        3    False
+        dtype: bool
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    range_tuple = _parse_range(rule_val)
+    if range_tuple is None:
+        return pd.Series([False] * len(series_val), index=series_val.index)
+
+    start, end = range_tuple
+
+    # Try numeric comparison
+    series_numeric = pd.to_numeric(series_val, errors="coerce")
+    if series_numeric.notna().any():
+        # Use numeric comparison where possible
+        return (series_numeric >= start) & (series_numeric <= end)
+    else:
+        # Fallback to string comparison
+        logger.info(f"[RULE ENGINE] Using string comparison for 'between' operator")
+        series_str = series_val.astype(str)
+        return (series_str >= str(start)) & (series_str <= str(end))
+
+
+def _op_not_between(series_val, rule_val):
+    """Returns True where the series value is NOT between start and end.
+
+    Tries numeric comparison first, falls back to string comparison.
+
+    Args:
+        series_val: pandas Series to check
+        rule_val: Range string in format "start-end" (e.g., "10-100")
+
+    Returns:
+        pd.Series[bool]: True where value is NOT in range [start, end]
+
+    Example:
+        >>> series = pd.Series([5, 15, 25, 105])
+        >>> _op_not_between(series, "10-100")
+        0     True
+        1    False
+        2    False
+        3     True
+        dtype: bool
+    """
+    return ~_op_between(series_val, rule_val)
+
+
+def _op_date_before(series_val, rule_val):
+    """Returns True where the series date is before the rule date.
+
+    Supports multiple date formats and ignores time components.
+
+    Args:
+        series_val: pandas Series with date values
+        rule_val: Date string (e.g., "2024-01-30", "30/01/2024")
+
+    Returns:
+        pd.Series[bool]: True where date is before rule date
+
+    Example:
+        >>> series = pd.Series(["2024-01-15", "2024-02-15"])
+        >>> _op_date_before(series, "2024-01-30")
+        0     True
+        1    False
+        dtype: bool
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    rule_date = _parse_date_safe(rule_val)
+    if rule_date is None:
+        return pd.Series([False] * len(series_val), index=series_val.index, dtype=bool)
+
+    # Normalize to ignore time
+    rule_date = rule_date.normalize()
+
+    # Parse series dates with multiple format attempts
+    series_dates = pd.Series([None] * len(series_val), index=series_val.index)
+    for idx, val in series_val.items():
+        parsed = _parse_date_safe(val)
+        if parsed is not None:
+            series_dates[idx] = parsed
+
+    # Create boolean result
+    result = pd.Series([False] * len(series_val), index=series_val.index, dtype=bool)
+    valid_mask = series_dates.notna()
+
+    if valid_mask.any():
+        valid_dates = pd.to_datetime(series_dates[valid_mask])
+        result.loc[valid_mask] = valid_dates.dt.normalize() < rule_date
+
+    return result
+
+
+def _op_date_after(series_val, rule_val):
+    """Returns True where the series date is after the rule date.
+
+    Supports multiple date formats and ignores time components.
+
+    Args:
+        series_val: pandas Series with date values
+        rule_val: Date string (e.g., "2024-01-30", "30/01/2024")
+
+    Returns:
+        pd.Series[bool]: True where date is after rule date
+
+    Example:
+        >>> series = pd.Series(["2024-01-15", "2024-02-15"])
+        >>> _op_date_after(series, "2024-01-30")
+        0    False
+        1     True
+        dtype: bool
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    rule_date = _parse_date_safe(rule_val)
+    if rule_date is None:
+        return pd.Series([False] * len(series_val), index=series_val.index, dtype=bool)
+
+    # Normalize to ignore time
+    rule_date = rule_date.normalize()
+
+    # Parse series dates with multiple format attempts
+    series_dates = pd.Series([None] * len(series_val), index=series_val.index)
+    for idx, val in series_val.items():
+        parsed = _parse_date_safe(val)
+        if parsed is not None:
+            series_dates[idx] = parsed
+
+    # Create boolean result
+    result = pd.Series([False] * len(series_val), index=series_val.index, dtype=bool)
+    valid_mask = series_dates.notna()
+
+    if valid_mask.any():
+        valid_dates = pd.to_datetime(series_dates[valid_mask])
+        result.loc[valid_mask] = valid_dates.dt.normalize() > rule_date
+
+    return result
+
+
+def _op_date_equals(series_val, rule_val):
+    """Returns True where the series date equals the rule date.
+
+    Supports multiple date formats and ignores time components.
+
+    Args:
+        series_val: pandas Series with date values
+        rule_val: Date string (e.g., "2024-01-30", "30/01/2024")
+
+    Returns:
+        pd.Series[bool]: True where date equals rule date
+
+    Example:
+        >>> series = pd.Series(["2024-01-30", "2024-02-15"])
+        >>> _op_date_equals(series, "2024-01-30")
+        0     True
+        1    False
+        dtype: bool
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    rule_date = _parse_date_safe(rule_val)
+    if rule_date is None:
+        return pd.Series([False] * len(series_val), index=series_val.index, dtype=bool)
+
+    # Normalize to ignore time
+    rule_date = rule_date.normalize()
+
+    # Parse series dates with multiple format attempts
+    series_dates = pd.Series([None] * len(series_val), index=series_val.index)
+    for idx, val in series_val.items():
+        parsed = _parse_date_safe(val)
+        if parsed is not None:
+            series_dates[idx] = parsed
+
+    # Create boolean result
+    result = pd.Series([False] * len(series_val), index=series_val.index, dtype=bool)
+    valid_mask = series_dates.notna()
+
+    if valid_mask.any():
+        valid_dates = pd.to_datetime(series_dates[valid_mask])
+        result.loc[valid_mask] = valid_dates.dt.normalize() == rule_date
+
+    return result
+
+
+def _op_matches_regex(series_val, rule_val):
+    """Returns True where the series value matches the regex pattern.
+
+    Args:
+        series_val: pandas Series to check
+        rule_val: Regex pattern string
+
+    Returns:
+        pd.Series[bool]: True where value matches pattern
+
+    Example:
+        >>> series = pd.Series(["SKU-1234", "SKU-ABCD", "OTHER"])
+        >>> _op_matches_regex(series, r"^SKU-\\d{4}$")
+        0     True
+        1    False
+        2    False
+        dtype: bool
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    compiled_pattern = _compile_regex_safe(rule_val)
+    if compiled_pattern is None:
+        return pd.Series([False] * len(series_val), index=series_val.index)
+
+    # Use pandas vectorized string contains with regex
+    return series_val.astype(str).str.contains(rule_val, na=False, regex=True)
+
+
 class RuleEngine:
     """Applies a set of configured rules to a DataFrame of order data."""
 
@@ -134,15 +569,72 @@ class RuleEngine:
         "has_sku": "_check_has_sku",
     }
 
+    def _normalize_priorities(self, rules):
+        """Assigns default priority to rules without priority field.
+
+        Rules without priority get 1000, 1001, 1002... to execute last.
+        This ensures backward compatibility with old configs.
+
+        Args:
+            rules (list[dict]): List of rule dictionaries
+
+        Returns:
+            list[dict]: Rules with priority field added
+        """
+        default_priority = 1000
+        for rule in rules:
+            if "priority" not in rule:
+                rule["priority"] = default_priority
+                default_priority += 1
+        return rules
+
     def __init__(self, rules_config):
-        """Initializes the RuleEngine with a given set of rules.
+        """Initializes the RuleEngine with priority-sorted rules.
 
         Args:
             rules_config (list[dict]): A list of dictionaries, where each
                 dictionary represents a single rule. A rule consists of
-                conditions and actions.
+                conditions and actions. Optional 'priority' field controls
+                execution order (lower number = higher priority = executes first).
         """
-        self.rules = rules_config
+        import logging
+        logger = logging.getLogger(__name__)
+
+        if not rules_config:
+            self.rules = []
+            return
+
+        # Normalize: add default priority to rules without it
+        self.rules = self._normalize_priorities(rules_config)
+
+        # Sort by priority (lower number = higher priority = executes first)
+        self.rules = sorted(self.rules, key=lambda r: r.get("priority", 1000))
+
+        logger.info(f"[RULE ENGINE] Loaded {len(self.rules)} rules (sorted by priority)")
+
+    @staticmethod
+    def reorder_rules(rules, from_index, to_index):
+        """Reorders rules by moving rule from one position to another.
+
+        Args:
+            rules (list[dict]): List of rule dictionaries
+            from_index (int): Current position (0-based)
+            to_index (int): Target position (0-based)
+
+        Returns:
+            list[dict]: List with rule moved (priority values unchanged)
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        if not (0 <= from_index < len(rules) and 0 <= to_index < len(rules)):
+            logger.warning(f"Invalid reorder indices: from={from_index}, to={to_index}")
+            return rules
+
+        rule = rules.pop(from_index)
+        rules.insert(to_index, rule)
+        logger.info(f"Reordered rules: moved position {from_index} → {to_index}")
+        return rules
 
     def apply(self, df):
         """Applies all configured rules to the given DataFrame.
@@ -173,6 +665,9 @@ class RuleEngine:
         # Create columns for actions if they don't exist
         self._prepare_df_for_actions(df)
 
+        # Збирати нові рядки з ADD_PRODUCT actions
+        all_new_rows = []
+
         # Separate rules by level
         article_rules = [r for r in self.rules if r.get("level", "article") == "article"]
         order_rules = [r for r in self.rules if r.get("level") == "order"]
@@ -182,7 +677,8 @@ class RuleEngine:
         # Apply article-level rules (existing logic)
         for idx, rule in enumerate(article_rules):
             rule_name = rule.get("name", f"Rule #{idx+1}")
-            logger.info(f"[RULE ENGINE] Applying article rule: {rule_name}")
+            priority = rule.get("priority", 1000)
+            logger.info(f"[RULE ENGINE] Applying article rule #{idx+1}: {rule_name} (Priority: {priority})")
             logger.info(f"[RULE ENGINE] Conditions: {rule.get('conditions', [])}")
 
             # Get a boolean Series indicating which rows match the conditions
@@ -195,7 +691,8 @@ class RuleEngine:
             if matches.any():
                 actions = rule.get("actions", [])
                 logger.info(f"[RULE ENGINE] Executing {len(actions)} actions: {actions}")
-                self._execute_actions(df, matches, actions)
+                new_rows = self._execute_actions(df, matches, actions)
+                all_new_rows.extend(new_rows)
             else:
                 logger.info(f"[RULE ENGINE] No matches, skipping actions")
 
@@ -206,6 +703,10 @@ class RuleEngine:
                 order_df = df[order_mask]
 
                 for rule in order_rules:
+                    rule_name = rule.get("name", "Unnamed")
+                    priority = rule.get("priority", 1000)
+                    logger.info(f"[RULE ENGINE] Applying order rule: {rule_name} (Priority: {priority})")
+
                     # Evaluate conditions on entire order
                     matches = self._evaluate_order_conditions(
                         order_df,
@@ -216,7 +717,7 @@ class RuleEngine:
                     if matches:
                         # Separate actions by scope:
                         # - ADD_TAG applies to ALL rows (for packing list filtering - don't lose unmarked items)
-                        # - ADD_ORDER_TAG, SET_PACKAGING_TAG apply to FIRST row only (for counting)
+                        # - ADD_ORDER_TAG applies to FIRST row only (for counting)
                         actions = rule.get("actions", [])
 
                         # Actions that apply to ALL rows in order (for filtering)
@@ -237,14 +738,22 @@ class RuleEngine:
 
                         # Apply to all rows of order
                         if apply_to_all_actions:
-                            self._execute_actions(df, order_mask, apply_to_all_actions)
+                            new_rows = self._execute_actions(df, order_mask, apply_to_all_actions)
+                            all_new_rows.extend(new_rows)
 
                         # Apply to first row only
                         if apply_to_first_actions:
                             first_row_index = order_df.index[0]
                             first_row_mask = pd.Series(False, index=df.index)
                             first_row_mask[first_row_index] = True
-                            self._execute_actions(df, first_row_mask, apply_to_first_actions)
+                            new_rows = self._execute_actions(df, first_row_mask, apply_to_first_actions)
+                            all_new_rows.extend(new_rows)
+
+        # Додати всі нові рядки з ADD_PRODUCT actions
+        if all_new_rows:
+            new_df = pd.DataFrame(all_new_rows)
+            df = pd.concat([df, new_df], ignore_index=True)
+            logger.info(f"[RULE ENGINE] Added {len(all_new_rows)} new product rows to DataFrame")
 
         return df
 
@@ -252,7 +761,7 @@ class RuleEngine:
         """Ensures the DataFrame has the columns required for rule actions.
 
         Scans all rules to find out which columns will be modified or created
-        by the actions (e.g., 'Priority', 'Status_Note'). If these columns
+        by the actions (e.g., 'Status_Note', 'Internal_Tags'). If these columns
         do not already exist in the DataFrame, they are created and initialized
         with a default value. This prevents errors when an action tries to
         modify a non-existent column.
@@ -265,26 +774,23 @@ class RuleEngine:
         for rule in self.rules:
             for action in rule.get("actions", []):
                 action_type = action.get("type", "").upper()
-                if action_type == "SET_PRIORITY":
-                    needed_columns.add("Priority")
-                elif action_type == "EXCLUDE_FROM_REPORT":
-                    needed_columns.add("_is_excluded")
-                elif action_type in ["EXCLUDE_SKU", "ADD_TAG", "ADD_ORDER_TAG"]:
+                if action_type in ["ADD_TAG", "ADD_ORDER_TAG"]:
                     needed_columns.add("Status_Note")
-                elif action_type == "SET_PACKAGING_TAG":
-                    needed_columns.add("Packaging_Tags")
                 elif action_type == "ADD_INTERNAL_TAG":
                     needed_columns.add("Internal_Tags")
+                elif action_type == "COPY_FIELD":
+                    target = action.get("target")
+                    if target:
+                        needed_columns.add(target)
+                elif action_type == "CALCULATE":
+                    target = action.get("target")
+                    if target:
+                        needed_columns.add(target)
+                # SET_STATUS uses existing Order_Fulfillment_Status column
 
         # Add only the necessary columns if they don't already exist
-        if "Priority" in needed_columns and "Priority" not in df.columns:
-            df["Priority"] = "Normal"
-        if "_is_excluded" in needed_columns and "_is_excluded" not in df.columns:
-            df["_is_excluded"] = False
         if "Status_Note" in needed_columns and "Status_Note" not in df.columns:
             df["Status_Note"] = ""
-        if "Packaging_Tags" in needed_columns and "Packaging_Tags" not in df.columns:
-            df["Packaging_Tags"] = ""
         if "Internal_Tags" in needed_columns and "Internal_Tags" not in df.columns:
             df["Internal_Tags"] = "[]"
 
@@ -370,7 +876,7 @@ class RuleEngine:
             return pd.concat(condition_results, axis=1).any(axis=1)
 
     def _execute_actions(self, df, matches, actions):
-        """Executes a list of actions on the matching rows of the DataFrame.
+        """Executes actions, modifying DataFrame in-place.
 
         Applies the specified actions (e.g., adding a tag, setting a status)
         to the rows of the DataFrame that are marked as `True` in the `matches`
@@ -381,10 +887,27 @@ class RuleEngine:
             matches (pd.Series[bool]): A boolean Series indicating which rows
                 to apply the actions to.
             actions (list[dict]): A list of action dictionaries to execute.
+
+        Returns:
+            list[dict]: List of new rows to add (from ADD_PRODUCT actions).
         """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        new_rows = []  # Збирати нові рядки тут
+
         for action in actions:
             action_type = action.get("type", "").upper()
             value = action.get("value")
+
+            # Check for deprecated action types
+            deprecated_actions = ["SET_PRIORITY", "EXCLUDE_FROM_REPORT", "SET_PACKAGING_TAG", "EXCLUDE_SKU"]
+            if action_type in deprecated_actions:
+                logger.warning(
+                    f"[RULE ENGINE] Deprecated action type '{action_type}' encountered and will be ignored. "
+                    f"Recommendation: Use ADD_INTERNAL_TAG for structured metadata instead."
+                )
+                continue  # Skip execution
 
             if action_type == "ADD_TAG":
                 # Per user feedback, ADD_TAG should modify Status_Note, not Tags
@@ -411,10 +934,6 @@ class RuleEngine:
                 new_notes = current_notes.apply(append_note)
                 df.loc[matches, "Status_Note"] = new_notes
 
-            elif action_type == "SET_PACKAGING_TAG":
-                # Set packaging tag (overwrite existing)
-                df.loc[matches, "Packaging_Tags"] = value
-
             elif action_type == "ADD_INTERNAL_TAG":
                 # Add tag to Internal_Tags column using tag_manager
                 from shopify_tool.tag_manager import add_tag
@@ -426,24 +945,192 @@ class RuleEngine:
             elif action_type == "SET_STATUS":
                 df.loc[matches, "Order_Fulfillment_Status"] = value
 
-            elif action_type == "SET_PRIORITY":
-                df.loc[matches, "Priority"] = value
+            elif action_type == "COPY_FIELD":
+                source = action.get("source")
+                target = action.get("target")
 
-            elif action_type == "EXCLUDE_FROM_REPORT":
-                df.loc[matches, "_is_excluded"] = True
+                if not source or not target:
+                    logger.warning(f"[RULE ENGINE] COPY_FIELD missing source or target: {action}")
+                    continue
 
-            elif action_type == "EXCLUDE_SKU":
-                # This is a complex, destructive action.
-                # For now, we will just mark it for potential later processing.
-                # A full implementation would require re-evaluating the entire order.
-                # A simple approach is to set its quantity to 0 and flag it.
-                if "SKU" in df.columns and "Quantity" in df.columns:
-                    sku_to_exclude = value
-                    # We need to find rows that match the rule AND the SKU
-                    sku_matches = df["SKU"] == sku_to_exclude
-                    final_matches = matches & sku_matches
-                    df.loc[final_matches, "Quantity"] = 0
-                    df.loc[final_matches, "Status_Note"] = df.loc[final_matches, "Status_Note"] + " SKU_EXCLUDED"
+                if source not in df.columns:
+                    logger.warning(f"[RULE ENGINE] Source column '{source}' not found")
+                    continue
+
+                if target not in df.columns:
+                    df[target] = ""
+
+                df.loc[matches, target] = df.loc[matches, source]
+                logger.info(f"[RULE ENGINE] Copied {source} -> {target} for {matches.sum()} rows")
+
+            elif action_type == "SET_MULTI_TAGS":
+                tags_value = action.get("tags") or action.get("value")
+
+                if not tags_value:
+                    logger.warning(f"[RULE ENGINE] SET_MULTI_TAGS missing tags/value")
+                    continue
+
+                # Parse: підтримка list або comma-separated string
+                if isinstance(tags_value, list):
+                    tags_list = tags_value
+                elif isinstance(tags_value, str):
+                    tags_list = [t.strip() for t in tags_value.split(",") if t.strip()]
+                else:
+                    logger.warning(f"[RULE ENGINE] SET_MULTI_TAGS invalid format: {type(tags_value)}")
+                    continue
+
+                if not tags_list:
+                    continue
+
+                # Додати теги без дублікатів
+                current_notes = df.loc[matches, "Status_Note"].fillna("").astype(str)
+
+                def add_multiple_tags(note):
+                    existing = [t.strip() for t in note.split(", ") if t.strip()]
+                    for tag in tags_list:
+                        if tag not in existing:
+                            existing.append(tag)
+                    return ", ".join(existing)
+
+                df.loc[matches, "Status_Note"] = current_notes.apply(add_multiple_tags)
+                logger.info(f"[RULE ENGINE] Added {len(tags_list)} tags to {matches.sum()} rows")
+
+            elif action_type == "ALERT_NOTIFICATION":
+                message = action.get("message")
+                severity = action.get("severity", "info").lower()
+
+                if not message:
+                    logger.warning(f"[RULE ENGINE] ALERT_NOTIFICATION missing message")
+                    continue
+
+                # Валідація severity
+                if severity not in ["info", "warning", "error"]:
+                    logger.warning(f"[RULE ENGINE] Invalid severity '{severity}', using 'info'")
+                    severity = "info"
+
+                matched_count = matches.sum()
+                full_message = f"[RULE ALERT] {message} (matched {matched_count} rows)"
+
+                if severity == "error":
+                    logger.error(full_message)
+                elif severity == "warning":
+                    logger.warning(full_message)
+                else:
+                    logger.info(full_message)
+
+                # Додатково логувати Order_Number якщо <= 10 співпадінь
+                if 0 < matched_count <= 10 and "Order_Number" in df.columns:
+                    orders = df.loc[matches, "Order_Number"].unique()
+                    logger.info(f"[RULE ALERT] Orders: {', '.join(str(o) for o in orders)}")
+
+            elif action_type == "CALCULATE":
+                operation = action.get("operation")
+                field1 = action.get("field1")
+                field2 = action.get("field2")
+                target = action.get("target")
+
+                # Валідація параметрів
+                if not all([operation, field1, field2, target]):
+                    logger.warning(f"[RULE ENGINE] CALCULATE missing parameters: {action}")
+                    continue
+
+                if operation not in ["add", "subtract", "multiply", "divide"]:
+                    logger.warning(f"[RULE ENGINE] CALCULATE invalid operation '{operation}'")
+                    continue
+
+                if field1 not in df.columns or field2 not in df.columns:
+                    logger.warning(f"[RULE ENGINE] CALCULATE fields not found in DataFrame")
+                    continue
+
+                # Створити target column якщо не існує
+                if target not in df.columns:
+                    df[target] = 0.0
+
+                # Конвертувати в числа
+                val1 = pd.to_numeric(df.loc[matches, field1], errors='coerce')
+                val2 = pd.to_numeric(df.loc[matches, field2], errors='coerce')
+
+                # Виконати операцію
+                if operation == "add":
+                    result = val1 + val2
+                elif operation == "subtract":
+                    result = val1 - val2
+                elif operation == "multiply":
+                    result = val1 * val2
+                elif operation == "divide":
+                    # Division by zero -> NaN
+                    import numpy as np
+                    result = val1 / val2.replace(0, np.nan)
+
+                df.loc[matches, target] = result
+                valid = result.notna().sum()
+                logger.info(f"[RULE ENGINE] CALCULATE {operation}: {field1}, {field2} -> {target} ({valid}/{matches.sum()} valid)")
+
+            elif action_type == "ADD_PRODUCT":
+                sku = action.get("sku")
+                quantity = action.get("quantity", 1)
+
+                if not sku:
+                    logger.warning(f"[RULE ENGINE] ADD_PRODUCT missing SKU")
+                    continue
+
+                try:
+                    quantity = int(quantity)
+                except (ValueError, TypeError):
+                    logger.warning(f"[RULE ENGINE] ADD_PRODUCT invalid quantity: {quantity}")
+                    continue
+
+                if quantity <= 0:
+                    logger.warning(f"[RULE ENGINE] ADD_PRODUCT quantity must be positive")
+                    continue
+
+                # Знайти цей SKU в DataFrame для отримання product info (з stock файлу)
+                existing_product = df[df["SKU"] == sku]
+                if not existing_product.empty:
+                    # SKU знайдено - взяти дані з існуючого рядка
+                    product_info = existing_product.iloc[0]
+                    product_name = product_info.get("Product_Name", sku)
+                    warehouse_name = product_info.get("Warehouse_Name", sku)
+                    stock = product_info.get("Stock", 0)
+                    final_stock = product_info.get("Final_Stock", 0)
+                    logger.info(f"[RULE ENGINE] ADD_PRODUCT: Found SKU '{sku}' in stock data (Warehouse: {warehouse_name})")
+                else:
+                    # SKU не знайдено - використати defaults
+                    product_name = action.get("product_name", f"Bonus: {sku}")
+                    warehouse_name = sku
+                    stock = 0
+                    final_stock = 0
+                    logger.warning(f"[RULE ENGINE] ADD_PRODUCT: SKU '{sku}' not found in stock data, using defaults")
+
+                # Для кожного співпадаючого рядка створити новий продукт
+                for idx in df[matches].index:
+                    base_row = df.loc[idx].to_dict()
+
+                    new_row = base_row.copy()
+                    # Перезаписати product-specific поля з правильними даними
+                    new_row["SKU"] = sku
+                    new_row["Quantity"] = quantity
+                    new_row["Product_Name"] = product_name
+                    new_row["Warehouse_Name"] = warehouse_name
+                    if "Stock" in new_row:
+                        new_row["Stock"] = stock
+                    if "Final_Stock" in new_row:
+                        new_row["Final_Stock"] = final_stock
+
+                    # Очистити поля які не треба копіювати
+                    if "Status_Note" in new_row:
+                        new_row["Status_Note"] = ""
+
+                    # Позначити як додано правилом
+                    if "Internal_Tags" in new_row:
+                        from shopify_tool.tag_manager import add_tag
+                        new_row["Internal_Tags"] = add_tag("[]", "rule_added_product")
+
+                    new_rows.append(new_row)
+
+                logger.info(f"[RULE ENGINE] ADD_PRODUCT: Created {len(df[matches])} instances of '{sku}' (Warehouse: {warehouse_name})")
+
+        return new_rows
 
     def _evaluate_order_conditions(self, order_df, conditions, match_type):
         """
