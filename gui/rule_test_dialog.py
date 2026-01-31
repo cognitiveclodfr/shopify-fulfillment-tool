@@ -188,11 +188,20 @@ class RuleTestDialog(QDialog):
             # Apply rule (modifies test_df in-place)
             self.df_after = engine.apply(self.test_df)
 
-            # Get matches
-            self.matches = engine._get_matching_rows(self.df_after, self.rule_config)
-            self.matched_count = self.matches.sum()
+            # Get matches based on rule level
+            rule_level = self.rule_config.get("level", "article")
 
-            logger.info(f"[RULE TEST] Matched {self.matched_count} rows")
+            if rule_level == "order":
+                # For order-level rules, find which orders were matched
+                # by checking which rows have changes or tags applied
+                self.matches = self._get_order_level_matches(engine)
+                self.matched_count = self.matches.sum()
+                logger.info(f"[RULE TEST] Order-level rule matched {self.matched_count} rows")
+            else:
+                # For article-level rules, use standard matching
+                self.matches = engine._get_matching_rows(self.df_after, self.rule_config)
+                self.matched_count = self.matches.sum()
+                logger.info(f"[RULE TEST] Article-level rule matched {self.matched_count} rows")
 
             # Populate UI sections
             self._populate_conditions_table()
@@ -207,6 +216,44 @@ class RuleTestDialog(QDialog):
                 "Test Error",
                 f"Failed to test rule:\n\n{str(e)}\n\nCheck logs for details."
             )
+
+    def _get_order_level_matches(self, engine):
+        """
+        Get matches for order-level rules.
+
+        For order-level rules, we need to evaluate each order as a whole.
+        Returns a boolean Series indicating which rows belong to matched orders.
+
+        Args:
+            engine: RuleEngine instance
+
+        Returns:
+            pd.Series: Boolean series of matched rows
+        """
+        import pandas as pd
+
+        if "Order_Number" not in self.df_after.columns:
+            logger.warning("[RULE TEST] Order_Number column not found, cannot evaluate order-level rule")
+            return pd.Series([False] * len(self.df_after), index=self.df_after.index)
+
+        # Evaluate each order
+        matched_orders = set()
+        for order_number in self.df_after["Order_Number"].unique():
+            order_df = self.df_after[self.df_after["Order_Number"] == order_number]
+
+            # Evaluate order conditions
+            is_matched = engine._evaluate_order_conditions(
+                order_df,
+                self.rule_config.get("conditions", []),
+                self.rule_config.get("match", "ALL")
+            )
+
+            if is_matched:
+                matched_orders.add(order_number)
+
+        # Return boolean series for all rows in matched orders
+        matches = self.df_after["Order_Number"].isin(matched_orders)
+        return matches
 
     def _populate_conditions_table(self):
         """Populate conditions table with evaluation results."""
