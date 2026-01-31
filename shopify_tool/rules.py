@@ -608,6 +608,9 @@ class RuleEngine:
         # Create columns for actions if they don't exist
         self._prepare_df_for_actions(df)
 
+        # Збирати нові рядки з ADD_PRODUCT actions
+        all_new_rows = []
+
         # Separate rules by level
         article_rules = [r for r in self.rules if r.get("level", "article") == "article"]
         order_rules = [r for r in self.rules if r.get("level") == "order"]
@@ -630,7 +633,8 @@ class RuleEngine:
             if matches.any():
                 actions = rule.get("actions", [])
                 logger.info(f"[RULE ENGINE] Executing {len(actions)} actions: {actions}")
-                self._execute_actions(df, matches, actions)
+                new_rows = self._execute_actions(df, matches, actions)
+                all_new_rows.extend(new_rows)
             else:
                 logger.info(f"[RULE ENGINE] No matches, skipping actions")
 
@@ -672,14 +676,22 @@ class RuleEngine:
 
                         # Apply to all rows of order
                         if apply_to_all_actions:
-                            self._execute_actions(df, order_mask, apply_to_all_actions)
+                            new_rows = self._execute_actions(df, order_mask, apply_to_all_actions)
+                            all_new_rows.extend(new_rows)
 
                         # Apply to first row only
                         if apply_to_first_actions:
                             first_row_index = order_df.index[0]
                             first_row_mask = pd.Series(False, index=df.index)
                             first_row_mask[first_row_index] = True
-                            self._execute_actions(df, first_row_mask, apply_to_first_actions)
+                            new_rows = self._execute_actions(df, first_row_mask, apply_to_first_actions)
+                            all_new_rows.extend(new_rows)
+
+        # Додати всі нові рядки з ADD_PRODUCT actions
+        if all_new_rows:
+            new_df = pd.DataFrame(all_new_rows)
+            df = pd.concat([df, new_df], ignore_index=True)
+            logger.info(f"[RULE ENGINE] Added {len(all_new_rows)} new product rows to DataFrame")
 
         return df
 
@@ -704,6 +716,14 @@ class RuleEngine:
                     needed_columns.add("Status_Note")
                 elif action_type == "ADD_INTERNAL_TAG":
                     needed_columns.add("Internal_Tags")
+                elif action_type == "COPY_FIELD":
+                    target = action.get("target")
+                    if target:
+                        needed_columns.add(target)
+                elif action_type == "CALCULATE":
+                    target = action.get("target")
+                    if target:
+                        needed_columns.add(target)
                 # SET_STATUS uses existing Order_Fulfillment_Status column
 
         # Add only the necessary columns if they don't already exist
@@ -794,7 +814,7 @@ class RuleEngine:
             return pd.concat(condition_results, axis=1).any(axis=1)
 
     def _execute_actions(self, df, matches, actions):
-        """Executes a list of actions on the matching rows of the DataFrame.
+        """Executes actions, modifying DataFrame in-place.
 
         Applies the specified actions (e.g., adding a tag, setting a status)
         to the rows of the DataFrame that are marked as `True` in the `matches`
@@ -805,9 +825,14 @@ class RuleEngine:
             matches (pd.Series[bool]): A boolean Series indicating which rows
                 to apply the actions to.
             actions (list[dict]): A list of action dictionaries to execute.
+
+        Returns:
+            list[dict]: List of new rows to add (from ADD_PRODUCT actions).
         """
         import logging
         logger = logging.getLogger(__name__)
+
+        new_rows = []  # Збирати нові рядки тут
 
         for action in actions:
             action_type = action.get("type", "").upper()
@@ -857,6 +882,169 @@ class RuleEngine:
 
             elif action_type == "SET_STATUS":
                 df.loc[matches, "Order_Fulfillment_Status"] = value
+
+            elif action_type == "COPY_FIELD":
+                source = action.get("source")
+                target = action.get("target")
+
+                if not source or not target:
+                    logger.warning(f"[RULE ENGINE] COPY_FIELD missing source or target: {action}")
+                    continue
+
+                if source not in df.columns:
+                    logger.warning(f"[RULE ENGINE] Source column '{source}' not found")
+                    continue
+
+                if target not in df.columns:
+                    df[target] = ""
+
+                df.loc[matches, target] = df.loc[matches, source]
+                logger.info(f"[RULE ENGINE] Copied {source} -> {target} for {matches.sum()} rows")
+
+            elif action_type == "SET_MULTI_TAGS":
+                tags_value = action.get("tags") or action.get("value")
+
+                if not tags_value:
+                    logger.warning(f"[RULE ENGINE] SET_MULTI_TAGS missing tags/value")
+                    continue
+
+                # Parse: підтримка list або comma-separated string
+                if isinstance(tags_value, list):
+                    tags_list = tags_value
+                elif isinstance(tags_value, str):
+                    tags_list = [t.strip() for t in tags_value.split(",") if t.strip()]
+                else:
+                    logger.warning(f"[RULE ENGINE] SET_MULTI_TAGS invalid format: {type(tags_value)}")
+                    continue
+
+                if not tags_list:
+                    continue
+
+                # Додати теги без дублікатів
+                current_notes = df.loc[matches, "Status_Note"].fillna("").astype(str)
+
+                def add_multiple_tags(note):
+                    existing = [t.strip() for t in note.split(", ") if t.strip()]
+                    for tag in tags_list:
+                        if tag not in existing:
+                            existing.append(tag)
+                    return ", ".join(existing)
+
+                df.loc[matches, "Status_Note"] = current_notes.apply(add_multiple_tags)
+                logger.info(f"[RULE ENGINE] Added {len(tags_list)} tags to {matches.sum()} rows")
+
+            elif action_type == "ALERT_NOTIFICATION":
+                message = action.get("message")
+                severity = action.get("severity", "info").lower()
+
+                if not message:
+                    logger.warning(f"[RULE ENGINE] ALERT_NOTIFICATION missing message")
+                    continue
+
+                # Валідація severity
+                if severity not in ["info", "warning", "error"]:
+                    logger.warning(f"[RULE ENGINE] Invalid severity '{severity}', using 'info'")
+                    severity = "info"
+
+                matched_count = matches.sum()
+                full_message = f"[RULE ALERT] {message} (matched {matched_count} rows)"
+
+                if severity == "error":
+                    logger.error(full_message)
+                elif severity == "warning":
+                    logger.warning(full_message)
+                else:
+                    logger.info(full_message)
+
+                # Додатково логувати Order_Number якщо <= 10 співпадінь
+                if 0 < matched_count <= 10 and "Order_Number" in df.columns:
+                    orders = df.loc[matches, "Order_Number"].unique()
+                    logger.info(f"[RULE ALERT] Orders: {', '.join(str(o) for o in orders)}")
+
+            elif action_type == "CALCULATE":
+                operation = action.get("operation")
+                field1 = action.get("field1")
+                field2 = action.get("field2")
+                target = action.get("target")
+
+                # Валідація параметрів
+                if not all([operation, field1, field2, target]):
+                    logger.warning(f"[RULE ENGINE] CALCULATE missing parameters: {action}")
+                    continue
+
+                if operation not in ["add", "subtract", "multiply", "divide"]:
+                    logger.warning(f"[RULE ENGINE] CALCULATE invalid operation '{operation}'")
+                    continue
+
+                if field1 not in df.columns or field2 not in df.columns:
+                    logger.warning(f"[RULE ENGINE] CALCULATE fields not found in DataFrame")
+                    continue
+
+                # Створити target column якщо не існує
+                if target not in df.columns:
+                    df[target] = 0.0
+
+                # Конвертувати в числа
+                val1 = pd.to_numeric(df.loc[matches, field1], errors='coerce')
+                val2 = pd.to_numeric(df.loc[matches, field2], errors='coerce')
+
+                # Виконати операцію
+                if operation == "add":
+                    result = val1 + val2
+                elif operation == "subtract":
+                    result = val1 - val2
+                elif operation == "multiply":
+                    result = val1 * val2
+                elif operation == "divide":
+                    # Division by zero -> NaN
+                    import numpy as np
+                    result = val1 / val2.replace(0, np.nan)
+
+                df.loc[matches, target] = result
+                valid = result.notna().sum()
+                logger.info(f"[RULE ENGINE] CALCULATE {operation}: {field1}, {field2} -> {target} ({valid}/{matches.sum()} valid)")
+
+            elif action_type == "ADD_PRODUCT":
+                sku = action.get("sku")
+                quantity = action.get("quantity", 1)
+
+                if not sku:
+                    logger.warning(f"[RULE ENGINE] ADD_PRODUCT missing SKU")
+                    continue
+
+                try:
+                    quantity = int(quantity)
+                except (ValueError, TypeError):
+                    logger.warning(f"[RULE ENGINE] ADD_PRODUCT invalid quantity: {quantity}")
+                    continue
+
+                if quantity <= 0:
+                    logger.warning(f"[RULE ENGINE] ADD_PRODUCT quantity must be positive")
+                    continue
+
+                # Для кожного співпадаючого рядка створити новий продукт
+                for idx in df[matches].index:
+                    base_row = df.loc[idx].to_dict()
+
+                    new_row = base_row.copy()
+                    new_row["SKU"] = sku
+                    new_row["Quantity"] = quantity
+                    new_row["Product_Name"] = action.get("product_name", f"Bonus: {sku}")
+
+                    # Очистити поля які не треба копіювати
+                    if "Status_Note" in new_row:
+                        new_row["Status_Note"] = ""
+
+                    # Позначити як додано правилом
+                    if "Internal_Tags" in new_row:
+                        from shopify_tool.tag_manager import add_tag
+                        new_row["Internal_Tags"] = add_tag("[]", "rule_added_product")
+
+                    new_rows.append(new_row)
+
+                logger.info(f"[RULE ENGINE] ADD_PRODUCT: Created {len(df[matches])} instances of '{sku}'")
+
+        return new_rows
 
     def _evaluate_order_conditions(self, order_df, conditions, match_type):
         """

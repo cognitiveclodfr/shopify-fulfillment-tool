@@ -1146,3 +1146,400 @@ def test_all_new_operators_integration(sample_df, date_sample_df):
 
     # Verify tags don't interfere with each other
     assert len(result_df) == len(combined_df)
+
+
+# ========== NEW ACTION TYPES TESTS (v1.10.0) ==========
+
+# COPY_FIELD Tests
+def test_copy_field_basic(sample_df):
+    """Test COPY_FIELD copies values correctly."""
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{"type": "COPY_FIELD", "source": "SKU", "target": "Backup_SKU"}]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(sample_df.copy())
+
+    assert "Backup_SKU" in result_df.columns
+
+    # Matched rows
+    matched = result_df[result_df["Order_Number"] == "#1001"]
+    for _, row in matched.iterrows():
+        assert row["Backup_SKU"] == row["SKU"]
+
+    # Unmatched rows should be empty
+    unmatched = result_df[result_df["Order_Number"] != "#1001"]
+    for _, row in unmatched.iterrows():
+        assert row["Backup_SKU"] == ""
+
+
+def test_copy_field_missing_source(sample_df):
+    """Test COPY_FIELD with missing source column."""
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{"type": "COPY_FIELD", "source": "NonExistent", "target": "Target"}]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(sample_df.copy())
+
+    # Should not crash, Target column should not be created
+    assert "Target" not in result_df.columns
+
+
+def test_copy_field_overwrite_existing(sample_df):
+    """Test COPY_FIELD overwrites existing target column."""
+    df = sample_df.copy()
+    df["Backup_SKU"] = "OLD_VALUE"
+
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{"type": "COPY_FIELD", "source": "SKU", "target": "Backup_SKU"}]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    matched = result_df[result_df["Order_Number"] == "#1001"]
+    for _, row in matched.iterrows():
+        assert row["Backup_SKU"] == row["SKU"]
+        assert row["Backup_SKU"] != "OLD_VALUE"
+
+
+# SET_MULTI_TAGS Tests
+def test_set_multi_tags_comma_separated(sample_df):
+    """Test SET_MULTI_TAGS with comma-separated string."""
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{"type": "SET_MULTI_TAGS", "value": "TAG1, TAG2, TAG3"}]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(sample_df.copy())
+
+    matched = result_df[result_df["Order_Number"] == "#1001"]
+    for _, row in matched.iterrows():
+        note = row["Status_Note"]
+        assert "TAG1" in note
+        assert "TAG2" in note
+        assert "TAG3" in note
+
+
+def test_set_multi_tags_no_duplicates(sample_df):
+    """Test SET_MULTI_TAGS prevents duplicate tags."""
+    df = sample_df.copy()
+    df.loc[df["Order_Number"] == "#1001", "Status_Note"] = "TAG1, Existing"
+
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{"type": "SET_MULTI_TAGS", "value": "TAG1, TAG2"}]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    matched = result_df[result_df["Order_Number"] == "#1001"]
+    for _, row in matched.iterrows():
+        note = row["Status_Note"]
+        # TAG1 should appear only once
+        assert note.count("TAG1") == 1
+        assert "TAG2" in note
+        assert "Existing" in note
+
+
+def test_set_multi_tags_list_format(sample_df):
+    """Test SET_MULTI_TAGS with list format."""
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{"type": "SET_MULTI_TAGS", "tags": ["ALPHA", "BETA", "GAMMA"]}]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(sample_df.copy())
+
+    matched = result_df[result_df["Order_Number"] == "#1001"]
+    for _, row in matched.iterrows():
+        note = row["Status_Note"]
+        assert "ALPHA" in note
+        assert "BETA" in note
+        assert "GAMMA" in note
+
+
+# ALERT_NOTIFICATION Tests
+def test_alert_notification_info(sample_df, caplog):
+    """Test ALERT_NOTIFICATION logs info messages."""
+    import logging
+
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{
+            "type": "ALERT_NOTIFICATION",
+            "message": "Test alert",
+            "severity": "info"
+        }]
+    }]
+
+    with caplog.at_level(logging.INFO):
+        engine = RuleEngine(rules)
+        engine.apply(sample_df.copy())
+
+    assert "Test alert" in caplog.text
+    assert "RULE ALERT" in caplog.text
+
+
+def test_alert_notification_warning(sample_df, caplog):
+    """Test ALERT_NOTIFICATION logs warning messages."""
+    import logging
+
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{
+            "type": "ALERT_NOTIFICATION",
+            "message": "Warning message",
+            "severity": "warning"
+        }]
+    }]
+
+    with caplog.at_level(logging.WARNING):
+        engine = RuleEngine(rules)
+        engine.apply(sample_df.copy())
+
+    assert "Warning message" in caplog.text
+
+
+def test_alert_notification_error(sample_df, caplog):
+    """Test ALERT_NOTIFICATION logs error messages."""
+    import logging
+
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{
+            "type": "ALERT_NOTIFICATION",
+            "message": "Error message",
+            "severity": "error"
+        }]
+    }]
+
+    with caplog.at_level(logging.ERROR):
+        engine = RuleEngine(rules)
+        engine.apply(sample_df.copy())
+
+    assert "Error message" in caplog.text
+
+
+# CALCULATE Tests
+@pytest.mark.parametrize("operation,expected", [
+    ("add", 11),       # 10 + 1
+    ("subtract", 9),   # 10 - 1
+    ("multiply", 10),  # 10 * 1
+    ("divide", 10.0),    # 10 / 1
+])
+def test_calculate_operations(sample_df, operation, expected):
+    """Test CALCULATE with different operations."""
+    df = sample_df.copy()
+    df["Value1"] = 10
+    df["Value2"] = 1
+
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{
+            "type": "CALCULATE",
+            "operation": operation,
+            "field1": "Value1",
+            "field2": "Value2",
+            "target": "Result"
+        }]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    matched = result_df[result_df["Order_Number"] == "#1001"]
+    for _, row in matched.iterrows():
+        assert row["Result"] == expected
+
+
+def test_calculate_division_by_zero(sample_df):
+    """Test CALCULATE handles division by zero."""
+    df = sample_df.copy()
+    df["Value1"] = 10
+    df["Value2"] = 0
+
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{
+            "type": "CALCULATE",
+            "operation": "divide",
+            "field1": "Value1",
+            "field2": "Value2",
+            "target": "Result"
+        }]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    matched = result_df[result_df["Order_Number"] == "#1001"]
+    for _, row in matched.iterrows():
+        assert pd.isna(row["Result"])  # Should be NaN
+
+
+def test_calculate_with_quantity(sample_df):
+    """Test CALCULATE using existing Quantity field."""
+    df = sample_df.copy()
+    df["Price"] = 10.5
+
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{
+            "type": "CALCULATE",
+            "operation": "multiply",
+            "field1": "Quantity",
+            "field2": "Price",
+            "target": "Line_Total"
+        }]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    matched = result_df[result_df["Order_Number"] == "#1001"]
+    for _, row in matched.iterrows():
+        expected = row["Quantity"] * row["Price"]
+        assert row["Line_Total"] == expected
+
+
+# ADD_PRODUCT Tests
+def test_add_product_basic(sample_df):
+    """Test ADD_PRODUCT adds new rows."""
+    original_len = len(sample_df)
+
+    # #1001 has 2 rows
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{"type": "ADD_PRODUCT", "sku": "BONUS-001", "quantity": 1}]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(sample_df.copy())
+
+    # Should add 2 bonus rows (one per matched row)
+    assert len(result_df) == original_len + 2
+
+    bonus_rows = result_df[result_df["SKU"] == "BONUS-001"]
+    assert len(bonus_rows) == 2
+    assert all(bonus_rows["Order_Number"] == "#1001")
+    assert all(bonus_rows["Quantity"] == 1)
+
+
+def test_add_product_quantity(sample_df):
+    """Test ADD_PRODUCT respects quantity parameter."""
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{"type": "ADD_PRODUCT", "sku": "BONUS-001", "quantity": 5}]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(sample_df.copy())
+
+    bonus_rows = result_df[result_df["SKU"] == "BONUS-001"]
+    assert all(bonus_rows["Quantity"] == 5)
+
+
+def test_add_product_tagging(sample_df):
+    """Test ADD_PRODUCT tags new rows with rule_added_product."""
+    df = sample_df.copy()
+    # Додамо Internal_Tags колонку якщо її немає
+    if "Internal_Tags" not in df.columns:
+        df["Internal_Tags"] = "[]"
+
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{"type": "ADD_PRODUCT", "sku": "BONUS-001", "quantity": 1}]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    bonus_rows = result_df[result_df["SKU"] == "BONUS-001"]
+    for _, row in bonus_rows.iterrows():
+        assert "rule_added_product" in row["Internal_Tags"]
+
+
+def test_add_product_clears_status_note(sample_df):
+    """Test ADD_PRODUCT clears Status_Note for new rows."""
+    df = sample_df.copy()
+    df.loc[df["Order_Number"] == "#1001", "Status_Note"] = "EXISTING_TAG"
+
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{"type": "ADD_PRODUCT", "sku": "BONUS-001", "quantity": 1}]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    bonus_rows = result_df[result_df["SKU"] == "BONUS-001"]
+    for _, row in bonus_rows.iterrows():
+        assert row["Status_Note"] == ""
+
+
+def test_add_product_multiple_orders(sample_df):
+    """Test ADD_PRODUCT works with multiple matching orders."""
+    rules = [{
+        "conditions": [{"field": "Total_Price", "operator": "is greater than", "value": "60"}],
+        "actions": [{"type": "ADD_PRODUCT", "sku": "GIFT-001", "quantity": 1}]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(sample_df.copy())
+
+    # Should add gift products for orders with Total_Price > 60
+    gift_rows = result_df[result_df["SKU"] == "GIFT-001"]
+    assert len(gift_rows) > 0
+
+    # Verify all gifts have correct quantity
+    assert all(gift_rows["Quantity"] == 1)
+
+
+# Integration Test
+def test_all_new_actions_integration(sample_df):
+    """Integration test using all 5 new action types."""
+    df = sample_df.copy()
+    df["Price"] = 10.0
+
+    rules = [
+        {
+            "name": "Test all actions",
+            "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+            "actions": [
+                {"type": "COPY_FIELD", "source": "SKU", "target": "Original_SKU"},
+                {"type": "CALCULATE", "operation": "multiply", "field1": "Quantity", "field2": "Price", "target": "Total"},
+                {"type": "SET_MULTI_TAGS", "value": "PROCESSED, CALCULATED"},
+                {"type": "ALERT_NOTIFICATION", "message": "Integration test", "severity": "info"},
+                {"type": "ADD_PRODUCT", "sku": "BONUS-001", "quantity": 1},
+            ]
+        }
+    ]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    # Verify COPY_FIELD
+    assert "Original_SKU" in result_df.columns
+
+    # Verify CALCULATE
+    assert "Total" in result_df.columns
+    matched = result_df[(result_df["Order_Number"] == "#1001") & (result_df["SKU"] != "BONUS-001")]
+    for _, row in matched.iterrows():
+        assert row["Total"] == row["Quantity"] * row["Price"]
+
+    # Verify SET_MULTI_TAGS
+    for _, row in matched.iterrows():
+        assert "PROCESSED" in row["Status_Note"]
+        assert "CALCULATED" in row["Status_Note"]
+
+    # Verify ADD_PRODUCT
+    bonus_rows = result_df[result_df["SKU"] == "BONUS-001"]
+    assert len(bonus_rows) == 2  # #1001 has 2 original rows

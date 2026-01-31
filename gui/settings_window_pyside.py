@@ -110,6 +110,11 @@ class SettingsWindow(QDialog):
         "ADD_ORDER_TAG",
         "ADD_INTERNAL_TAG",
         "SET_STATUS",
+        "COPY_FIELD",
+        "CALCULATE",
+        "SET_MULTI_TAGS",
+        "ALERT_NOTIFICATION",
+        "ADD_PRODUCT",
     ]
 
     def __init__(self, client_id, client_config, profile_manager, analysis_df=None, parent=None):
@@ -621,7 +626,7 @@ class SettingsWindow(QDialog):
 
 
     def add_action_row(self, rule_widget_refs, config=None):
-        """Adds a new row of widgets for a single action within a rule.
+        """Adds action row with dynamic parameter widgets based on type.
 
         Args:
             rule_widget_refs (dict): A dictionary of widget references for the
@@ -631,24 +636,180 @@ class SettingsWindow(QDialog):
         """
         if not isinstance(config, dict):
             config = {}
+
         row_layout = QHBoxLayout()
+
+        # Type dropdown
         type_combo = WheelIgnoreComboBox()
         type_combo.addItems(self.ACTION_TYPES)
-        value_edit = QLineEdit()
-        delete_btn = QPushButton("X")
-        row_layout.addWidget(type_combo)
-        row_layout.addWidget(value_edit, 1)
-        row_layout.addWidget(delete_btn)
         type_combo.setCurrentText(config.get("type", self.ACTION_TYPES[0]))
-        value_edit.setText(config.get("value", ""))
+
+        # Delete button
+        delete_btn = QPushButton("X")
+
+        row_layout.addWidget(type_combo)
+        # Параметри будуть вставлені динамічно
+
         row_widget = QWidget()
         row_widget.setLayout(row_layout)
+
+        # Зберегти посилання
+        action_refs = {
+            "widget": row_widget,
+            "type": type_combo,
+            "param_widgets": {},
+            "param_layout": row_layout,
+        }
+
+        # Connect type change
+        type_combo.currentTextChanged.connect(
+            lambda: self._on_action_type_changed(action_refs)
+        )
+
+        # Створити початкові widgets
+        self._on_action_type_changed(action_refs, initial_config=config)
+
+        row_layout.addWidget(delete_btn)
+
         rule_widget_refs["actions_layout"].addWidget(row_widget)
-        action_refs = {"widget": row_widget, "type": type_combo, "value": value_edit}
         rule_widget_refs["actions"].append(action_refs)
+
         delete_btn.clicked.connect(
             lambda: self._delete_row_from_list(row_widget, rule_widget_refs["actions"], action_refs)
         )
+
+    def _on_action_type_changed(self, action_refs, initial_config=None):
+        """Dynamically updates parameter widgets based on action type."""
+        action_type = action_refs["type"].currentText()
+
+        # Очистити існуючі параметри
+        for widget in action_refs["param_widgets"].values():
+            widget.deleteLater()
+        action_refs["param_widgets"].clear()
+
+        layout = action_refs["param_layout"]
+        insert_pos = 1  # Після type combo
+
+        # Створити widgets залежно від типу
+        if action_type in ["ADD_TAG", "ADD_ORDER_TAG", "ADD_INTERNAL_TAG", "SET_STATUS"]:
+            # Простий value field
+            value_edit = QLineEdit()
+            value_edit.setPlaceholderText("Value")
+            if initial_config:
+                value_edit.setText(initial_config.get("value", ""))
+            layout.insertWidget(insert_pos, value_edit, 1)
+            action_refs["param_widgets"]["value"] = value_edit
+
+        elif action_type == "COPY_FIELD":
+            # Source dropdown
+            source_combo = WheelIgnoreComboBox()
+            fields = self.get_available_rule_fields()
+            source_combo.addItems([f for f in fields if not f.startswith("---")])
+            if initial_config:
+                source_combo.setCurrentText(initial_config.get("source", ""))
+
+            # Target input
+            target_edit = QLineEdit()
+            target_edit.setPlaceholderText("Target column")
+            if initial_config:
+                target_edit.setText(initial_config.get("target", ""))
+
+            layout.insertWidget(insert_pos, source_combo, 1)
+            layout.insertWidget(insert_pos + 1, QLabel("→"), 0)
+            layout.insertWidget(insert_pos + 2, target_edit, 1)
+
+            action_refs["param_widgets"]["source"] = source_combo
+            action_refs["param_widgets"]["target"] = target_edit
+
+        elif action_type == "CALCULATE":
+            # Operation dropdown
+            op_combo = WheelIgnoreComboBox()
+            op_combo.addItems(["add", "subtract", "multiply", "divide"])
+            if initial_config:
+                op_combo.setCurrentText(initial_config.get("operation", "add"))
+
+            # Field1 & Field2 dropdowns
+            fields = [f for f in self.get_available_rule_fields() if not f.startswith("---")]
+
+            field1_combo = WheelIgnoreComboBox()
+            field1_combo.addItems(fields)
+            if initial_config:
+                field1_combo.setCurrentText(initial_config.get("field1", ""))
+
+            field2_combo = WheelIgnoreComboBox()
+            field2_combo.addItems(fields)
+            if initial_config:
+                field2_combo.setCurrentText(initial_config.get("field2", ""))
+
+            # Target input
+            target_edit = QLineEdit()
+            target_edit.setPlaceholderText("Result column")
+            if initial_config:
+                target_edit.setText(initial_config.get("target", ""))
+
+            layout.insertWidget(insert_pos, op_combo, 0)
+            layout.insertWidget(insert_pos + 1, field1_combo, 1)
+            layout.insertWidget(insert_pos + 2, field2_combo, 1)
+            layout.insertWidget(insert_pos + 3, QLabel("→"), 0)
+            layout.insertWidget(insert_pos + 4, target_edit, 1)
+
+            action_refs["param_widgets"]["operation"] = op_combo
+            action_refs["param_widgets"]["field1"] = field1_combo
+            action_refs["param_widgets"]["field2"] = field2_combo
+            action_refs["param_widgets"]["target"] = target_edit
+
+        elif action_type == "SET_MULTI_TAGS":
+            # Comma-separated tags
+            tags_edit = QLineEdit()
+            tags_edit.setPlaceholderText("TAG1, TAG2, TAG3")
+            if initial_config:
+                tags_value = initial_config.get("tags") or initial_config.get("value", "")
+                if isinstance(tags_value, list):
+                    tags_edit.setText(", ".join(tags_value))
+                else:
+                    tags_edit.setText(tags_value)
+
+            layout.insertWidget(insert_pos, tags_edit, 1)
+            action_refs["param_widgets"]["value"] = tags_edit
+
+        elif action_type == "ALERT_NOTIFICATION":
+            # Message input
+            message_edit = QLineEdit()
+            message_edit.setPlaceholderText("Alert message")
+            if initial_config:
+                message_edit.setText(initial_config.get("message", ""))
+
+            # Severity dropdown
+            severity_combo = WheelIgnoreComboBox()
+            severity_combo.addItems(["info", "warning", "error"])
+            if initial_config:
+                severity_combo.setCurrentText(initial_config.get("severity", "info"))
+
+            layout.insertWidget(insert_pos, message_edit, 1)
+            layout.insertWidget(insert_pos + 1, severity_combo, 0)
+
+            action_refs["param_widgets"]["message"] = message_edit
+            action_refs["param_widgets"]["severity"] = severity_combo
+
+        elif action_type == "ADD_PRODUCT":
+            # SKU input
+            sku_edit = QLineEdit()
+            sku_edit.setPlaceholderText("Product SKU")
+            if initial_config:
+                sku_edit.setText(initial_config.get("sku", ""))
+
+            # Quantity spinbox
+            qty_spin = QSpinBox()
+            qty_spin.setMinimum(1)
+            qty_spin.setMaximum(9999)
+            qty_spin.setValue(initial_config.get("quantity", 1) if initial_config else 1)
+
+            layout.insertWidget(insert_pos, sku_edit, 1)
+            layout.insertWidget(insert_pos + 1, QLabel("Qty:"), 0)
+            layout.insertWidget(insert_pos + 2, qty_spin, 0)
+
+            action_refs["param_widgets"]["sku"] = sku_edit
+            action_refs["param_widgets"]["quantity"] = qty_spin
 
     def create_packing_lists_tab(self):
         """Creates the 'Packing Lists' tab for managing report configurations."""
@@ -1335,13 +1496,37 @@ class SettingsWindow(QDialog):
                         "value": val,
                     })
 
-                actions = [
-                    {
-                        "type": a["type"].currentText(),
-                        "value": a["value"].text()
-                    }
-                    for a in rule_w["actions"]
-                ]
+                actions = []
+                for act_refs in rule_w["actions"]:
+                    action_type = act_refs["type"].currentText()
+                    act = {"type": action_type}
+
+                    # Serialize parameters based on type
+                    if action_type in ["ADD_TAG", "ADD_ORDER_TAG", "ADD_INTERNAL_TAG", "SET_STATUS"]:
+                        act["value"] = act_refs["param_widgets"]["value"].text()
+
+                    elif action_type == "COPY_FIELD":
+                        act["source"] = act_refs["param_widgets"]["source"].currentText()
+                        act["target"] = act_refs["param_widgets"]["target"].text()
+
+                    elif action_type == "CALCULATE":
+                        act["operation"] = act_refs["param_widgets"]["operation"].currentText()
+                        act["field1"] = act_refs["param_widgets"]["field1"].currentText()
+                        act["field2"] = act_refs["param_widgets"]["field2"].currentText()
+                        act["target"] = act_refs["param_widgets"]["target"].text()
+
+                    elif action_type == "SET_MULTI_TAGS":
+                        act["value"] = act_refs["param_widgets"]["value"].text()
+
+                    elif action_type == "ALERT_NOTIFICATION":
+                        act["message"] = act_refs["param_widgets"]["message"].text()
+                        act["severity"] = act_refs["param_widgets"]["severity"].currentText()
+
+                    elif action_type == "ADD_PRODUCT":
+                        act["sku"] = act_refs["param_widgets"]["sku"].text()
+                        act["quantity"] = act_refs["param_widgets"]["quantity"].value()
+
+                    actions.append(act)
 
                 new_rules.append({
                     "name": rule_w["name_edit"].text(),
