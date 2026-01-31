@@ -168,9 +168,6 @@ class SettingsWindow(QDialog):
         self.stock_export_widgets = []
         self.courier_mapping_widgets = []
 
-        # Validation timers for debouncing (used for regex validation)
-        self._validation_timers = {}
-
         self.setWindowTitle(f"Settings - CLIENT_{self.client_id}")
         self.setMinimumSize(900, 750)  # Slightly larger for new tabs
         self.setModal(True)
@@ -710,9 +707,9 @@ class SettingsWindow(QDialog):
             del condition_refs["feedback_label"]
 
         # Cancel pending validation timer
-        if condition_refs in self._validation_timers:
-            self._validation_timers[condition_refs].stop()
-            del self._validation_timers[condition_refs]
+        if "validation_timer" in condition_refs:
+            condition_refs["validation_timer"].stop()
+            del condition_refs["validation_timer"]
 
         # Remove the old value widget, if it exists
         if condition_refs["value_widget"]:
@@ -804,8 +801,8 @@ class SettingsWindow(QDialog):
         op = condition_refs["op"].currentText()
 
         # Cancel existing timer for this condition
-        if condition_refs in self._validation_timers:
-            self._validation_timers[condition_refs].stop()
+        if "validation_timer" in condition_refs:
+            condition_refs["validation_timer"].stop()
 
         # For regex: debounce 500ms
         if op == "matches regex":
@@ -813,7 +810,7 @@ class SettingsWindow(QDialog):
             timer.setSingleShot(True)
             timer.timeout.connect(lambda: self._perform_validation(condition_refs))
             timer.start(500)  # 500ms debounce
-            self._validation_timers[condition_refs] = timer
+            condition_refs["validation_timer"] = timer
         else:
             # For other operators: validate immediately
             self._perform_validation(condition_refs)
