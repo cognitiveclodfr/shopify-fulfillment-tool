@@ -781,8 +781,7 @@ class SettingsWindow(QDialog):
         condition_refs["value_layout"].insertWidget(2, new_widget, 1)
         condition_refs["value_widget"] = new_widget
 
-        # Connect validation for QLineEdit widgets
-        from PySide6.QtWidgets import QLineEdit
+        # Connect validation for QLineEdit widgets (QLineEdit is already imported globally)
         if isinstance(new_widget, QLineEdit):
             new_widget.textChanged.connect(lambda: self._validate_condition_value(condition_refs))
 
