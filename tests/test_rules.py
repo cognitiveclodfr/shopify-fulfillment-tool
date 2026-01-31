@@ -1503,6 +1503,55 @@ def test_add_product_multiple_orders(sample_df):
     assert all(gift_rows["Quantity"] == 1)
 
 
+def test_add_product_uses_stock_data(sample_df):
+    """Test ADD_PRODUCT uses Product_Name and Warehouse_Name from existing SKU in stock."""
+    df = sample_df.copy()
+
+    # Add a product with specific warehouse info to simulate stock data
+    df.loc[len(df)] = {
+        "Order_Number": "#9999",  # Different order
+        "Order_Type": "Single",
+        "Shipping_Provider": "DHL",
+        "Total_Price": 10,
+        "Tags": "",
+        "Status_Note": "",
+        "Order_Fulfillment_Status": "Fulfillable",
+        "SKU": "BONUS-SKU",
+        "Quantity": 100,  # Stock quantity
+    }
+
+    # Add Warehouse_Name and Product_Name columns
+    df["Warehouse_Name"] = df["SKU"].copy()
+    df["Product_Name"] = df["SKU"].copy()
+
+    # Set specific values for our stock SKU
+    df.loc[df["SKU"] == "BONUS-SKU", "Warehouse_Name"] = "Special Warehouse"
+    df.loc[df["SKU"] == "BONUS-SKU", "Product_Name"] = "Bonus Product"
+    df.loc[df["SKU"] == "BONUS-SKU", "Stock"] = 500
+
+    # Now add this product to order #1001
+    rules = [{
+        "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+        "actions": [{"type": "ADD_PRODUCT", "sku": "BONUS-SKU", "quantity": 1}]
+    }]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    # Find added bonus products in order #1001
+    bonus_in_order = result_df[(result_df["SKU"] == "BONUS-SKU") & (result_df["Order_Number"] == "#1001")]
+
+    assert len(bonus_in_order) == 2  # #1001 has 2 rows, so 2 bonus products added
+
+    # Verify that Warehouse_Name and Product_Name come from stock data, not from order rows
+    for _, row in bonus_in_order.iterrows():
+        assert row["Warehouse_Name"] == "Special Warehouse", f"Expected 'Special Warehouse', got '{row['Warehouse_Name']}'"
+        assert row["Product_Name"] == "Bonus Product", f"Expected 'Bonus Product', got '{row['Product_Name']}'"
+        assert row["Quantity"] == 1  # Quantity from action, not stock
+        if "Stock" in row:
+            assert row["Stock"] == 500  # Stock value from stock data
+
+
 # Integration Test
 def test_all_new_actions_integration(sample_df):
     """Integration test using all 5 new action types."""

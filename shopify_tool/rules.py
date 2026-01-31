@@ -1022,14 +1022,38 @@ class RuleEngine:
                     logger.warning(f"[RULE ENGINE] ADD_PRODUCT quantity must be positive")
                     continue
 
+                # Знайти цей SKU в DataFrame для отримання product info (з stock файлу)
+                existing_product = df[df["SKU"] == sku]
+                if not existing_product.empty:
+                    # SKU знайдено - взяти дані з існуючого рядка
+                    product_info = existing_product.iloc[0]
+                    product_name = product_info.get("Product_Name", sku)
+                    warehouse_name = product_info.get("Warehouse_Name", sku)
+                    stock = product_info.get("Stock", 0)
+                    final_stock = product_info.get("Final_Stock", 0)
+                    logger.info(f"[RULE ENGINE] ADD_PRODUCT: Found SKU '{sku}' in stock data (Warehouse: {warehouse_name})")
+                else:
+                    # SKU не знайдено - використати defaults
+                    product_name = action.get("product_name", f"Bonus: {sku}")
+                    warehouse_name = sku
+                    stock = 0
+                    final_stock = 0
+                    logger.warning(f"[RULE ENGINE] ADD_PRODUCT: SKU '{sku}' not found in stock data, using defaults")
+
                 # Для кожного співпадаючого рядка створити новий продукт
                 for idx in df[matches].index:
                     base_row = df.loc[idx].to_dict()
 
                     new_row = base_row.copy()
+                    # Перезаписати product-specific поля з правильними даними
                     new_row["SKU"] = sku
                     new_row["Quantity"] = quantity
-                    new_row["Product_Name"] = action.get("product_name", f"Bonus: {sku}")
+                    new_row["Product_Name"] = product_name
+                    new_row["Warehouse_Name"] = warehouse_name
+                    if "Stock" in new_row:
+                        new_row["Stock"] = stock
+                    if "Final_Stock" in new_row:
+                        new_row["Final_Stock"] = final_stock
 
                     # Очистити поля які не треба копіювати
                     if "Status_Note" in new_row:
@@ -1042,7 +1066,7 @@ class RuleEngine:
 
                     new_rows.append(new_row)
 
-                logger.info(f"[RULE ENGINE] ADD_PRODUCT: Created {len(df[matches])} instances of '{sku}'")
+                logger.info(f"[RULE ENGINE] ADD_PRODUCT: Created {len(df[matches])} instances of '{sku}' (Warehouse: {warehouse_name})")
 
         return new_rows
 
