@@ -200,6 +200,78 @@ class SettingsWindow(QDialog):
         row_widget.deleteLater()
         ref_list.remove(ref_dict)
 
+    def _move_rule_up(self, widget_refs):
+        """Moves a rule up in the list (higher priority)."""
+        idx = self.rule_widgets.index(widget_refs)
+        if idx == 0:
+            return  # Already at top
+
+        # Swap in list
+        self.rule_widgets[idx], self.rule_widgets[idx - 1] = \
+            self.rule_widgets[idx - 1], self.rule_widgets[idx]
+
+        # Swap in UI layout
+        layout = self.rules_layout
+        widget = widget_refs["group_box"]
+        prev_widget = self.rule_widgets[idx]["group_box"]
+
+        layout.removeWidget(widget)
+        layout.removeWidget(prev_widget)
+        layout.insertWidget(idx - 1, widget)
+        layout.insertWidget(idx, prev_widget)
+
+        # Update priority labels
+        self._update_priority_labels()
+
+    def _move_rule_down(self, widget_refs):
+        """Moves a rule down in the list (lower priority)."""
+        idx = self.rule_widgets.index(widget_refs)
+        if idx >= len(self.rule_widgets) - 1:
+            return  # Already at bottom
+
+        # Swap in list
+        self.rule_widgets[idx], self.rule_widgets[idx + 1] = \
+            self.rule_widgets[idx + 1], self.rule_widgets[idx]
+
+        # Swap in UI layout
+        layout = self.rules_layout
+        widget = widget_refs["group_box"]
+        next_widget = self.rule_widgets[idx]["group_box"]
+
+        layout.removeWidget(widget)
+        layout.removeWidget(next_widget)
+        layout.insertWidget(idx, next_widget)
+        layout.insertWidget(idx + 1, widget)
+
+        # Update priority labels
+        self._update_priority_labels()
+
+    def _update_priority_labels(self):
+        """Updates priority labels and button states for all rules.
+
+        Groups rules by level (article/order) and shows per-level priority.
+        """
+        # Group by level
+        article_count = 1
+        order_count = 1
+
+        for idx, rule_w in enumerate(self.rule_widgets):
+            level = rule_w["level_combo"].currentText()
+
+            # Update label with level-specific numbering
+            if level == "article":
+                rule_w["priority_label"].setText(f"Article #{article_count}")
+                article_count += 1
+            else:  # order
+                rule_w["priority_label"].setText(f"Order #{order_count}")
+                order_count += 1
+
+            # Disable up button for first rule
+            rule_w["up_btn"].setEnabled(idx > 0)
+
+            # Disable down button for last rule
+            rule_w["down_btn"].setEnabled(idx < len(self.rule_widgets) - 1)
+
     def get_available_rule_fields(self):
         """Get all available fields for rules from DataFrame + common fields.
 
@@ -371,7 +443,7 @@ class SettingsWindow(QDialog):
         tab = QWidget()
         main_layout = QVBoxLayout(tab)
         add_rule_btn = QPushButton("Add New Rule")
-        add_rule_btn.clicked.connect(self.add_rule_widget)
+        add_rule_btn.clicked.connect(lambda: [self.add_rule_widget(), self._update_priority_labels()])
         main_layout.addWidget(add_rule_btn, 0, Qt.AlignLeft)
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
@@ -383,6 +455,7 @@ class SettingsWindow(QDialog):
         self.tab_widget.addTab(tab, "Rules")
         for rule_config in self.config_data.get("rules", []):
             self.add_rule_widget(rule_config)
+        self._update_priority_labels()  # NEW: Update priority labels after loading rules
 
     def add_rule_widget(self, config=None):
         """Adds a new group of widgets for creating/editing a single rule.
@@ -397,10 +470,30 @@ class SettingsWindow(QDialog):
         rule_box = QGroupBox()
         rule_layout = QVBoxLayout(rule_box)
         header_layout = QHBoxLayout()
+
+        # Priority label (e.g., "Article #1", "Order #2")
+        priority_label = QLabel("")
+        priority_label.setMinimumWidth(70)
+        priority_label.setStyleSheet("font-weight: bold; color: #2196F3; font-size: 11pt;")
+        header_layout.addWidget(priority_label)
+
+        # Up button
+        up_btn = QPushButton("↑")
+        up_btn.setMaximumWidth(30)
+        up_btn.setToolTip("Move rule up (higher priority)")
+        header_layout.addWidget(up_btn)
+
+        # Down button
+        down_btn = QPushButton("↓")
+        down_btn.setMaximumWidth(30)
+        down_btn.setToolTip("Move rule down (lower priority)")
+        header_layout.addWidget(down_btn)
+
         header_layout.addWidget(QLabel("Rule Name:"))
         name_edit = QLineEdit(config.get("name", ""))
         header_layout.addWidget(name_edit)
         delete_rule_btn = QPushButton("Delete Rule")
+        delete_rule_btn.setStyleSheet("background-color: #f44336; color: white;")
         header_layout.addWidget(delete_rule_btn)
         rule_layout.addLayout(header_layout)
 
@@ -456,6 +549,9 @@ class SettingsWindow(QDialog):
         self.rules_layout.addWidget(rule_box)
         widget_refs = {
             "group_box": rule_box,
+            "priority_label": priority_label,  # NEW
+            "up_btn": up_btn,                  # NEW
+            "down_btn": down_btn,              # NEW
             "name_edit": name_edit,
             "level_combo": level_combo,
             "match_combo": match_combo,
@@ -468,6 +564,8 @@ class SettingsWindow(QDialog):
         add_condition_btn.clicked.connect(lambda: self.add_condition_row(widget_refs))
         add_action_btn.clicked.connect(lambda: self.add_action_row(widget_refs))
         delete_rule_btn.clicked.connect(lambda: self._delete_widget_from_list(widget_refs, self.rule_widgets))
+        up_btn.clicked.connect(lambda: self._move_rule_up(widget_refs))      # NEW
+        down_btn.clicked.connect(lambda: self._move_rule_down(widget_refs))  # NEW
         for cond_config in config.get("conditions", []):
             self.add_condition_row(widget_refs, cond_config)
         for act_config in config.get("actions", []):
@@ -1479,7 +1577,7 @@ class SettingsWindow(QDialog):
             # Rules Tab - Line Item Rules
             # ========================================
             new_rules = []
-            for rule_w in self.rule_widgets:
+            for idx, rule_w in enumerate(self.rule_widgets):
                 conditions = []
                 for c in rule_w["conditions"]:
                     value_widget = c.get("value_widget")
@@ -1530,6 +1628,7 @@ class SettingsWindow(QDialog):
 
                 new_rules.append({
                     "name": rule_w["name_edit"].text(),
+                    "priority": idx + 1,  # NEW: Position-based priority
                     "level": rule_w["level_combo"].currentText(),
                     "match": rule_w["match_combo"].currentText(),
                     "conditions": conditions,

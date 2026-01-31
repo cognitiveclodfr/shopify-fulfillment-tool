@@ -1592,3 +1592,159 @@ def test_all_new_actions_integration(sample_df):
     # Verify ADD_PRODUCT
     bonus_rows = result_df[result_df["SKU"] == "BONUS-001"]
     assert len(bonus_rows) == 2  # #1001 has 2 original rows
+
+
+# ============================================================================
+# Priority System Tests
+# ============================================================================
+
+def test_rules_execute_in_priority_order(sample_df):
+    """Verify rules execute in priority order (1, 2, 3), not definition order."""
+    df = sample_df.copy()
+
+    rules = [
+        {
+            "name": "Should Execute Second",
+            "priority": 2,
+            "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+            "actions": [{"type": "ADD_TAG", "value": "SECOND"}]
+        },
+        {
+            "name": "Should Execute First",
+            "priority": 1,
+            "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+            "actions": [{"type": "ADD_TAG", "value": "FIRST"}]
+        },
+        {
+            "name": "Should Execute Third",
+            "priority": 3,
+            "conditions": [{"field": "Order_Number", "operator": "equals", "value": "#1001"}],
+            "actions": [{"type": "ADD_TAG", "value": "THIRD"}]
+        },
+    ]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    # Verify tags appear in priority order
+    rows_1001 = result_df[result_df["Order_Number"] == "#1001"]
+    for _, row in rows_1001.iterrows():
+        note = row["Status_Note"]
+        assert note == "FIRST, SECOND, THIRD", f"Expected 'FIRST, SECOND, THIRD', got '{note}'"
+
+
+def test_dependent_rules_with_priorities(sample_df):
+    """Test rules that depend on results of other rules (CALCULATE → TAG)."""
+    df = sample_df.copy()
+    df["Price"] = [10.0, 20.0, 5.0, 15.0, 30.0]
+
+    rules = [
+        {
+            "name": "Tag Based on Total (depends on calculation)",
+            "priority": 2,  # Execute AFTER calculation
+            "conditions": [{"field": "Total", "operator": "is greater than", "value": "30"}],
+            "actions": [{"type": "ADD_TAG", "value": "HIGH_VALUE"}]
+        },
+        {
+            "name": "Calculate Total",
+            "priority": 1,  # Execute FIRST
+            "conditions": [{"field": "Quantity", "operator": "is greater than", "value": "0"}],
+            "actions": [{
+                "type": "CALCULATE",
+                "operation": "multiply",
+                "field1": "Quantity",
+                "field2": "Price",
+                "target": "Total"
+            }]
+        },
+    ]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    # Verify Total column was created
+    assert "Total" in result_df.columns
+
+    # Verify high-value orders are tagged
+    high_value_rows = result_df[result_df["Total"] > 30]
+    if len(high_value_rows) > 0:
+        for _, row in high_value_rows.iterrows():
+            assert "HIGH_VALUE" in row["Status_Note"]
+
+
+def test_backward_compatibility_no_priority(sample_df):
+    """Verify rules without priority field work (assigned default 1000+)."""
+    df = sample_df.copy()
+
+    # Old-style rules (no priority field)
+    rules = [
+        {
+            "name": "Old Rule 1",
+            "conditions": [{"field": "SKU", "operator": "equals", "value": "SKU-A"}],
+            "actions": [{"type": "ADD_TAG", "value": "RULE1"}]
+        },
+        {
+            "name": "Old Rule 2",
+            "conditions": [{"field": "SKU", "operator": "equals", "value": "SKU-B"}],
+            "actions": [{"type": "ADD_TAG", "value": "RULE2"}]
+        },
+    ]
+
+    engine = RuleEngine(rules)
+    result_df = engine.apply(df)
+
+    # Verify rules executed
+    assert result_df[result_df["SKU"] == "SKU-A"]["Status_Note"].iloc[0] == "RULE1"
+    assert result_df[result_df["SKU"] == "SKU-B"]["Status_Note"].iloc[0] == "RULE2"
+
+    # Verify default priorities assigned
+    assert engine.rules[0]["priority"] == 1000
+    assert engine.rules[1]["priority"] == 1001
+
+
+def test_reorder_rules_helper():
+    """Test RuleEngine.reorder_rules() static method."""
+    rules = [
+        {"name": "Rule A", "priority": 1},
+        {"name": "Rule B", "priority": 2},
+        {"name": "Rule C", "priority": 3},
+    ]
+
+    # Move Rule C (index 2) to position 0
+    reordered = RuleEngine.reorder_rules(rules.copy(), 2, 0)
+    assert reordered[0]["name"] == "Rule C"
+    assert reordered[1]["name"] == "Rule A"
+    assert reordered[2]["name"] == "Rule B"
+
+    # Test invalid indices (should return unchanged)
+    invalid = RuleEngine.reorder_rules(rules.copy(), 10, 0)
+    assert invalid == rules
+
+
+def test_mixed_priority_config(sample_df):
+    """Test config with some rules having priority, some not."""
+    df = sample_df.copy()
+
+    rules = [
+        {
+            "name": "Has Priority 5",
+            "priority": 5,
+            "conditions": [{"field": "SKU", "operator": "equals", "value": "SKU-A"}],
+            "actions": [{"type": "ADD_TAG", "value": "PRIORITY"}]
+        },
+        {
+            "name": "No Priority",  # Should get default 1000
+            "conditions": [{"field": "SKU", "operator": "equals", "value": "SKU-B"}],
+            "actions": [{"type": "ADD_TAG", "value": "DEFAULT"}]
+        },
+    ]
+
+    engine = RuleEngine(rules)
+
+    # Rule with priority 5 should execute first (lower number)
+    assert engine.rules[0]["priority"] == 5
+    assert engine.rules[0]["name"] == "Has Priority 5"
+
+    # Rule without priority should get default 1000
+    assert engine.rules[1]["priority"] == 1000
+    assert engine.rules[1]["name"] == "No Priority"

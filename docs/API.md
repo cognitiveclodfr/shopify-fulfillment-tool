@@ -360,6 +360,59 @@ def __init__(self, rules_config)
 }
 ```
 
+**Rule Priority System**:
+
+Rules support an optional `priority` field to control execution order:
+
+- **Type**: `int`
+- **Default**: `1000` (if not specified)
+- **Lower values = higher priority** (execute first)
+- **Per-Level**: Article rules and order rules have separate priority sequences
+
+**Example with Priority**:
+```json
+{
+  "rules": [
+    {
+      "name": "Calculate Total First",
+      "priority": 1,
+      "level": "article",
+      "match": "ALL",
+      "conditions": [{"field": "Quantity", "operator": "is greater than", "value": "0"}],
+      "actions": [{
+        "type": "CALCULATE",
+        "operation": "multiply",
+        "field1": "Quantity",
+        "field2": "Unit_Price",
+        "target": "Total_Price"
+      }]
+    },
+    {
+      "name": "Tag Based on Total",
+      "priority": 2,
+      "level": "article",
+      "match": "ALL",
+      "conditions": [{"field": "Total_Price", "operator": "is greater than", "value": "100"}],
+      "actions": [{"type": "ADD_TAG", "value": "HIGH-VALUE"}]
+    }
+  ]
+}
+```
+
+**Execution Order**:
+- Rules are sorted by priority before execution (lower number = executes first)
+- Article rules always execute before order rules (separate phases)
+- Within each level (article/order), rules execute in priority order
+- Rules without `priority` field automatically receive 1000, 1001, 1002... (executed last)
+
+**Priority Gaps**:
+- Priority values like 1, 5, 10, 20 are allowed (no need for sequential numbering)
+- Gaps enable inserting new rules without renumbering existing ones
+
+**Backward Compatibility**:
+- Existing configs without `priority` field continue to work
+- Rules are automatically assigned default priorities preserving their original order
+
 ##### Methods
 
 ###### `apply(df)`

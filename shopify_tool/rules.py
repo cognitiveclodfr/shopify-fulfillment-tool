@@ -569,15 +569,72 @@ class RuleEngine:
         "has_sku": "_check_has_sku",
     }
 
+    def _normalize_priorities(self, rules):
+        """Assigns default priority to rules without priority field.
+
+        Rules without priority get 1000, 1001, 1002... to execute last.
+        This ensures backward compatibility with old configs.
+
+        Args:
+            rules (list[dict]): List of rule dictionaries
+
+        Returns:
+            list[dict]: Rules with priority field added
+        """
+        default_priority = 1000
+        for rule in rules:
+            if "priority" not in rule:
+                rule["priority"] = default_priority
+                default_priority += 1
+        return rules
+
     def __init__(self, rules_config):
-        """Initializes the RuleEngine with a given set of rules.
+        """Initializes the RuleEngine with priority-sorted rules.
 
         Args:
             rules_config (list[dict]): A list of dictionaries, where each
                 dictionary represents a single rule. A rule consists of
-                conditions and actions.
+                conditions and actions. Optional 'priority' field controls
+                execution order (lower number = higher priority = executes first).
         """
-        self.rules = rules_config
+        import logging
+        logger = logging.getLogger(__name__)
+
+        if not rules_config:
+            self.rules = []
+            return
+
+        # Normalize: add default priority to rules without it
+        self.rules = self._normalize_priorities(rules_config)
+
+        # Sort by priority (lower number = higher priority = executes first)
+        self.rules = sorted(self.rules, key=lambda r: r.get("priority", 1000))
+
+        logger.info(f"[RULE ENGINE] Loaded {len(self.rules)} rules (sorted by priority)")
+
+    @staticmethod
+    def reorder_rules(rules, from_index, to_index):
+        """Reorders rules by moving rule from one position to another.
+
+        Args:
+            rules (list[dict]): List of rule dictionaries
+            from_index (int): Current position (0-based)
+            to_index (int): Target position (0-based)
+
+        Returns:
+            list[dict]: List with rule moved (priority values unchanged)
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        if not (0 <= from_index < len(rules) and 0 <= to_index < len(rules)):
+            logger.warning(f"Invalid reorder indices: from={from_index}, to={to_index}")
+            return rules
+
+        rule = rules.pop(from_index)
+        rules.insert(to_index, rule)
+        logger.info(f"Reordered rules: moved position {from_index} → {to_index}")
+        return rules
 
     def apply(self, df):
         """Applies all configured rules to the given DataFrame.
@@ -620,7 +677,8 @@ class RuleEngine:
         # Apply article-level rules (existing logic)
         for idx, rule in enumerate(article_rules):
             rule_name = rule.get("name", f"Rule #{idx+1}")
-            logger.info(f"[RULE ENGINE] Applying article rule: {rule_name}")
+            priority = rule.get("priority", 1000)
+            logger.info(f"[RULE ENGINE] Applying article rule #{idx+1}: {rule_name} (Priority: {priority})")
             logger.info(f"[RULE ENGINE] Conditions: {rule.get('conditions', [])}")
 
             # Get a boolean Series indicating which rows match the conditions
@@ -645,6 +703,10 @@ class RuleEngine:
                 order_df = df[order_mask]
 
                 for rule in order_rules:
+                    rule_name = rule.get("name", "Unnamed")
+                    priority = rule.get("priority", 1000)
+                    logger.info(f"[RULE ENGINE] Applying order rule: {rule_name} (Priority: {priority})")
+
                     # Evaluate conditions on entire order
                     matches = self._evaluate_order_conditions(
                         order_df,

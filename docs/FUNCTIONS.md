@@ -898,6 +898,63 @@ engine = RuleEngine(rules)
 processed_df = engine.apply(orders_df)
 ```
 
+**Example with Dependent Rules (Using Priority)**:
+
+When one rule creates data that another rule uses, set priorities to control execution order:
+
+```python
+# Scenario: Calculate total price, then tag expensive orders
+
+rules = [
+    {
+        "name": "Calculate Total Price",
+        "priority": 1,  # Execute FIRST
+        "level": "article",
+        "match": "ALL",
+        "conditions": [
+            {"field": "Quantity", "operator": "is greater than", "value": "0"}
+        ],
+        "actions": [
+            {
+                "type": "CALCULATE",
+                "operation": "multiply",
+                "field1": "Quantity",
+                "field2": "Unit_Price",
+                "target": "Total_Price"
+            }
+        ]
+    },
+    {
+        "name": "Tag Expensive Orders",
+        "priority": 2,  # Execute SECOND (after Total_Price is calculated)
+        "level": "article",
+        "match": "ALL",
+        "conditions": [
+            {"field": "Total_Price", "operator": "is greater than", "value": "100"}
+        ],
+        "actions": [
+            {"type": "ADD_TAG", "value": "EXPENSIVE"}
+        ]
+    }
+]
+
+engine = RuleEngine(rules)
+processed_df = engine.apply(orders_df)
+
+# Result: Rule 1 calculates Total_Price column first,
+#         then Rule 2 checks Total_Price and tags rows > 100
+```
+
+**Priority System**:
+- **Lower number = higher priority = executes first** (1, 2, 3, ...)
+- Rules without `priority` field get default 1000 (executed last)
+- Article rules and order rules have **separate priority sequences**
+- Execution order:
+  1. Rule 1 (Priority 1) calculates `Total_Price` column
+  2. Rule 2 (Priority 2) checks `Total_Price` and tags accordingly
+
+Without priorities, Rule 2 might execute before Rule 1, causing the condition to fail because `Total_Price` doesn't exist yet.
+
 ---
 
 #### `RuleEngine._prepare_df_for_actions(df)`
