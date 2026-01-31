@@ -24,8 +24,9 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QFileDialog,
     QSpinBox,
+    QDateEdit,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer, QDate
 
 from shopify_tool.core import get_unique_column_values
 from gui.column_mapping_widget import ColumnMappingWidget
@@ -166,6 +167,9 @@ class SettingsWindow(QDialog):
         self.packing_list_widgets = []
         self.stock_export_widgets = []
         self.courier_mapping_widgets = []
+
+        # Validation timers for debouncing (used for regex validation)
+        self._validation_timers = {}
 
         self.setWindowTitle(f"Settings - CLIENT_{self.client_id}")
         self.setMinimumSize(900, 750)  # Slightly larger for new tabs
@@ -489,6 +493,26 @@ class SettingsWindow(QDialog):
         down_btn.setToolTip("Move rule down (lower priority)")
         header_layout.addWidget(down_btn)
 
+        # Test button
+        test_btn = QPushButton("🧪 Test")
+        test_btn.setMaximumWidth(70)
+        test_btn.setToolTip("Test this rule against current analysis data")
+        test_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+            QPushButton:disabled {
+                background-color: #cccccc;
+                color: #666666;
+            }
+        """)
+        header_layout.addWidget(test_btn)
+
         header_layout.addWidget(QLabel("Rule Name:"))
         name_edit = QLineEdit(config.get("name", ""))
         header_layout.addWidget(name_edit)
@@ -552,6 +576,7 @@ class SettingsWindow(QDialog):
             "priority_label": priority_label,  # NEW
             "up_btn": up_btn,                  # NEW
             "down_btn": down_btn,              # NEW
+            "test_btn": test_btn,              # NEW
             "name_edit": name_edit,
             "level_combo": level_combo,
             "match_combo": match_combo,
@@ -566,6 +591,10 @@ class SettingsWindow(QDialog):
         delete_rule_btn.clicked.connect(lambda: self._delete_widget_from_list(widget_refs, self.rule_widgets))
         up_btn.clicked.connect(lambda: self._move_rule_up(widget_refs))      # NEW
         down_btn.clicked.connect(lambda: self._move_rule_down(widget_refs))  # NEW
+        test_btn.clicked.connect(lambda: self._test_rule(widget_refs))       # NEW
+
+        # Update test button state based on data availability
+        self._update_test_button_state(widget_refs)
         for cond_config in config.get("conditions", []):
             self.add_condition_row(widget_refs, cond_config)
         for act_config in config.get("actions", []):
@@ -675,6 +704,16 @@ class SettingsWindow(QDialog):
         field = condition_refs["field"].currentText()
         op = condition_refs["op"].currentText()
 
+        # Clean up validation feedback before removing widget
+        if "feedback_label" in condition_refs:
+            condition_refs["feedback_label"].deleteLater()
+            del condition_refs["feedback_label"]
+
+        # Cancel pending validation timer
+        if condition_refs in self._validation_timers:
+            self._validation_timers[condition_refs].stop()
+            del self._validation_timers[condition_refs]
+
         # Remove the old value widget, if it exists
         if condition_refs["value_widget"]:
             condition_refs["value_widget"].deleteLater()
@@ -697,6 +736,31 @@ class SettingsWindow(QDialog):
             new_widget.addItems([""] + unique_values)  # Add a blank option
             if initial_value and str(initial_value) in unique_values:
                 new_widget.setCurrentText(str(initial_value))
+
+        # DATE OPERATORS - Use QDateEdit with calendar popup
+        elif op in ["date before", "date after", "date equals"]:
+            from PySide6.QtWidgets import QDateEdit
+            from PySide6.QtCore import QDate
+
+            new_widget = QDateEdit()
+            new_widget.setCalendarPopup(True)  # Enable calendar dropdown
+            new_widget.setDisplayFormat("yyyy-MM-dd")  # ISO format
+
+            # Parse initial value if provided
+            if initial_value:
+                parsed_date = self._parse_date_for_widget(initial_value)
+                if parsed_date:
+                    new_widget.setDate(parsed_date)
+                else:
+                    new_widget.setDate(QDate.currentDate())
+            else:
+                new_widget.setDate(QDate.currentDate())
+
+            new_widget.setToolTip(
+                "Select date from calendar or type manually.\n"
+                "Formats: YYYY-MM-DD, DD/MM/YYYY, timestamp"
+            )
+
         else:
             # Default to QLineEdit with smart placeholders
             new_widget = QLineEdit()
@@ -708,8 +772,6 @@ class SettingsWindow(QDialog):
                 placeholder = "Value1, Value2, Value3"
             elif op in ["between", "not between"]:
                 placeholder = "10-100"
-            elif op in ["date before", "date after", "date equals"]:
-                placeholder = "2024-01-30"
             elif op == "matches regex":
                 placeholder = "^SKU-\\d{4}$"
 
@@ -721,6 +783,302 @@ class SettingsWindow(QDialog):
         # Insert the new widget into the layout at the correct position
         condition_refs["value_layout"].insertWidget(2, new_widget, 1)
         condition_refs["value_widget"] = new_widget
+
+        # Connect validation for QLineEdit widgets
+        from PySide6.QtWidgets import QLineEdit
+        if isinstance(new_widget, QLineEdit):
+            new_widget.textChanged.connect(lambda: self._validate_condition_value(condition_refs))
+
+    def _validate_condition_value(self, condition_refs):
+        """
+        Validate condition value based on operator type.
+
+        Validates in real-time with debouncing for regex patterns (500ms).
+        Other operators validate immediately.
+
+        Args:
+            condition_refs (dict): Condition widget references
+        """
+        from PySide6.QtCore import QTimer
+
+        op = condition_refs["op"].currentText()
+
+        # Cancel existing timer for this condition
+        if condition_refs in self._validation_timers:
+            self._validation_timers[condition_refs].stop()
+
+        # For regex: debounce 500ms
+        if op == "matches regex":
+            timer = QTimer()
+            timer.setSingleShot(True)
+            timer.timeout.connect(lambda: self._perform_validation(condition_refs))
+            timer.start(500)  # 500ms debounce
+            self._validation_timers[condition_refs] = timer
+        else:
+            # For other operators: validate immediately
+            self._perform_validation(condition_refs)
+
+    def _perform_validation(self, condition_refs):
+        """
+        Execute validation based on operator type and show feedback.
+
+        Args:
+            condition_refs (dict): Condition widget references
+        """
+        from gui.rule_validator import (
+            validate_regex,
+            validate_date,
+            validate_range,
+            validate_list,
+            validate_numeric
+        )
+
+        op = condition_refs["op"].currentText()
+        value_widget = condition_refs.get("value_widget")
+
+        if not value_widget:
+            return
+
+        # Get value based on widget type
+        from PySide6.QtWidgets import QComboBox, QLineEdit, QDateEdit
+        if isinstance(value_widget, QComboBox):
+            value = value_widget.currentText()
+        elif isinstance(value_widget, QDateEdit):
+            value = value_widget.date().toString("yyyy-MM-dd")
+        elif isinstance(value_widget, QLineEdit):
+            value = value_widget.text()
+        else:
+            return
+
+        # Validate based on operator
+        if op == "matches regex":
+            is_valid, error_msg = validate_regex(value)
+            if is_valid:
+                self._show_validation_feedback(condition_refs, "clear", "")
+            else:
+                self._show_validation_feedback(condition_refs, "error", error_msg)
+
+        elif op in ["date before", "date after", "date equals"]:
+            # QDateEdit always provides valid dates, skip validation
+            self._show_validation_feedback(condition_refs, "clear", "")
+
+        elif op in ["between", "not between"]:
+            is_valid, error_msg, warning_msg = validate_range(value)
+            if not is_valid:
+                self._show_validation_feedback(condition_refs, "error", error_msg)
+            elif warning_msg:
+                self._show_validation_feedback(condition_refs, "warning", warning_msg)
+            else:
+                self._show_validation_feedback(condition_refs, "clear", "")
+
+        elif op in ["in list", "not in list"]:
+            is_valid, item_count, error_msg = validate_list(value)
+            if not is_valid:
+                self._show_validation_feedback(condition_refs, "error", error_msg)
+            else:
+                self._show_validation_feedback(condition_refs, "success", f"{item_count} items")
+
+        elif op in ["is greater than", "is less than", "is greater than or equal", "is less than or equal"]:
+            is_valid, error_msg = validate_numeric(value)
+            if not is_valid:
+                self._show_validation_feedback(condition_refs, "error", error_msg)
+            else:
+                self._show_validation_feedback(condition_refs, "clear", "")
+
+        else:
+            # No validation needed for other operators
+            self._show_validation_feedback(condition_refs, "clear", "")
+
+    def _show_validation_feedback(self, condition_refs, status, message):
+        """
+        Show validation feedback with visual indicators.
+
+        Args:
+            condition_refs (dict): Condition widget references
+            status (str): "error", "warning", "success", or "clear"
+            message (str): Message to display
+        """
+        from PySide6.QtWidgets import QLabel
+
+        value_widget = condition_refs.get("value_widget")
+        if not value_widget:
+            return
+
+        # Create feedback label if doesn't exist
+        if "feedback_label" not in condition_refs:
+            feedback_label = QLabel()
+            feedback_label.setWordWrap(True)
+            feedback_label.setStyleSheet("font-size: 9pt; margin-top: 2px;")
+            condition_refs["value_layout"].addWidget(feedback_label)
+            condition_refs["feedback_label"] = feedback_label
+
+        feedback_label = condition_refs["feedback_label"]
+
+        if status == "error":
+            value_widget.setStyleSheet("border: 1px solid #f44336; background-color: #ffebee;")
+            feedback_label.setStyleSheet("color: #f44336; font-size: 9pt;")
+            feedback_label.setText(f"⚠ {message}")
+            feedback_label.show()
+
+        elif status == "warning":
+            value_widget.setStyleSheet("border: 1px solid #ff9800; background-color: #fff3e0;")
+            feedback_label.setStyleSheet("color: #ff9800; font-size: 9pt;")
+            feedback_label.setText(f"⚠ {message}")
+            feedback_label.show()
+
+        elif status == "success":
+            value_widget.setStyleSheet("border: 1px solid #4CAF50;")
+            feedback_label.setStyleSheet("color: #4CAF50; font-size: 9pt;")
+            feedback_label.setText(f"✓ {message}")
+            feedback_label.show()
+
+        elif status == "clear":
+            value_widget.setStyleSheet("")
+            feedback_label.hide()
+
+    def _parse_date_for_widget(self, date_str):
+        """
+        Parse date string to QDate for widget initialization.
+
+        Supports multiple formats:
+        - ISO format: "2024-01-30"
+        - European: "30/01/2024", "30.01.2024"
+        - Timestamp: "2026-01-14 18:56:50 +0200"
+
+        Args:
+            date_str: Date string to parse
+
+        Returns:
+            QDate object or None if parsing fails
+        """
+        from PySide6.QtCore import QDate
+        from shopify_tool.rules import _parse_date_safe
+
+        pd_timestamp = _parse_date_safe(date_str)
+        if pd_timestamp:
+            return QDate(pd_timestamp.year, pd_timestamp.month, pd_timestamp.day)
+        return None
+
+    def _test_rule(self, rule_widget_refs):
+        """
+        Test a rule against current analysis data.
+
+        Opens a test dialog showing:
+        - Condition evaluation results
+        - Matched rows preview
+        - Actions to be applied
+        - Preview after actions
+
+        Args:
+            rule_widget_refs (dict): Rule widget references
+        """
+        from PySide6.QtWidgets import QMessageBox
+        from gui.rule_test_dialog import RuleTestDialog
+
+        if self.analysis_df is None or self.analysis_df.empty:
+            QMessageBox.warning(
+                self,
+                "No Data",
+                "No analysis data available to test rule.\n\n"
+                "Please run analysis first in the main window."
+            )
+            return
+
+        # Build rule config from current UI state
+        rule_config = self._build_rule_config_from_widgets(rule_widget_refs)
+
+        # Validate rule has conditions
+        if not rule_config.get("conditions"):
+            QMessageBox.warning(
+                self,
+                "No Conditions",
+                "This rule has no conditions defined.\n\n"
+                "Add at least one condition before testing."
+            )
+            return
+
+        # Open test dialog
+        dialog = RuleTestDialog(rule_config, self.analysis_df, parent=self)
+        dialog.exec()
+
+    def _build_rule_config_from_widgets(self, rule_widget_refs):
+        """
+        Extract current rule configuration from widget state.
+
+        Builds a config dict compatible with RuleEngine from the current
+        UI state of all condition and action widgets.
+
+        Args:
+            rule_widget_refs (dict): Rule widget references
+
+        Returns:
+            dict: Rule configuration compatible with RuleEngine
+        """
+        from PySide6.QtWidgets import QComboBox, QLineEdit, QDateEdit
+
+        # Extract conditions
+        conditions = []
+        for condition_refs in rule_widget_refs["conditions"]:
+            value_widget = condition_refs.get("value_widget")
+            val = ""
+
+            if value_widget:
+                if isinstance(value_widget, QComboBox):
+                    val = value_widget.currentText()
+                elif isinstance(value_widget, QDateEdit):
+                    # Format date as YYYY-MM-DD for rule engine
+                    val = value_widget.date().toString("yyyy-MM-dd")
+                elif isinstance(value_widget, QLineEdit):
+                    val = value_widget.text()
+
+            conditions.append({
+                "field": condition_refs["field"].currentText(),
+                "operator": condition_refs["op"].currentText(),
+                "value": val,
+            })
+
+        # Extract actions
+        actions = []
+        for action_refs in rule_widget_refs["actions"]:
+            action_type = action_refs["type"].currentText()
+            action_dict = {"type": action_type}
+
+            # Extract parameters based on action type
+            param_widgets = action_refs.get("param_widgets", {})
+
+            for param_name, widget in param_widgets.items():
+                if isinstance(widget, QComboBox):
+                    action_dict[param_name] = widget.currentText()
+                elif isinstance(widget, QLineEdit):
+                    action_dict[param_name] = widget.text()
+
+            actions.append(action_dict)
+
+        return {
+            "name": rule_widget_refs["name_edit"].text(),
+            "level": rule_widget_refs["level_combo"].currentText(),
+            "match": rule_widget_refs["match_combo"].currentText(),
+            "conditions": conditions,
+            "actions": actions,
+        }
+
+    def _update_test_button_state(self, rule_widget_refs):
+        """
+        Enable/disable test button based on data availability.
+
+        Args:
+            rule_widget_refs (dict): Rule widget references
+        """
+        has_data = self.analysis_df is not None and not self.analysis_df.empty
+        rule_widget_refs["test_btn"].setEnabled(has_data)
+
+        if not has_data:
+            rule_widget_refs["test_btn"].setToolTip(
+                "Test disabled: No analysis data available.\n"
+                "Run analysis in main window first."
+            )
+        else:
+            rule_widget_refs["test_btn"].setToolTip("Test this rule against current analysis data")
 
 
     def add_action_row(self, rule_widget_refs, config=None):
