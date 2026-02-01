@@ -58,7 +58,7 @@ def test_orders_without_sku_are_kept():
 
     # Second row should be marked as NO_SKU
     second_row = final_df.iloc[1]
-    assert second_row["Has_SKU"] == False, "Second row should have Has_SKU=False"
+    assert not second_row["Has_SKU"], "Second row should have Has_SKU=False"
     assert second_row["SKU"] == "NO_SKU", "Second row should have SKU=NO_SKU"
 
 
@@ -375,8 +375,8 @@ def test_has_sku_field_in_output():
     hat_row = final_df[final_df["SKU"] == "HAT-001"].iloc[0]
     no_sku_row = final_df[final_df["SKU"] == "NO_SKU"].iloc[0]
 
-    assert hat_row["Has_SKU"] == True, "HAT-001 should have Has_SKU=True"
-    assert no_sku_row["Has_SKU"] == False, "NO_SKU should have Has_SKU=False"
+    assert hat_row["Has_SKU"], "HAT-001 should have Has_SKU=True"
+    assert not no_sku_row["Has_SKU"], "NO_SKU should have Has_SKU=False"
 
 
 if __name__ == "__main__":

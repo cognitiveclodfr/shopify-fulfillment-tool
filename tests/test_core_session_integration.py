@@ -170,7 +170,7 @@ def test_run_full_analysis_with_session(
 
     assert session_info["created_by_tool"] == "shopify"
     assert session_info["client_id"] == test_client
-    assert session_info["analysis_completed"] == True
+    assert session_info["analysis_completed"]
     assert session_info["orders_file"] == "orders_export.csv"
     assert session_info["stock_file"] == "inventory.csv"
     assert "analysis_completed_at" in session_info

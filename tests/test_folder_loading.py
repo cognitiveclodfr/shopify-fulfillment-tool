@@ -145,8 +145,8 @@ def test_validate_stock_files(tmp_path):
     from gui.file_handler import FileHandler
 
     # Create valid stock files
-    (tmp_path / "stock1.csv").write_text("Артикул;Наличност\nSKU-A;10")
-    (tmp_path / "stock2.csv").write_text("Артикул;Наличност\nSKU-B;20")
+    (tmp_path / "stock1.csv").write_text("Артикул;Наличност\nSKU-A;10", encoding='utf-8')
+    (tmp_path / "stock2.csv").write_text("Артикул;Наличност\nSKU-B;20", encoding='utf-8')
 
     mock_mw = MockMainWindow()
     handler = FileHandler(mock_mw)
