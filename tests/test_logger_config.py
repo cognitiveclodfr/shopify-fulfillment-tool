@@ -25,6 +25,17 @@ from shopify_tool.logger_config import (
 )
 
 
+@pytest.fixture(autouse=True)
+def cleanup_logger():
+    """Cleanup logger handlers after each test to prevent Windows file lock issues."""
+    yield
+    # Cleanup after test
+    logger = logging.getLogger("ShopifyToolLogger")
+    for handler in logger.handlers[:]:  # Copy list to avoid modification during iteration
+        handler.close()
+        logger.removeHandler(handler)
+
+
 class TestJSONFormatter:
     """Tests for the JSONFormatter class."""
 
@@ -158,7 +169,7 @@ class TestSetupLogging:
 
     def test_local_logging_setup(self):
         """Test logging setup with local directory (no server path)."""
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             with patch("shopify_tool.logger_config.Path") as mock_path:
                 # Mock Path to use temp directory
                 mock_path.return_value = Path(temp_dir) / "logs"
@@ -171,7 +182,7 @@ class TestSetupLogging:
 
     def test_server_logging_setup(self):
         """Test logging setup with centralized server path."""
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             server_path = temp_dir
             logger = setup_logging(server_base_path=server_path)
 
@@ -182,7 +193,7 @@ class TestSetupLogging:
 
     def test_date_based_log_filename(self):
         """Test that log files use date-based naming."""
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             logger = setup_logging(server_base_path=temp_dir)
 
             # Find the created log file
@@ -196,7 +207,7 @@ class TestSetupLogging:
 
     def test_rotating_file_handler_config(self):
         """Test that RotatingFileHandler is configured correctly."""
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             logger = setup_logging(server_base_path=temp_dir)
 
             # Find the file handler
@@ -212,7 +223,7 @@ class TestSetupLogging:
 
     def test_logger_context_storage(self):
         """Test that client_id and session_id are stored in logger."""
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             logger = setup_logging(
                 server_base_path=temp_dir, client_id="CLIENT_A", session_id="2025-11-05_2"
             )
@@ -224,7 +235,7 @@ class TestSetupLogging:
 
     def test_multiple_setup_calls(self):
         """Test that calling setup_logging multiple times doesn't duplicate handlers."""
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             logger1 = setup_logging(server_base_path=temp_dir)
             handler_count_1 = len(logger1.handlers)
 
@@ -236,7 +247,7 @@ class TestSetupLogging:
 
     def test_log_directory_creation(self):
         """Test that log directories are created if they don't exist."""
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             server_path = Path(temp_dir) / "new_server_path"
             assert not server_path.exists()
 
@@ -251,7 +262,7 @@ class TestLogWithContext:
 
     def test_log_with_explicit_context(self):
         """Test logging with explicitly provided context."""
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             logger = setup_logging(server_base_path=temp_dir)
             log_with_context(
                 logger,
@@ -275,7 +286,7 @@ class TestLogWithContext:
 
     def test_log_with_logger_context(self):
         """Test logging using context stored in logger."""
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             logger = setup_logging(
                 server_base_path=temp_dir, client_id="CLIENT_C", session_id="2025-11-05_4"
             )
@@ -295,7 +306,7 @@ class TestLogWithContext:
 
     def test_log_without_context(self):
         """Test logging without any context."""
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             logger = setup_logging(server_base_path=temp_dir)
 
             # Clear any context from previous tests
@@ -324,7 +335,7 @@ class TestLogFileIntegration:
 
     def test_actual_log_file_creation(self):
         """Test that log files are actually created on disk."""
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             logger = setup_logging(server_base_path=temp_dir)
             logger.info("Test log entry")
 
@@ -336,7 +347,7 @@ class TestLogFileIntegration:
 
     def test_multiple_log_entries(self):
         """Test writing multiple log entries."""
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             logger = setup_logging(
                 server_base_path=temp_dir, client_id="CLIENT_D", session_id="2025-11-05_5"
             )
@@ -360,7 +371,7 @@ class TestLogFileIntegration:
 
     def test_json_parsability(self):
         """Test that all log entries are valid JSON."""
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             logger = setup_logging(server_base_path=temp_dir)
 
             # Write various log levels
@@ -382,7 +393,7 @@ class TestLogFileIntegration:
 
     def test_console_output_format(self):
         """Test that console output uses simple format, not JSON."""
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             import io
             from contextlib import redirect_stderr
 
@@ -407,7 +418,7 @@ class TestEdgeCases:
 
     def test_unicode_in_log_messages(self):
         """Test logging with Unicode characters."""
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             logger = setup_logging(server_base_path=temp_dir)
             logger.info("Тестове повідомлення з Unicode символами")
 
@@ -422,7 +433,7 @@ class TestEdgeCases:
 
     def test_special_characters_in_context(self):
         """Test logging with special characters in context fields."""
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             logger = setup_logging(server_base_path=temp_dir)
             log_with_context(
                 logger,
@@ -444,7 +455,7 @@ class TestEdgeCases:
 
     def test_very_long_message(self):
         """Test logging with very long message."""
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
             logger = setup_logging(server_base_path=temp_dir)
             long_message = "A" * 10000
             logger.info(long_message)

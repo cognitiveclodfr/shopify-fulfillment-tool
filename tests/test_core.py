@@ -255,13 +255,14 @@ def test_run_full_analysis_updates_history(tmp_path, mocker):
     output_dir = tmp_path / "output"
     output_dir.mkdir()
     stock_file = tmp_path / "stock.csv"
-    stock_file.write_text("Артикул;Име;Наличност\nSKU-1;Item 1;10")
+    stock_file.write_text("Артикул;Име;Наличност\nSKU-1;Item 1;10", encoding='utf-8')
     orders_file = tmp_path / "orders.csv"
     orders_file.write_text(
-        "Name,Lineitem sku,Lineitem quantity,Shipping Method,Shipping Country,Tags,Notes\n1001,SKU-1,1,dhl,BG,,\n"
+        "Name,Lineitem sku,Lineitem quantity,Shipping Method,Shipping Country,Tags,Notes\n1001,SKU-1,1,dhl,BG,,\n",
+        encoding='utf-8'
     )
     history_file = tmp_path / "history.csv"
-    history_file.write_text("Order_Number,Execution_Date\n999,2023-01-01")
+    history_file.write_text("Order_Number,Execution_Date\n999,2023-01-01", encoding='utf-8')
 
     mocker.patch("shopify_tool.core.get_persistent_data_path", return_value=str(history_file))
 

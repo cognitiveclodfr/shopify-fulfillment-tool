@@ -62,7 +62,7 @@ class TestDecodeSimpleSet:
         # Check tracking columns
         assert all(result["Original_SKU"] == "TEST-SET-A"), "Original_SKU should be TEST-SET-A"
         assert all(result["Original_Quantity"] == 1), "Original_Quantity should be 1"
-        assert all(result["Is_Set_Component"] == True), "All should be marked as set components"
+        assert all(result["Is_Set_Component"]), "All should be marked as set components"
 
         # Check other columns preserved
         assert all(result["Order_Number"] == "ORDER-001"), "Order number should be preserved"
@@ -103,7 +103,7 @@ class TestDecodeMultipleQuantity:
         # Check tracking columns
         assert all(result["Original_SKU"] == "TEST-SET-B")
         assert all(result["Original_Quantity"] == 3)
-        assert all(result["Is_Set_Component"] == True)
+        assert all(result["Is_Set_Component"])
 
 
 class TestDecodeMixedOrders:
@@ -137,7 +137,7 @@ class TestDecodeMixedOrders:
         regular_rows = result[result["SKU"] == "REGULAR-SKU"]
         assert len(regular_rows) == 1, "Regular SKU should have 1 row"
         assert regular_rows.iloc[0]["Quantity"] == 5, "Regular quantity should be preserved"
-        assert regular_rows.iloc[0]["Is_Set_Component"] == False, "Regular SKU not a set component"
+        assert not regular_rows.iloc[0]["Is_Set_Component"], "Regular SKU not a set component"
         assert regular_rows.iloc[0]["Original_SKU"] == "REGULAR-SKU", "Original_SKU should be same"
 
         # Check sets expanded
@@ -175,7 +175,7 @@ class TestNoSetsDefined:
         assert "Is_Set_Component" in result.columns, "Should have Is_Set_Component column"
 
         # Check all marked as not set components
-        assert all(result["Is_Set_Component"] == False), "All should be marked as non-set"
+        assert not any(result["Is_Set_Component"]), "All should be marked as non-set"
 
         # Check tracking columns match original
         assert all(result["Original_SKU"] == result["SKU"]), "Original_SKU should match SKU"
@@ -370,7 +370,7 @@ class TestEdgeCases:
         # Should keep original row but mark as non-set
         assert len(result) == 1
         assert result.iloc[0]["SKU"] == "EMPTY-SET"
-        assert result.iloc[0]["Is_Set_Component"] == False
+        assert not result.iloc[0]["Is_Set_Component"]
 
     def test_component_with_invalid_quantity(self):
         """Test component with invalid quantity is skipped."""
