@@ -1,0 +1,462 @@
+"""Table Configuration Manager
+
+Manages table view configuration including column visibility, order, and widths.
+Configuration is stored per-client in client_config.json under ui_settings.table_view.
+
+Author: Claude Code
+Date: 2026-02-03
+"""
+
+from dataclasses import dataclass, field, asdict
+from typing import Dict, List, Optional
+import logging
+import pandas as pd
+from PySide6.QtWidgets import QTableView
+from PySide6.QtCore import QTimer
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class TableConfig:
+    """Configuration for table view appearance and behavior.
+
+    Attributes:
+        version: Config format version (for future migrations)
+        visible_columns: Mapping of column names to visibility state
+        column_order: Ordered list of column names (logical order)
+        column_widths: Mapping of column names to width in pixels
+        auto_hide_empty: Whether to automatically hide empty columns
+        locked_columns: Columns that cannot be hidden or reordered
+    """
+    version: int = 1
+    visible_columns: Dict[str, bool] = field(default_factory=dict)
+    column_order: List[str] = field(default_factory=list)
+    column_widths: Dict[str, int] = field(default_factory=dict)
+    auto_hide_empty: bool = True
+    locked_columns: List[str] = field(default_factory=lambda: ["Order_Number"])
+
+    def to_dict(self) -> dict:
+        """Convert config to dictionary for JSON serialization."""
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "TableConfig":
+        """Create config from dictionary (JSON deserialization)."""
+        return cls(
+            version=data.get("version", 1),
+            visible_columns=data.get("visible_columns", {}),
+            column_order=data.get("column_order", []),
+            column_widths=data.get("column_widths", {}),
+            auto_hide_empty=data.get("auto_hide_empty", True),
+            locked_columns=data.get("locked_columns", ["Order_Number"])
+        )
+
+
+class TableConfigManager:
+    """Manages table view configuration for the results table.
+
+    Responsibilities:
+    - Load/save table configuration from client_config.json
+    - Apply configuration to QTableView (visibility, order, widths)
+    - Detect empty columns for auto-hide
+    - Manage multiple named views per client
+    - Debounced saving on column resize/move
+
+    Attributes:
+        mw: MainWindow instance
+        pm: ProfileManager instance
+        _current_config: Currently active TableConfig
+        _current_client_id: ID of currently selected client
+        _save_timer: QTimer for debounced config saving
+        _pending_save: Flag indicating save is pending
+    """
+
+    DEBOUNCE_DELAY_MS = 500  # Delay before saving after resize/move
+
+    def __init__(self, main_window, profile_manager):
+        """Initialize TableConfigManager.
+
+        Args:
+            main_window: MainWindow instance
+            profile_manager: ProfileManager instance for config persistence
+        """
+        self.mw = main_window
+        self.pm = profile_manager
+        self._current_config: Optional[TableConfig] = None
+        self._current_client_id: Optional[str] = None
+        self._current_view_name: str = "Default"
+
+        # Setup debounced save timer
+        self._save_timer = QTimer()
+        self._save_timer.setSingleShot(True)
+        self._save_timer.timeout.connect(self._perform_save)
+        self._pending_save = False
+
+    def load_config(self, client_id: str, view_name: str = "Default") -> TableConfig:
+        """Load table configuration for a client.
+
+        Args:
+            client_id: Client ID to load config for
+            view_name: Name of the view to load (default: "Default")
+
+        Returns:
+            TableConfig instance
+
+        Raises:
+            Exception: If config loading fails (logs warning, returns default)
+        """
+        self._current_client_id = client_id
+        self._current_view_name = view_name
+
+        try:
+            # Load full client config
+            client_config = self.pm.load_client_config(client_id)
+
+            # Extract table_view section
+            ui_settings = client_config.get("ui_settings", {})
+            table_view_settings = ui_settings.get("table_view", {})
+
+            # Get active view name if not specified
+            if view_name == "Default" and "active_view" in table_view_settings:
+                view_name = table_view_settings["active_view"]
+                self._current_view_name = view_name
+
+            # Get views dictionary
+            views = table_view_settings.get("views", {})
+
+            # Load specific view or create default
+            if view_name in views:
+                view_data = views[view_name]
+                self._current_config = TableConfig.from_dict(view_data)
+                logger.debug(f"Loaded table view '{view_name}' for CLIENT_{client_id}")
+            else:
+                # View doesn't exist, create default
+                logger.info(f"View '{view_name}' not found for CLIENT_{client_id}, creating default")
+                self._current_config = TableConfig()
+
+            return self._current_config
+
+        except Exception as e:
+            logger.warning(f"Failed to load table config for CLIENT_{client_id}: {e}")
+            logger.warning("Using default table configuration")
+            self._current_config = TableConfig()
+            return self._current_config
+
+    def save_config(self, client_id: str, config: TableConfig, view_name: str = "Default"):
+        """Save table configuration for a client.
+
+        Args:
+            client_id: Client ID to save config for
+            config: TableConfig to save
+            view_name: Name of the view to save (default: "Default")
+
+        Raises:
+            Exception: If config saving fails (logs error)
+        """
+        try:
+            # Load full client config
+            client_config = self.pm.load_client_config(client_id)
+
+            # Ensure ui_settings.table_view structure exists
+            if "ui_settings" not in client_config:
+                client_config["ui_settings"] = {}
+            if "table_view" not in client_config["ui_settings"]:
+                client_config["ui_settings"]["table_view"] = {
+                    "version": 1,
+                    "active_view": view_name,
+                    "views": {}
+                }
+
+            table_view_settings = client_config["ui_settings"]["table_view"]
+
+            # Ensure views dict exists
+            if "views" not in table_view_settings:
+                table_view_settings["views"] = {}
+
+            # Save view data
+            table_view_settings["views"][view_name] = config.to_dict()
+
+            # Update active view
+            table_view_settings["active_view"] = view_name
+
+            # Persist to file
+            self.pm.save_client_config(client_id, client_config)
+
+            logger.debug(f"Saved table view '{view_name}' for CLIENT_{client_id}")
+
+        except Exception as e:
+            logger.error(f"Failed to save table config for CLIENT_{client_id}: {e}")
+            raise
+
+    def get_default_config(self, columns: List[str]) -> TableConfig:
+        """Create default configuration for given columns.
+
+        Args:
+            columns: List of column names from DataFrame
+
+        Returns:
+            TableConfig with all columns visible in default order
+        """
+        config = TableConfig()
+
+        # All columns visible by default
+        config.visible_columns = {col: True for col in columns}
+
+        # Default order = DataFrame order
+        config.column_order = columns.copy()
+
+        # No widths specified = auto-size
+        config.column_widths = {}
+
+        # Auto-hide empty columns enabled
+        config.auto_hide_empty = True
+
+        # Order_Number is locked
+        config.locked_columns = ["Order_Number"]
+
+        return config
+
+    def apply_config_to_view(self, table_view: QTableView, df: pd.DataFrame):
+        """Apply configuration to QTableView.
+
+        This method:
+        1. Detects empty columns (if auto-hide enabled)
+        2. Applies column visibility
+        3. Applies column order (TODO: Phase 3)
+        4. Applies column widths (TODO: Phase 3)
+
+        Args:
+            table_view: QTableView to configure
+            df: DataFrame being displayed
+        """
+        if self._current_config is None:
+            logger.warning("No config loaded, skipping apply_config_to_view")
+            return
+
+        # Get column names from DataFrame
+        df_columns = df.columns.tolist()
+
+        # If config is empty (first load), create default config
+        if not self._current_config.visible_columns:
+            logger.debug("Config is empty, initializing with defaults")
+            self._current_config = self.get_default_config(df_columns)
+            # Save default config
+            if self._current_client_id:
+                self.save_config(
+                    self._current_client_id,
+                    self._current_config,
+                    self._current_view_name
+                )
+
+        # Detect empty columns for auto-hide
+        empty_columns = []
+        if self._current_config.auto_hide_empty:
+            empty_columns = self.detect_empty_columns(df)
+            logger.debug(f"Detected {len(empty_columns)} empty columns: {empty_columns}")
+
+        # Apply visibility to header
+        header = table_view.horizontalHeader()
+        model = table_view.model()
+
+        if model is None:
+            logger.warning("Table model is None, cannot apply visibility")
+            return
+
+        # Get source model (unwrap proxy if present)
+        source_model = model
+        if hasattr(model, 'sourceModel') and model.sourceModel() is not None:
+            source_model = model.sourceModel()
+
+        # Apply visibility to each column
+        for col_name in df_columns:
+            # Find column index in model
+            try:
+                col_index = df_columns.index(col_name)
+            except ValueError:
+                logger.warning(f"Column '{col_name}' not found in DataFrame")
+                continue
+
+            # Adjust index if model has checkbox column
+            if hasattr(source_model, 'enable_checkboxes') and source_model.enable_checkboxes:
+                col_index += 1  # Shift by 1 for checkbox column
+
+            # Determine visibility
+            is_visible = self._current_config.visible_columns.get(col_name, True)
+
+            # Auto-hide overrides visibility for empty columns
+            if col_name in empty_columns and col_name not in self._current_config.locked_columns:
+                is_visible = False
+
+            # Locked columns are always visible
+            if col_name in self._current_config.locked_columns:
+                is_visible = True
+
+            # Apply visibility
+            header.setSectionHidden(col_index, not is_visible)
+
+        logger.debug(f"Applied table config to view for {len(df_columns)} columns")
+
+    def detect_empty_columns(self, df: pd.DataFrame) -> List[str]:
+        """Detect columns that are completely empty.
+
+        A column is considered empty if:
+        - All values are NaN, OR
+        - All values are empty strings ("")
+
+        Args:
+            df: DataFrame to analyze
+
+        Returns:
+            List of column names that are empty
+        """
+        empty_cols = []
+
+        for col in df.columns:
+            series = df[col]
+
+            # Check if all NaN
+            if series.isna().all():
+                empty_cols.append(col)
+                continue
+
+            # Check if all empty strings
+            # Convert to string first to handle mixed types
+            str_series = series.astype(str)
+            if (str_series == "").all() or (str_series == "nan").all():
+                empty_cols.append(col)
+
+        return empty_cols
+
+    def on_column_resized(self, logical_index: int, old_width: int, new_width: int):
+        """Handle column resize event (debounced save).
+
+        Called when user resizes a column. Saves config after debounce delay.
+
+        Args:
+            logical_index: Logical index of resized column
+            old_width: Previous width in pixels
+            new_width: New width in pixels
+        """
+        if self._current_config is None or self._current_client_id is None:
+            return
+
+        # Get column name from logical index
+        # TODO: Implement proper index-to-name mapping
+        # For now, skip saving widths (will be implemented in Phase 3)
+
+        # Schedule debounced save
+        self._pending_save = True
+        self._save_timer.start(self.DEBOUNCE_DELAY_MS)
+
+    def on_column_moved(self, logical_index: int, old_visual_index: int, new_visual_index: int):
+        """Handle column move event (debounced save).
+
+        Called when user reorders columns. Saves config after debounce delay.
+
+        Args:
+            logical_index: Logical index of moved column
+            old_visual_index: Previous visual position
+            new_visual_index: New visual position
+        """
+        if self._current_config is None or self._current_client_id is None:
+            return
+
+        # TODO: Implement column order saving (Phase 3)
+
+        # Schedule debounced save
+        self._pending_save = True
+        self._save_timer.start(self.DEBOUNCE_DELAY_MS)
+
+    def _perform_save(self):
+        """Perform the actual config save (called by debounce timer)."""
+        if not self._pending_save:
+            return
+
+        if self._current_config is None or self._current_client_id is None:
+            logger.warning("Cannot perform save: no config or client ID")
+            return
+
+        try:
+            self.save_config(
+                self._current_client_id,
+                self._current_config,
+                self._current_view_name
+            )
+            self._pending_save = False
+            logger.debug("Debounced save completed")
+        except Exception as e:
+            logger.error(f"Failed to perform debounced save: {e}")
+
+    # Methods for managing named views (Phase 4)
+
+    def list_views(self, client_id: str) -> List[str]:
+        """List all saved view names for a client.
+
+        Args:
+            client_id: Client ID
+
+        Returns:
+            List of view names
+        """
+        try:
+            client_config = self.pm.load_client_config(client_id)
+            ui_settings = client_config.get("ui_settings", {})
+            table_view_settings = ui_settings.get("table_view", {})
+            views = table_view_settings.get("views", {})
+            return list(views.keys())
+        except Exception as e:
+            logger.error(f"Failed to list views for CLIENT_{client_id}: {e}")
+            return []
+
+    def load_view(self, client_id: str, view_name: str) -> Optional[TableConfig]:
+        """Load a specific named view.
+
+        Args:
+            client_id: Client ID
+            view_name: View name to load
+
+        Returns:
+            TableConfig if view exists, None otherwise
+        """
+        return self.load_config(client_id, view_name)
+
+    def save_view(self, client_id: str, view_name: str, config: TableConfig):
+        """Save a named view.
+
+        Args:
+            client_id: Client ID
+            view_name: View name to save
+            config: TableConfig to save
+        """
+        self.save_config(client_id, config, view_name)
+
+    def delete_view(self, client_id: str, view_name: str):
+        """Delete a named view.
+
+        Args:
+            client_id: Client ID
+            view_name: View name to delete
+
+        Raises:
+            ValueError: If trying to delete "Default" view
+        """
+        if view_name == "Default":
+            raise ValueError("Cannot delete Default view")
+
+        try:
+            client_config = self.pm.load_client_config(client_id)
+            ui_settings = client_config.get("ui_settings", {})
+            table_view_settings = ui_settings.get("table_view", {})
+            views = table_view_settings.get("views", {})
+
+            if view_name in views:
+                del views[view_name]
+                self.pm.save_client_config(client_id, client_config)
+                logger.info(f"Deleted view '{view_name}' for CLIENT_{client_id}")
+            else:
+                logger.warning(f"View '{view_name}' not found for CLIENT_{client_id}")
+
+        except Exception as e:
+            logger.error(f"Failed to delete view '{view_name}' for CLIENT_{client_id}: {e}")
+            raise

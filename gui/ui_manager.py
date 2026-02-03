@@ -846,6 +846,13 @@ class UIManager:
             # Populate tag filter combo box
             self._populate_tag_filter()
 
+        # Apply table configuration (column visibility, order, widths)
+        if hasattr(self.mw, 'table_config_manager'):
+            self.mw.table_config_manager.apply_config_to_view(
+                self.mw.tableView,
+                data_df
+            )
+
         self.mw.tableView.resizeColumnsToContents()
 
     def _populate_tag_filter(self):

@@ -1036,28 +1036,49 @@ class ProfileManager:
             logger.warning(f"Failed to create backup: {e}")
 
     def _migrate_add_ui_settings(self, client_id: str, config: Dict) -> bool:
-        """Add ui_settings section if missing.
+        """Add ui_settings section if missing, including table_view.
 
         Args:
             client_id: Client ID (for logging)
             config: Configuration dictionary to migrate (modified in-place)
 
         Returns:
-            bool: True if migration was performed, False if already has ui_settings
+            bool: True if migration was performed, False if no migration needed
         """
-        if "ui_settings" in config:
-            return False
+        migrated = False
 
-        config["ui_settings"] = {
-            "is_pinned": False,
-            "group_id": None,
-            "custom_color": "#4CAF50",
-            "custom_badges": [],
-            "display_order": 0
-        }
+        # Add ui_settings if missing
+        if "ui_settings" not in config:
+            config["ui_settings"] = {
+                "is_pinned": False,
+                "group_id": None,
+                "custom_color": "#4CAF50",
+                "custom_badges": [],
+                "display_order": 0
+            }
+            logger.info(f"Added ui_settings for CLIENT_{client_id}")
+            migrated = True
 
-        logger.info(f"Added ui_settings for CLIENT_{client_id}")
-        return True
+        # Add table_view section to ui_settings if missing
+        if "table_view" not in config["ui_settings"]:
+            config["ui_settings"]["table_view"] = {
+                "version": 1,
+                "active_view": "Default",
+                "views": {
+                    "Default": {
+                        "visible_columns": {},
+                        "column_order": [],
+                        "column_widths": {},
+                        "auto_hide_empty": True,
+                        "locked_columns": ["Order_Number"]
+                    }
+                },
+                "additional_columns": []
+            }
+            logger.info(f"Added table_view settings for CLIENT_{client_id}")
+            migrated = True
+
+        return migrated
 
     def save_client_config(self, client_id: str, config: Dict) -> bool:
         """Save client_config.json with file locking and backup.

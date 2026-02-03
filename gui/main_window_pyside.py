@@ -124,7 +124,11 @@ class MainWindow(QMainWindow):
                 base_path=str(self.profile_manager.base_path)
             )
 
-            logging.info("ProfileManager, SessionManager, and GroupsManager initialized successfully")
+            # Initialize TableConfigManager for table customization
+            from gui.table_config_manager import TableConfigManager
+            self.table_config_manager = TableConfigManager(self, self.profile_manager)
+
+            logging.info("ProfileManager, SessionManager, GroupsManager, and TableConfigManager initialized successfully")
         except NetworkError as e:
             QMessageBox.critical(
                 self,
@@ -668,6 +672,11 @@ class MainWindow(QMainWindow):
 
             # Also load it via the existing method for backward compatibility
             self.load_client_config(client_id)
+
+            # Load table configuration for this client
+            if hasattr(self, 'table_config_manager'):
+                self.table_config_manager.load_config(client_id)
+                logging.info(f"Table configuration loaded for CLIENT_{client_id}")
 
             # Clear currently loaded files (they're for different client)
             self.orders_file_path = None
