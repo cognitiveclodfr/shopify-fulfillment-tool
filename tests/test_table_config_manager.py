@@ -802,5 +802,247 @@ class TestColumnVisibility:
         assert visible_columns["Empty_Col"] is False, "Empty_Col should be hidden (auto-hide)"
 
 
+class TestColumnOrderAndWidth:
+    """Test column order and width persistence (Phase 3)."""
+
+    def test_apply_column_order(self, table_config_manager, mock_main_window, sample_dataframe):
+        """Test applying column order."""
+        # Setup
+        table_config_manager.load_config("M")
+        table_config_manager._current_config.column_order = ["SKU", "Order_Number", "Product_Name"]
+
+        table_view = mock_main_window.tableView
+        header = MagicMock(spec=QHeaderView)
+
+        # Mock visualIndex and moveSection
+        visual_indices = {0: 0, 1: 1, 2: 2}  # Initially in order
+        def mock_visual_index(logical):
+            return visual_indices.get(logical, logical)
+        header.visualIndex = MagicMock(side_effect=mock_visual_index)
+        header.moveSection = MagicMock()
+
+        table_view.horizontalHeader.return_value = header
+
+        model = MagicMock()
+        model.sourceModel.return_value = None
+        table_view.model.return_value = model
+
+        # Apply order
+        table_config_manager.apply_column_order(table_view, sample_dataframe)
+
+        # Verify moveSection was called (columns should be reordered)
+        assert header.moveSection.called
+
+    def test_apply_column_widths(self, table_config_manager, mock_main_window, sample_dataframe):
+        """Test applying column widths."""
+        # Setup
+        table_config_manager.load_config("M")
+        table_config_manager._current_config.column_widths = {
+            "Order_Number": 150,
+            "SKU": 100,
+            "Product_Name": 200
+        }
+
+        table_view = mock_main_window.tableView
+        header = MagicMock(spec=QHeaderView)
+        header.resizeSection = MagicMock()
+        table_view.horizontalHeader.return_value = header
+
+        model = MagicMock()
+        model.sourceModel.return_value = None
+        table_view.model.return_value = model
+
+        # Apply widths
+        table_config_manager.apply_column_widths(table_view, sample_dataframe)
+
+        # Verify resizeSection was called for each column with width
+        assert header.resizeSection.call_count == 3
+        # Verify specific calls
+        calls = header.resizeSection.call_args_list
+        widths_set = {call[0][1] for call in calls}
+        assert 150 in widths_set
+        assert 100 in widths_set
+        assert 200 in widths_set
+
+    def test_on_column_resized(self, table_config_manager, mock_main_window, sample_dataframe):
+        """Test handling column resize event."""
+        # Setup
+        table_config_manager.load_config("M")
+        table_config_manager._current_table_view = mock_main_window.tableView
+        table_config_manager._current_df = sample_dataframe
+
+        table_view = mock_main_window.tableView
+        model = MagicMock()
+        source_model = MagicMock()
+        source_model.enable_checkboxes = False
+        model.sourceModel.return_value = source_model
+        table_view.model.return_value = model
+
+        # Resize SKU column (logical index 1 in DataFrame)
+        table_config_manager.on_column_resized(1, 100, 150)
+
+        # Verify width was updated for SKU
+        assert "SKU" in table_config_manager._current_config.column_widths
+        assert table_config_manager._current_config.column_widths["SKU"] == 150
+
+        # Verify debounced save was scheduled
+        assert table_config_manager._pending_save is True
+
+    def test_on_column_moved(self, table_config_manager, mock_main_window, sample_dataframe):
+        """Test handling column move event."""
+        # Setup
+        table_config_manager.load_config("M")
+        table_config_manager._current_table_view = mock_main_window.tableView
+        table_config_manager._current_df = sample_dataframe
+
+        table_view = mock_main_window.tableView
+        header = MagicMock(spec=QHeaderView)
+
+        # Setup mock header
+        def mock_logical_index(visual):
+            # Map visual positions to logical indices
+            mapping = {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6}
+            return mapping.get(visual, visual)
+
+        header.logicalIndex = MagicMock(side_effect=mock_logical_index)
+        header.count.return_value = 7  # Number of columns in sample_dataframe
+        header.moveSection = MagicMock()
+        table_view.horizontalHeader.return_value = header
+
+        model = MagicMock()
+        source_model = MagicMock()
+        source_model.enable_checkboxes = False
+        model.sourceModel.return_value = source_model
+        table_view.model.return_value = model
+
+        # Move SKU column (logical index 1) from visual position 1 to 2
+        table_config_manager.on_column_moved(1, 1, 2)
+
+        # Verify column order was updated
+        assert len(table_config_manager._current_config.column_order) > 0
+
+        # Verify SKU is in the order
+        assert "SKU" in table_config_manager._current_config.column_order
+
+        # Verify debounced save was scheduled
+        assert table_config_manager._pending_save is True
+
+    def test_locked_column_cannot_move(self, table_config_manager, mock_main_window, sample_dataframe):
+        """Test that locked column (Order_Number) cannot be moved from position 0."""
+        # Setup
+        table_config_manager.load_config("M")
+        table_config_manager._current_table_view = mock_main_window.tableView
+        table_config_manager._current_df = sample_dataframe
+
+        table_view = mock_main_window.tableView
+        header = MagicMock(spec=QHeaderView)
+        header.moveSection = MagicMock()
+        table_view.horizontalHeader.return_value = header
+
+        model = MagicMock()
+        source_model = MagicMock()
+        source_model.enable_checkboxes = False
+        model.sourceModel.return_value = source_model
+        table_view.model.return_value = model
+
+        # Try to move Order_Number (logical index 0) from position 0 to position 1
+        table_config_manager.on_column_moved(0, 0, 1)
+
+        # Verify move was reverted (move back from position 1 to 0)
+        header.moveSection.assert_called_once_with(1, 0)
+
+    def test_get_column_name_from_logical_index(self, table_config_manager, mock_main_window, sample_dataframe):
+        """Test getting column name from logical index."""
+        table_view = mock_main_window.tableView
+        model = MagicMock()
+        source_model = MagicMock()
+        source_model.enable_checkboxes = False
+        model.sourceModel.return_value = source_model
+        table_view.model.return_value = model
+
+        # Test without checkbox column
+        col_name = table_config_manager.get_column_name_from_logical_index(
+            0, sample_dataframe, table_view
+        )
+        assert col_name == "Order_Number"
+
+        col_name = table_config_manager.get_column_name_from_logical_index(
+            1, sample_dataframe, table_view
+        )
+        assert col_name == "SKU"
+
+        col_name = table_config_manager.get_column_name_from_logical_index(
+            2, sample_dataframe, table_view
+        )
+        assert col_name == "Product_Name"
+
+    def test_get_column_name_with_checkbox_column(self, table_config_manager, mock_main_window, sample_dataframe):
+        """Test getting column name with checkbox column present."""
+        table_view = mock_main_window.tableView
+        model = MagicMock()
+        source_model = MagicMock()
+        source_model.enable_checkboxes = True
+        model.sourceModel.return_value = source_model
+        table_view.model.return_value = model
+
+        # Index 0 should be checkbox column (returns None)
+        col_name = table_config_manager.get_column_name_from_logical_index(
+            0, sample_dataframe, table_view
+        )
+        assert col_name is None
+
+        # Index 1 should be Order_Number (first data column)
+        col_name = table_config_manager.get_column_name_from_logical_index(
+            1, sample_dataframe, table_view
+        )
+        assert col_name == "Order_Number"
+
+        # Index 2 should be SKU
+        col_name = table_config_manager.get_column_name_from_logical_index(
+            2, sample_dataframe, table_view
+        )
+        assert col_name == "SKU"
+
+    def test_column_width_persistence(self, table_config_manager, mock_profile_manager):
+        """Test that column widths are saved and restored."""
+        # Setup initial config
+        table_config_manager.load_config("M")
+        table_config_manager._current_config.column_widths = {
+            "Order_Number": 150,
+            "SKU": 100
+        }
+
+        # Save config
+        table_config_manager.save_config("M", table_config_manager._current_config)
+
+        # Verify save was called
+        assert mock_profile_manager.save_client_config.called
+
+        # Get saved config
+        saved_config_data = mock_profile_manager.save_client_config.call_args[0][1]
+        saved_widths = saved_config_data["ui_settings"]["table_view"]["views"]["Default"]["column_widths"]
+
+        assert saved_widths["Order_Number"] == 150
+        assert saved_widths["SKU"] == 100
+
+    def test_column_order_persistence(self, table_config_manager, mock_profile_manager):
+        """Test that column order is saved and restored."""
+        # Setup initial config
+        table_config_manager.load_config("M")
+        table_config_manager._current_config.column_order = ["Order_Number", "Product_Name", "SKU"]
+
+        # Save config
+        table_config_manager.save_config("M", table_config_manager._current_config)
+
+        # Verify save was called
+        assert mock_profile_manager.save_client_config.called
+
+        # Get saved config
+        saved_config_data = mock_profile_manager.save_client_config.call_args[0][1]
+        saved_order = saved_config_data["ui_settings"]["table_view"]["views"]["Default"]["column_order"]
+
+        assert saved_order == ["Order_Number", "Product_Name", "SKU"]
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

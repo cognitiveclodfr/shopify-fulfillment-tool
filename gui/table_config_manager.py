@@ -87,6 +87,10 @@ class TableConfigManager:
         self._current_client_id: Optional[str] = None
         self._current_view_name: str = "Default"
 
+        # Store references for signal handlers
+        self._current_table_view: Optional[QTableView] = None
+        self._current_df: Optional[pd.DataFrame] = None
+
         # Setup debounced save timer
         self._save_timer = QTimer()
         self._save_timer.setSingleShot(True)
@@ -223,8 +227,8 @@ class TableConfigManager:
         This method:
         1. Detects empty columns (if auto-hide enabled)
         2. Applies column visibility
-        3. Applies column order (TODO: Phase 3)
-        4. Applies column widths (TODO: Phase 3)
+        3. Applies column order (Phase 3)
+        4. Applies column widths (Phase 3)
 
         Args:
             table_view: QTableView to configure
@@ -233,6 +237,10 @@ class TableConfigManager:
         if self._current_config is None:
             logger.warning("No config loaded, skipping apply_config_to_view")
             return
+
+        # Store references for signal handlers
+        self._current_table_view = table_view
+        self._current_df = df
 
         # Get column names from DataFrame
         df_columns = df.columns.tolist()
@@ -295,7 +303,153 @@ class TableConfigManager:
             # Apply visibility
             header.setSectionHidden(col_index, not is_visible)
 
+        # Apply column order (Phase 3)
+        self.apply_column_order(table_view, df)
+
+        # Apply column widths (Phase 3)
+        self.apply_column_widths(table_view, df)
+
         logger.debug(f"Applied table config to view for {len(df_columns)} columns")
+
+    def apply_column_order(self, table_view: QTableView, df: pd.DataFrame):
+        """Apply column order configuration to table.
+
+        Uses QHeaderView.moveSection() to reorder columns visually.
+        Order_Number is locked at position 0 and cannot be moved.
+
+        Args:
+            table_view: QTableView to configure
+            df: DataFrame being displayed
+        """
+        if self._current_config is None or not self._current_config.column_order:
+            return
+
+        header = table_view.horizontalHeader()
+        model = table_view.model()
+
+        if model is None:
+            return
+
+        # Get source model
+        source_model = model
+        if hasattr(model, 'sourceModel') and model.sourceModel() is not None:
+            source_model = model.sourceModel()
+
+        # Get DataFrame columns
+        df_columns = df.columns.tolist()
+
+        # Check if checkbox column exists
+        has_checkbox = hasattr(source_model, 'enable_checkboxes') and source_model.enable_checkboxes
+        checkbox_offset = 1 if has_checkbox else 0
+
+        # Build mapping from column name to logical index
+        col_to_logical = {}
+        for i, col_name in enumerate(df_columns):
+            logical_idx = i + checkbox_offset
+            col_to_logical[col_name] = logical_idx
+
+        # Apply order from config
+        # Start from position after checkbox (if exists)
+        target_visual_pos = checkbox_offset
+
+        for col_name in self._current_config.column_order:
+            if col_name not in col_to_logical:
+                continue
+
+            logical_idx = col_to_logical[col_name]
+
+            # Get current visual position
+            current_visual_pos = header.visualIndex(logical_idx)
+
+            # Move to target position if different
+            if current_visual_pos != target_visual_pos:
+                header.moveSection(current_visual_pos, target_visual_pos)
+                logger.debug(f"Moved column '{col_name}' from visual pos {current_visual_pos} to {target_visual_pos}")
+
+            target_visual_pos += 1
+
+        logger.debug("Applied column order")
+
+    def apply_column_widths(self, table_view: QTableView, df: pd.DataFrame):
+        """Apply column width configuration to table.
+
+        Uses QHeaderView.resizeSection() to set column widths.
+
+        Args:
+            table_view: QTableView to configure
+            df: DataFrame being displayed
+        """
+        if self._current_config is None or not self._current_config.column_widths:
+            return
+
+        header = table_view.horizontalHeader()
+        model = table_view.model()
+
+        if model is None:
+            return
+
+        # Get source model
+        source_model = model
+        if hasattr(model, 'sourceModel') and model.sourceModel() is not None:
+            source_model = model.sourceModel()
+
+        # Get DataFrame columns
+        df_columns = df.columns.tolist()
+
+        # Check if checkbox column exists
+        has_checkbox = hasattr(source_model, 'enable_checkboxes') and source_model.enable_checkboxes
+        checkbox_offset = 1 if has_checkbox else 0
+
+        # Apply widths from config
+        for col_name, width in self._current_config.column_widths.items():
+            if col_name not in df_columns:
+                continue
+
+            # Get logical index
+            col_index = df_columns.index(col_name) + checkbox_offset
+
+            # Set width
+            header.resizeSection(col_index, width)
+            logger.debug(f"Set column '{col_name}' width to {width}px")
+
+        logger.debug("Applied column widths")
+
+    def get_column_name_from_logical_index(self, logical_index: int, df: pd.DataFrame, table_view: QTableView) -> Optional[str]:
+        """Get column name from logical index.
+
+        Args:
+            logical_index: Logical index in the model
+            df: DataFrame being displayed
+            table_view: QTableView
+
+        Returns:
+            Column name or None if index is invalid
+        """
+        model = table_view.model()
+        if model is None:
+            return None
+
+        # Get source model
+        source_model = model
+        if hasattr(model, 'sourceModel') and model.sourceModel() is not None:
+            source_model = model.sourceModel()
+
+        # Check if checkbox column exists
+        has_checkbox = hasattr(source_model, 'enable_checkboxes') and source_model.enable_checkboxes
+
+        # Adjust for checkbox column
+        if has_checkbox:
+            if logical_index == 0:
+                return None  # Checkbox column
+            logical_index -= 1
+
+        # Get DataFrame columns
+        df_columns = df.columns.tolist()
+
+        if logical_index < 0 or logical_index >= len(df_columns):
+            return None
+
+        return df_columns[logical_index]
 
     def detect_empty_columns(self, df: pd.DataFrame) -> List[str]:
         """Detect columns that are completely empty.
@@ -341,9 +495,22 @@ class TableConfigManager:
         if self._current_config is None or self._current_client_id is None:
             return
 
+        if self._current_table_view is None or self._current_df is None:
+            return
+
         # Get column name from logical index
-        # TODO: Implement proper index-to-name mapping
-        # For now, skip saving widths (will be implemented in Phase 3)
+        column_name = self.get_column_name_from_logical_index(
+            logical_index,
+            self._current_df,
+            self._current_table_view
+        )
+
+        if column_name is None:
+            return  # Checkbox column or invalid index
+
+        # Update width in config
+        self._current_config.column_widths[column_name] = new_width
+        logger.debug(f"Column '{column_name}' resized to {new_width}px")
 
         # Schedule debounced save
         self._pending_save = True
@@ -353,6 +520,7 @@ class TableConfigManager:
         """Handle column move event (debounced save).
 
         Called when user reorders columns. Saves config after debounce delay.
+        Prevents moving Order_Number from position 0.
 
         Args:
             logical_index: Logical index of moved column
@@ -362,7 +530,64 @@ class TableConfigManager:
         if self._current_config is None or self._current_client_id is None:
             return
 
-        # TODO: Implement column order saving (Phase 3)
+        if self._current_table_view is None or self._current_df is None:
+            return
+
+        # Get column name from logical index
+        column_name = self.get_column_name_from_logical_index(
+            logical_index,
+            self._current_df,
+            self._current_table_view
+        )
+
+        if column_name is None:
+            return  # Checkbox column or invalid index
+
+        # Check if trying to move a locked column or move a column to position 0
+        header = self._current_table_view.horizontalHeader()
+        model = self._current_table_view.model()
+
+        # Get source model
+        source_model = model
+        if hasattr(model, 'sourceModel') and model.sourceModel() is not None:
+            source_model = model.sourceModel()
+
+        # Check if checkbox column exists
+        has_checkbox = hasattr(source_model, 'enable_checkboxes') and source_model.enable_checkboxes
+        checkbox_offset = 1 if has_checkbox else 0
+
+        # Locked columns (Order_Number) must stay at position after checkbox
+        if column_name in self._current_config.locked_columns:
+            if new_visual_index != checkbox_offset:
+                # Revert move
+                header.moveSection(new_visual_index, old_visual_index)
+                logger.warning(f"Cannot move locked column '{column_name}' from position {checkbox_offset}")
+                return
+
+        # Don't allow moving to the locked position (after checkbox)
+        if new_visual_index == checkbox_offset and column_name not in self._current_config.locked_columns:
+            # Revert move
+            header.moveSection(new_visual_index, old_visual_index)
+            logger.warning(f"Position {checkbox_offset} is reserved for locked column")
+            return
+
+        # Update column order in config
+        # Get current visual order
+        df_columns = self._current_df.columns.tolist()
+        new_order = []
+
+        for visual_pos in range(checkbox_offset, header.count()):
+            logical_idx = header.logicalIndex(visual_pos)
+            col_name = self.get_column_name_from_logical_index(
+                logical_idx,
+                self._current_df,
+                self._current_table_view
+            )
+            if col_name:
+                new_order.append(col_name)
+
+        self._current_config.column_order = new_order
+        logger.debug(f"Column '{column_name}' moved, new order: {new_order}")
 
         # Schedule debounced save
         self._pending_save = True

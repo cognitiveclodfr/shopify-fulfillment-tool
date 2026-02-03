@@ -1067,10 +1067,24 @@ class UIManager:
         return container
 
     def _setup_header_context_menu(self):
-        """Setup context menu for table header (column visibility control)."""
+        """Setup context menu and signals for table header.
+
+        Sets up:
+        - Context menu for column visibility control
+        - Signal handlers for column resize (with debounced save)
+        - Signal handlers for column move (with Order_Number protection)
+        """
         header = self.mw.tableView.horizontalHeader()
         header.setContextMenuPolicy(Qt.CustomContextMenu)
         header.customContextMenuRequested.connect(self._show_header_context_menu)
+
+        # Enable column moving (user can drag-and-drop columns)
+        header.setSectionsMovable(True)
+
+        # Connect resize and move signals to TableConfigManager
+        if hasattr(self.mw, 'table_config_manager'):
+            header.sectionResized.connect(self.mw.table_config_manager.on_column_resized)
+            header.sectionMoved.connect(self.mw.table_config_manager.on_column_moved)
 
     def _show_header_context_menu(self, position):
         """Show context menu for table header.
