@@ -440,7 +440,8 @@ class TestTableConfigManager:
 
     def test_load_view(self, table_config_manager):
         """Test loading a specific named view."""
-        config = table_config_manager.load_view("M", "Compact")
+        # Load view using new signature (view_name first, client_id optional)
+        config = table_config_manager.load_view("Compact", "M")
 
         assert isinstance(config, TableConfig)
         assert table_config_manager._current_view_name == "Compact"
@@ -449,7 +450,8 @@ class TestTableConfigManager:
         """Test saving a named view."""
         config = TableConfig(visible_columns={"SKU": True})
 
-        table_config_manager.save_view("M", "MyView", config)
+        # Save view using new signature (view_name, config, client_id optional)
+        table_config_manager.save_view("MyView", config, "M")
 
         # Verify save was called
         mock_profile_manager.save_client_config.assert_called()
@@ -468,7 +470,8 @@ class TestTableConfigManager:
             }
         }
 
-        table_config_manager.delete_view("M", "ToDelete")
+        # Delete view using new signature (view_name first, client_id optional)
+        table_config_manager.delete_view("ToDelete", "M")
 
         # Verify save was called
         mock_profile_manager.save_client_config.assert_called()
@@ -484,7 +487,7 @@ class TestTableConfigManager:
     def test_delete_default_view_raises_error(self, table_config_manager):
         """Test that deleting Default view raises ValueError."""
         with pytest.raises(ValueError, match="Cannot delete Default view"):
-            table_config_manager.delete_view("M", "Default")
+            table_config_manager.delete_view("Default", "M")
 
     def test_delete_nonexistent_view(self, table_config_manager, mock_profile_manager):
         """Test deleting a view that doesn't exist (should log warning)."""
@@ -499,7 +502,7 @@ class TestTableConfigManager:
         }
 
         # Should not raise error, just log warning
-        table_config_manager.delete_view("M", "NonExistent")
+        table_config_manager.delete_view("NonExistent", "M")
 
 
 # --- Integration Tests ---
@@ -538,13 +541,13 @@ class TestTableConfigIntegration:
         # Load default
         table_config_manager.load_config("M")
 
-        # Create and save view 1
+        # Create and save view 1 (new signature: view_name, config, client_id)
         view1 = TableConfig(visible_columns={"SKU": True, "Product_Name": False})
-        table_config_manager.save_view("M", "Compact", view1)
+        table_config_manager.save_view("Compact", view1, "M")
 
         # Create and save view 2
         view2 = TableConfig(visible_columns={"SKU": True, "Product_Name": True})
-        table_config_manager.save_view("M", "Full", view2)
+        table_config_manager.save_view("Full", view2, "M")
 
         # Verify both saves occurred
         assert mock_profile_manager.save_client_config.call_count >= 2

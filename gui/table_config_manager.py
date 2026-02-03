@@ -187,6 +187,11 @@ class TableConfigManager:
             # Persist to file
             self.pm.save_client_config(client_id, client_config)
 
+            # Update cached config if this is the current client
+            if client_id == self._current_client_id:
+                self._current_config = config
+                self._current_view_name = view_name
+
             logger.debug(f"Saved table view '{view_name}' for CLIENT_{client_id}")
 
         except Exception as e:
@@ -794,8 +799,42 @@ class TableConfigManager:
 
     # Methods for managing named views (Phase 4)
 
-    def list_views(self, client_id: str) -> List[str]:
+    def get_current_config(self) -> Optional[TableConfig]:
+        """Get the currently loaded configuration.
+
+        Returns:
+            Current TableConfig or None if not loaded
+        """
+        return self._current_config
+
+    def get_current_view_name(self) -> str:
+        """Get the name of the currently active view.
+
+        Returns:
+            Current view name (default: "Default")
+        """
+        return self._current_view_name
+
+    def list_views(self, client_id: Optional[str] = None) -> List[str]:
         """List all saved view names for a client.
+
+        Args:
+            client_id: Client ID (uses current client if None)
+
+        Returns:
+            List of view names
+        """
+        if client_id is None:
+            client_id = self._current_client_id
+
+        if client_id is None:
+            logger.warning("No client selected, cannot list views")
+            return []
+
+        return self._list_views_impl(client_id)
+
+    def _list_views_impl(self, client_id: str) -> List[str]:
+        """List all saved view names for a client (internal implementation).
 
         Args:
             client_id: Client ID
@@ -813,8 +852,27 @@ class TableConfigManager:
             logger.error(f"Failed to list views for CLIENT_{client_id}: {e}")
             return []
 
-    def load_view(self, client_id: str, view_name: str) -> Optional[TableConfig]:
+    def load_view(self, view_name: str, client_id: Optional[str] = None) -> Optional[TableConfig]:
         """Load a specific named view.
+
+        Args:
+            view_name: View name to load
+            client_id: Client ID (uses current client if None)
+
+        Returns:
+            TableConfig if view exists, None otherwise
+        """
+        if client_id is None:
+            client_id = self._current_client_id
+
+        if client_id is None:
+            logger.warning("No client selected, cannot load view")
+            return None
+
+        return self.load_config(client_id, view_name)
+
+    def _load_view_legacy(self, client_id: str, view_name: str) -> Optional[TableConfig]:
+        """Load a specific named view (legacy method for tests).
 
         Args:
             client_id: Client ID
@@ -825,28 +883,43 @@ class TableConfigManager:
         """
         return self.load_config(client_id, view_name)
 
-    def save_view(self, client_id: str, view_name: str, config: TableConfig):
+    def save_view(self, view_name: str, config: TableConfig, client_id: Optional[str] = None):
         """Save a named view.
 
         Args:
-            client_id: Client ID
             view_name: View name to save
             config: TableConfig to save
+            client_id: Client ID (uses current client if None)
         """
-        self.save_config(client_id, config, view_name)
+        if client_id is None:
+            client_id = self._current_client_id
 
-    def delete_view(self, client_id: str, view_name: str):
+        if client_id is None:
+            logger.warning("No client selected, cannot save view")
+            raise ValueError("No client selected")
+
+        self.save_config(client_id, config, view_name)
+        self._current_view_name = view_name
+
+    def delete_view(self, view_name: str, client_id: Optional[str] = None):
         """Delete a named view.
 
         Args:
-            client_id: Client ID
             view_name: View name to delete
+            client_id: Client ID (uses current client if None)
 
         Raises:
-            ValueError: If trying to delete "Default" view
+            ValueError: If trying to delete "Default" view or no client selected
         """
         if view_name == "Default":
             raise ValueError("Cannot delete Default view")
+
+        if client_id is None:
+            client_id = self._current_client_id
+
+        if client_id is None:
+            logger.warning("No client selected, cannot delete view")
+            raise ValueError("No client selected")
 
         try:
             client_config = self.pm.load_client_config(client_id)
@@ -858,6 +931,11 @@ class TableConfigManager:
                 del views[view_name]
                 self.pm.save_client_config(client_id, client_config)
                 logger.info(f"Deleted view '{view_name}' for CLIENT_{client_id}")
+
+                # If we deleted the current view, switch to Default
+                if self._current_view_name == view_name:
+                    self._current_view_name = "Default"
+                    self.load_config(client_id, "Default")
             else:
                 logger.warning(f"View '{view_name}' not found for CLIENT_{client_id}")
 

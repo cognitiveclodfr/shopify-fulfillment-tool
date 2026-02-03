@@ -641,8 +641,13 @@ class UIManager:
         self.mw.settings_button.setToolTip("Open the settings window for the active client.")
         self.mw.settings_button.setEnabled(False)  # Enabled when client is selected
 
+        self.mw.configure_columns_button = QPushButton("📊 Configure Columns")
+        self.mw.configure_columns_button.setToolTip("Customize table column visibility and order")
+        self.mw.configure_columns_button.setEnabled(False)  # Enabled after analysis
+
         actions_layout.addWidget(self.mw.run_analysis_button, 1)
         actions_layout.addWidget(self.mw.settings_button)
+        actions_layout.addWidget(self.mw.configure_columns_button)
         main_layout.addLayout(actions_layout)
 
         # Manual operations
@@ -1003,6 +1008,18 @@ class UIManager:
             if hasattr(self.mw, 'actions_handler') else None
         )
         layout.addWidget(self.mw.settings_button_tab2)
+
+        # Configure Columns button (Tab 2 version)
+        self.mw.configure_columns_button_tab2 = QPushButton("📊 Configure Columns")
+        self.mw.configure_columns_button_tab2.setEnabled(False)
+        self.mw.configure_columns_button_tab2.setToolTip(
+            "Customize table column visibility and order"
+        )
+        self.mw.configure_columns_button_tab2.clicked.connect(
+            lambda: self.mw.open_column_config_dialog()
+            if hasattr(self.mw, 'open_column_config_dialog') else None
+        )
+        layout.addWidget(self.mw.configure_columns_button_tab2)
 
         # Add separator
         layout.addSpacing(20)

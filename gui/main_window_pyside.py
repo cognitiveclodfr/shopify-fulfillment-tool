@@ -29,6 +29,8 @@ from gui.profile_manager_dialog import ProfileManagerDialog
 from gui.tag_management_panel import TagManagementPanel
 from gui.selection_helper import SelectionHelper
 
+logger = logging.getLogger(__name__)
+
 
 class MainWindow(QMainWindow):
     """The main window for the Shopify Fulfillment Tool application.
@@ -252,6 +254,7 @@ class MainWindow(QMainWindow):
         # Main actions
         self.run_analysis_button.clicked.connect(self.actions_handler.run_analysis)
         self.settings_button.clicked.connect(self.actions_handler.open_settings_window)
+        self.configure_columns_button.clicked.connect(self.open_column_config_dialog)
         self.add_product_button.clicked.connect(self.actions_handler.show_add_product_dialog)
 
         # Reports
@@ -499,6 +502,31 @@ class MainWindow(QMainWindow):
                     pass  # Not connected yet
                 self.tableView.selectionModel().selectionChanged.connect(self.on_selection_changed_for_tags)
 
+    def open_column_config_dialog(self):
+        """Open the Column Configuration Dialog."""
+        if not hasattr(self, 'table_config_manager'):
+            logger.warning("TableConfigManager not initialized")
+            return
+
+        if not hasattr(self, 'current_client_id') or not self.current_client_id:
+            QMessageBox.warning(
+                self,
+                "No Client Selected",
+                "Please select a client before configuring columns."
+            )
+            return
+
+        from gui.column_config_dialog import ColumnConfigDialog
+
+        dialog = ColumnConfigDialog(self.table_config_manager, self)
+        dialog.config_applied.connect(self._on_column_config_applied)
+        dialog.exec()
+
+    def _on_column_config_applied(self):
+        """Handle column configuration applied signal."""
+        logger.info("Column configuration has been applied")
+        # The config is already applied in the dialog, no need to do anything here
+
     def toggle_bulk_mode(self):
         """Toggle bulk operations mode.
 
@@ -609,6 +637,8 @@ class MainWindow(QMainWindow):
             self.stock_export_button.setEnabled(reports_enabled)
         if hasattr(self, 'add_product_button'):
             self.add_product_button.setEnabled(has_analysis)
+        if hasattr(self, 'configure_columns_button'):
+            self.configure_columns_button.setEnabled(has_analysis)
 
         # Tab 2 buttons
         if hasattr(self, 'packing_list_button_tab2'):
@@ -617,6 +647,8 @@ class MainWindow(QMainWindow):
             self.stock_export_button_tab2.setEnabled(reports_enabled)
         if hasattr(self, 'add_product_button_tab2'):
             self.add_product_button_tab2.setEnabled(has_analysis)
+        if hasattr(self, 'configure_columns_button_tab2'):
+            self.configure_columns_button_tab2.setEnabled(has_analysis)
         # Tags Manager button
         if hasattr(self, 'toggle_tags_panel_btn'):
             self.toggle_tags_panel_btn.setEnabled(has_analysis)
