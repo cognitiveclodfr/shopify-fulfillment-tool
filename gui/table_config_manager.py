@@ -388,6 +388,185 @@ class TableConfigManager:
         except Exception as e:
             logger.error(f"Failed to perform debounced save: {e}")
 
+    # Column visibility management methods (Phase 2)
+
+    def toggle_column_visibility(self, table_view: QTableView, column_name: str, df: pd.DataFrame):
+        """Toggle visibility of a specific column.
+
+        Args:
+            table_view: QTableView to update
+            column_name: Name of column to toggle
+            df: DataFrame being displayed
+
+        Returns:
+            bool: New visibility state (True if now visible, False if now hidden)
+        """
+        if self._current_config is None:
+            logger.warning("No config loaded, cannot toggle visibility")
+            return True
+
+        # Check if column is locked
+        if column_name in self._current_config.locked_columns:
+            logger.warning(f"Cannot hide locked column: {column_name}")
+            return True
+
+        # Get current visibility
+        current_visibility = self._current_config.visible_columns.get(column_name, True)
+
+        # Toggle visibility
+        new_visibility = not current_visibility
+        self._current_config.visible_columns[column_name] = new_visibility
+
+        # Apply to view
+        self._apply_single_column_visibility(table_view, column_name, new_visibility, df)
+
+        # Save config
+        if self._current_client_id:
+            self.save_config(
+                self._current_client_id,
+                self._current_config,
+                self._current_view_name
+            )
+
+        logger.info(f"Toggled column '{column_name}' visibility: {new_visibility}")
+        return new_visibility
+
+    def set_column_visibility(self, table_view: QTableView, column_name: str, visible: bool, df: pd.DataFrame):
+        """Set visibility of a specific column.
+
+        Args:
+            table_view: QTableView to update
+            column_name: Name of column to show/hide
+            visible: True to show, False to hide
+            df: DataFrame being displayed
+        """
+        if self._current_config is None:
+            logger.warning("No config loaded, cannot set visibility")
+            return
+
+        # Check if column is locked and trying to hide
+        if not visible and column_name in self._current_config.locked_columns:
+            logger.warning(f"Cannot hide locked column: {column_name}")
+            return
+
+        # Update visibility
+        self._current_config.visible_columns[column_name] = visible
+
+        # Apply to view
+        self._apply_single_column_visibility(table_view, column_name, visible, df)
+
+        # Save config
+        if self._current_client_id:
+            self.save_config(
+                self._current_client_id,
+                self._current_config,
+                self._current_view_name
+            )
+
+        logger.info(f"Set column '{column_name}' visibility: {visible}")
+
+    def _apply_single_column_visibility(self, table_view: QTableView, column_name: str, visible: bool, df: pd.DataFrame):
+        """Apply visibility to a single column.
+
+        Args:
+            table_view: QTableView to update
+            column_name: Name of column
+            visible: True to show, False to hide
+            df: DataFrame being displayed
+        """
+        header = table_view.horizontalHeader()
+        model = table_view.model()
+
+        if model is None:
+            logger.warning("Table model is None, cannot apply visibility")
+            return
+
+        # Get source model (unwrap proxy if present)
+        source_model = model
+        if hasattr(model, 'sourceModel') and model.sourceModel() is not None:
+            source_model = model.sourceModel()
+
+        # Get DataFrame columns
+        df_columns = df.columns.tolist()
+
+        # Find column index
+        try:
+            col_index = df_columns.index(column_name)
+        except ValueError:
+            logger.warning(f"Column '{column_name}' not found in DataFrame")
+            return
+
+        # Adjust index if model has checkbox column
+        if hasattr(source_model, 'enable_checkboxes') and source_model.enable_checkboxes:
+            col_index += 1
+
+        # Apply visibility
+        header.setSectionHidden(col_index, not visible)
+        logger.debug(f"Applied visibility to column '{column_name}' (index {col_index}): {visible}")
+
+    def get_column_visibility(self, column_name: str) -> bool:
+        """Get current visibility state of a column.
+
+        Args:
+            column_name: Name of column
+
+        Returns:
+            bool: True if visible, False if hidden
+        """
+        if self._current_config is None:
+            return True
+
+        return self._current_config.visible_columns.get(column_name, True)
+
+    def get_hidden_columns(self, df: pd.DataFrame) -> List[str]:
+        """Get list of currently hidden columns.
+
+        Args:
+            df: DataFrame being displayed
+
+        Returns:
+            List of column names that are hidden
+        """
+        if self._current_config is None:
+            return []
+
+        df_columns = df.columns.tolist()
+        hidden = []
+
+        for col in df_columns:
+            if not self.get_column_visibility(col):
+                hidden.append(col)
+
+        return hidden
+
+    def show_all_columns(self, table_view: QTableView, df: pd.DataFrame):
+        """Show all columns (except auto-hidden empty columns).
+
+        Args:
+            table_view: QTableView to update
+            df: DataFrame being displayed
+        """
+        if self._current_config is None:
+            logger.warning("No config loaded, cannot show all columns")
+            return
+
+        # Set all columns to visible
+        for col in df.columns.tolist():
+            self._current_config.visible_columns[col] = True
+
+        # Re-apply config (will respect auto-hide for empty columns)
+        self.apply_config_to_view(table_view, df)
+
+        # Save config
+        if self._current_client_id:
+            self.save_config(
+                self._current_client_id,
+                self._current_config,
+                self._current_view_name
+            )
+
+        logger.info("Showed all columns")
+
     # Methods for managing named views (Phase 4)
 
     def list_views(self, client_id: str) -> List[str]:

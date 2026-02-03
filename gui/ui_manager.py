@@ -1061,7 +1061,127 @@ class UIManager:
         # Add tag panel to layout
         layout.addWidget(self.mw.tag_management_panel)
 
+        # Setup header context menu for column visibility
+        self._setup_header_context_menu()
+
         return container
+
+    def _setup_header_context_menu(self):
+        """Setup context menu for table header (column visibility control)."""
+        header = self.mw.tableView.horizontalHeader()
+        header.setContextMenuPolicy(Qt.CustomContextMenu)
+        header.customContextMenuRequested.connect(self._show_header_context_menu)
+
+    def _show_header_context_menu(self, position):
+        """Show context menu for table header.
+
+        Args:
+            position: Position where menu was requested
+        """
+        from PySide6.QtWidgets import QMenu
+        from PySide6.QtGui import QAction
+
+        # Only show menu if table config manager is available
+        if not hasattr(self.mw, 'table_config_manager'):
+            return
+
+        # Only show menu if data is loaded
+        if self.mw.analysis_results_df is None or self.mw.analysis_results_df.empty:
+            return
+
+        header = self.mw.tableView.horizontalHeader()
+
+        # Get logical index at position
+        logical_index = header.logicalIndexAt(position)
+
+        if logical_index < 0:
+            return
+
+        # Get column name from index
+        model = self.mw.tableView.model()
+        if model is None:
+            return
+
+        # Get source model (unwrap proxy if present)
+        source_model = model
+        if hasattr(model, 'sourceModel') and model.sourceModel() is not None:
+            source_model = model.sourceModel()
+
+        # Adjust index if checkbox column exists
+        col_index = logical_index
+        if hasattr(source_model, 'enable_checkboxes') and source_model.enable_checkboxes:
+            if col_index == 0:
+                # Checkbox column, no menu
+                return
+            col_index -= 1  # Adjust for checkbox column
+
+        # Get DataFrame columns
+        df_columns = self.mw.analysis_results_df.columns.tolist()
+
+        if col_index >= len(df_columns):
+            return
+
+        column_name = df_columns[col_index]
+
+        # Check if column is locked
+        is_locked = (hasattr(self.mw.table_config_manager, '_current_config') and
+                     self.mw.table_config_manager._current_config and
+                     column_name in self.mw.table_config_manager._current_config.locked_columns)
+
+        # Create context menu
+        menu = QMenu(self.mw)
+
+        # Get current visibility
+        is_visible = self.mw.table_config_manager.get_column_visibility(column_name)
+
+        # Add toggle visibility action
+        if is_locked:
+            action_text = f"{column_name} (Locked - Always Visible)"
+            action = QAction(action_text, self.mw)
+            action.setEnabled(False)
+            menu.addAction(action)
+        else:
+            action_text = f"Hide '{column_name}'" if is_visible else f"Show '{column_name}'"
+            action = QAction(action_text, self.mw)
+            action.triggered.connect(
+                lambda: self.mw.table_config_manager.toggle_column_visibility(
+                    self.mw.tableView,
+                    column_name,
+                    self.mw.analysis_results_df
+                )
+            )
+            menu.addAction(action)
+
+        menu.addSeparator()
+
+        # Add "Show All Columns" action
+        show_all_action = QAction("Show All Columns", self.mw)
+        show_all_action.triggered.connect(
+            lambda: self.mw.table_config_manager.show_all_columns(
+                self.mw.tableView,
+                self.mw.analysis_results_df
+            )
+        )
+        menu.addAction(show_all_action)
+
+        # Add submenu for showing hidden columns
+        hidden_columns = self.mw.table_config_manager.get_hidden_columns(self.mw.analysis_results_df)
+        if hidden_columns:
+            show_menu = menu.addMenu("Show Column")
+            for hidden_col in hidden_columns:
+                col_action = QAction(hidden_col, self.mw)
+                col_action.triggered.connect(
+                    lambda checked=False, col=hidden_col: self.mw.table_config_manager.set_column_visibility(
+                        self.mw.tableView,
+                        col,
+                        True,
+                        self.mw.analysis_results_df
+                    )
+                )
+                show_menu.addAction(col_action)
+
+        # Show menu at cursor position
+        menu.exec(header.mapToGlobal(position))
 
     def _create_summary_bar(self):
         """Create summary bar at bottom of Tab 2."""

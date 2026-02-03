@@ -550,5 +550,257 @@ class TestTableConfigIntegration:
         assert mock_profile_manager.save_client_config.call_count >= 2
 
 
+class TestColumnVisibility:
+    """Test column visibility management (Phase 2)."""
+
+    def test_toggle_column_visibility(self, table_config_manager, mock_main_window, sample_dataframe):
+        """Test toggling column visibility."""
+        # Setup
+        table_config_manager.load_config("M")
+        table_config_manager._current_config.visible_columns = {"SKU": True, "Product_Name": True}
+
+        table_view = mock_main_window.tableView
+        header = MagicMock(spec=QHeaderView)
+        table_view.horizontalHeader.return_value = header
+
+        model = MagicMock()
+        model.sourceModel.return_value = None
+        table_view.model.return_value = model
+
+        # Toggle SKU visibility (True -> False)
+        result = table_config_manager.toggle_column_visibility(
+            table_view,
+            "SKU",
+            sample_dataframe
+        )
+
+        # Verify visibility was toggled
+        assert result is False  # Now hidden
+        assert table_config_manager._current_config.visible_columns["SKU"] is False
+
+    def test_toggle_locked_column_fails(self, table_config_manager, mock_main_window, sample_dataframe):
+        """Test that toggling locked column returns True (stays visible)."""
+        # Setup
+        table_config_manager.load_config("M")
+
+        table_view = mock_main_window.tableView
+
+        # Try to toggle Order_Number (locked column)
+        result = table_config_manager.toggle_column_visibility(
+            table_view,
+            "Order_Number",
+            sample_dataframe
+        )
+
+        # Should remain visible
+        assert result is True
+
+    def test_set_column_visibility_show(self, table_config_manager, mock_main_window, sample_dataframe):
+        """Test setting column visibility to show."""
+        # Setup
+        table_config_manager.load_config("M")
+        table_config_manager._current_config.visible_columns = {"SKU": False}
+
+        table_view = mock_main_window.tableView
+        header = MagicMock(spec=QHeaderView)
+        table_view.horizontalHeader.return_value = header
+
+        model = MagicMock()
+        model.sourceModel.return_value = None
+        table_view.model.return_value = model
+
+        # Set SKU to visible
+        table_config_manager.set_column_visibility(
+            table_view,
+            "SKU",
+            True,
+            sample_dataframe
+        )
+
+        # Verify visibility was set
+        assert table_config_manager._current_config.visible_columns["SKU"] is True
+
+    def test_set_column_visibility_hide(self, table_config_manager, mock_main_window, sample_dataframe):
+        """Test setting column visibility to hide."""
+        # Setup
+        table_config_manager.load_config("M")
+        table_config_manager._current_config.visible_columns = {"Product_Name": True}
+
+        table_view = mock_main_window.tableView
+        header = MagicMock(spec=QHeaderView)
+        table_view.horizontalHeader.return_value = header
+
+        model = MagicMock()
+        model.sourceModel.return_value = None
+        table_view.model.return_value = model
+
+        # Set Product_Name to hidden
+        table_config_manager.set_column_visibility(
+            table_view,
+            "Product_Name",
+            False,
+            sample_dataframe
+        )
+
+        # Verify visibility was set
+        assert table_config_manager._current_config.visible_columns["Product_Name"] is False
+
+    def test_set_locked_column_hidden_fails(self, table_config_manager, mock_main_window, sample_dataframe):
+        """Test that setting locked column to hidden is ignored."""
+        # Setup
+        table_config_manager.load_config("M")
+        table_config_manager._current_config.visible_columns = {"Order_Number": True}
+
+        table_view = mock_main_window.tableView
+
+        # Try to hide Order_Number (locked column)
+        table_config_manager.set_column_visibility(
+            table_view,
+            "Order_Number",
+            False,
+            sample_dataframe
+        )
+
+        # Should remain visible (not changed)
+        assert table_config_manager._current_config.visible_columns["Order_Number"] is True
+
+    def test_get_column_visibility(self, table_config_manager):
+        """Test getting column visibility state."""
+        table_config_manager.load_config("M")
+        table_config_manager._current_config.visible_columns = {
+            "SKU": True,
+            "Product_Name": False
+        }
+
+        assert table_config_manager.get_column_visibility("SKU") is True
+        assert table_config_manager.get_column_visibility("Product_Name") is False
+        assert table_config_manager.get_column_visibility("Unknown") is True  # Default
+
+    def test_get_hidden_columns(self, table_config_manager, sample_dataframe):
+        """Test getting list of hidden columns."""
+        table_config_manager.load_config("M")
+        table_config_manager._current_config.visible_columns = {
+            "Order_Number": True,
+            "SKU": False,
+            "Product_Name": True,
+            "Quantity": False,
+            "Has_SKU": True,
+            "Total_Price": True,
+            "Stock": True
+        }
+
+        hidden = table_config_manager.get_hidden_columns(sample_dataframe)
+
+        assert "SKU" in hidden
+        assert "Quantity" in hidden
+        assert len(hidden) == 2
+
+    def test_show_all_columns(self, table_config_manager, mock_main_window, sample_dataframe):
+        """Test showing all columns."""
+        # Setup
+        table_config_manager.load_config("M")
+        table_config_manager._current_config.visible_columns = {
+            "Order_Number": True,
+            "SKU": False,
+            "Product_Name": False,
+            "Quantity": False,
+            "Has_SKU": False,
+            "Total_Price": False,
+            "Stock": False
+        }
+
+        table_view = mock_main_window.tableView
+        header = MagicMock(spec=QHeaderView)
+        table_view.horizontalHeader.return_value = header
+
+        model = MagicMock()
+        model.sourceModel.return_value = None
+        table_view.model.return_value = model
+
+        # Show all columns
+        table_config_manager.show_all_columns(table_view, sample_dataframe)
+
+        # Verify all columns are now visible
+        for col in sample_dataframe.columns:
+            assert table_config_manager._current_config.visible_columns[col] is True
+
+    def test_apply_single_column_visibility(self, table_config_manager, mock_main_window, sample_dataframe):
+        """Test applying visibility to a single column."""
+        # Setup
+        table_config_manager.load_config("M")
+
+        table_view = mock_main_window.tableView
+        header = MagicMock(spec=QHeaderView)
+        table_view.horizontalHeader.return_value = header
+
+        model = MagicMock()
+        model.sourceModel.return_value = None
+        table_view.model.return_value = model
+
+        # Apply visibility to SKU column (hide it)
+        table_config_manager._apply_single_column_visibility(
+            table_view,
+            "SKU",
+            False,
+            sample_dataframe
+        )
+
+        # Verify setSectionHidden was called
+        header.setSectionHidden.assert_called()
+        # Get the call arguments
+        call_args = header.setSectionHidden.call_args
+        is_hidden = call_args[0][1]
+
+        # Column should be hidden (True = hidden)
+        assert is_hidden is True
+
+    def test_auto_hide_respects_locked_columns(self, table_config_manager):
+        """Test that auto-hide logic respects locked columns."""
+        # Create DataFrame with empty columns
+        df = pd.DataFrame({
+            "Order_Number": ["", "", ""],  # Empty but locked
+            "SKU": ["A", "B", "C"],
+            "Empty_Col": [np.nan, np.nan, np.nan]  # Empty and not locked
+        })
+
+        table_config_manager.load_config("M")
+        table_config_manager._current_config.auto_hide_empty = True
+        table_config_manager._current_config.locked_columns = ["Order_Number"]
+
+        # Detect empty columns
+        empty_columns = table_config_manager.detect_empty_columns(df)
+
+        # Both Order_Number and Empty_Col should be detected as empty
+        assert "Order_Number" in empty_columns
+        assert "Empty_Col" in empty_columns
+
+        # Now test visibility logic in apply_config_to_view
+        # Simulate what happens in the visibility determination
+        visible_columns = {}
+
+        for col in df.columns:
+            # Default visibility
+            is_visible = table_config_manager._current_config.visible_columns.get(col, True)
+
+            # Auto-hide overrides for non-locked empty columns
+            if col in empty_columns and col not in table_config_manager._current_config.locked_columns:
+                is_visible = False
+
+            # Locked columns override (always visible)
+            if col in table_config_manager._current_config.locked_columns:
+                is_visible = True
+
+            visible_columns[col] = is_visible
+
+        # Order_Number should be visible (locked)
+        assert visible_columns["Order_Number"] is True, "Order_Number should be visible (locked)"
+
+        # SKU should be visible (not empty)
+        assert visible_columns["SKU"] is True, "SKU should be visible (not empty)"
+
+        # Empty_Col should be hidden (empty and not locked)
+        assert visible_columns["Empty_Col"] is False, "Empty_Col should be hidden (auto-hide)"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
