@@ -50,6 +50,7 @@ class ColumnConfigDialog(QDialog):
 
         # Track original configuration for cancel
         self._original_config = None
+        self._original_view_name = None  # Store original view name for cancel
         self._current_columns: List[str] = []
         self._is_loading = False
 
@@ -179,7 +180,7 @@ class ColumnConfigDialog(QDialog):
         self.reset_button.clicked.connect(self._on_reset)
 
         # Dialog buttons
-        self.cancel_button.clicked.connect(self.reject)
+        self.cancel_button.clicked.connect(self._on_cancel)
         self.apply_button.clicked.connect(self._on_apply)
 
     def _load_current_config(self):
@@ -198,8 +199,9 @@ class ColumnConfigDialog(QDialog):
                 # Load config for current client
                 config = self.table_config_manager.load_config(client_id)
 
-            # Store original config for cancel
+            # Store original config and view name for cancel
             self._original_config = config
+            self._original_view_name = self.table_config_manager.get_current_view_name()
 
             # Load auto-hide setting
             self.auto_hide_checkbox.setChecked(config.auto_hide_empty)
@@ -575,6 +577,19 @@ class ColumnConfigDialog(QDialog):
             self._load_columns(default_config)
         finally:
             self._is_loading = False
+
+    def _on_cancel(self):
+        """Cancel changes and restore original view."""
+        # Restore original view if it was changed
+        if self._original_view_name and hasattr(self.parent_window, 'current_client_id'):
+            client_id = self.parent_window.current_client_id
+            if client_id:
+                # Reload original view
+                self.table_config_manager.load_config(client_id, self._original_view_name)
+                logger.info(f"Restored original view: {self._original_view_name}")
+
+        # Close dialog
+        self.reject()
 
     def _on_apply(self):
         """Apply the current configuration."""

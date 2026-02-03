@@ -650,6 +650,9 @@ class TableConfigManager:
         # Apply to view
         self._apply_single_column_visibility(table_view, column_name, new_visibility, df)
 
+        # Force update header geometry to reflect visibility change
+        table_view.horizontalHeader().updateGeometry()
+
         # Save config
         if self._current_client_id:
             self.save_config(
@@ -684,6 +687,9 @@ class TableConfigManager:
 
         # Apply to view
         self._apply_single_column_visibility(table_view, column_name, visible, df)
+
+        # Force update header geometry to reflect visibility change
+        table_view.horizontalHeader().updateGeometry()
 
         # Save config
         if self._current_client_id:
@@ -732,6 +738,10 @@ class TableConfigManager:
 
         # Apply visibility
         header.setSectionHidden(col_index, not visible)
+
+        # Force viewport update to ensure change is visible
+        table_view.viewport().update()
+
         logger.debug(f"Applied visibility to column '{column_name}' (index {col_index}): {visible}")
 
     def get_column_visibility(self, column_name: str) -> bool:
