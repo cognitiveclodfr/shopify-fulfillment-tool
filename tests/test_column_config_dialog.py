@@ -268,7 +268,10 @@ class TestColumnVisibilityToggle:
 
         # Try to uncheck (should remain checked due to handler)
         dialog._is_loading = False  # Ensure handler is active
-        item.setCheckState(Qt.Unchecked)
+
+        # Mock the warning dialog to prevent it from showing
+        with patch.object(QMessageBox, 'warning'):
+            item.setCheckState(Qt.Unchecked)
 
         # Verify it's checked again
         assert item.checkState() == Qt.Checked
