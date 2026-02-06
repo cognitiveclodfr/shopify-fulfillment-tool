@@ -606,6 +606,8 @@ class TestColumnVisibility:
 
         table_view = mock_main_window.tableView
         header = MagicMock(spec=QHeaderView)
+        header.sectionSize.return_value = 100  # Non-zero width after showing
+        header.isSectionHidden.return_value = False
         table_view.horizontalHeader.return_value = header
 
         model = MagicMock()
@@ -1045,6 +1047,311 @@ class TestColumnOrderAndWidth:
         saved_order = saved_config_data["ui_settings"]["table_view"]["views"]["Default"]["column_order"]
 
         assert saved_order == ["Order_Number", "Product_Name", "SKU"]
+
+
+class TestBug1ShowAllDisablesAutoHide:
+    """Test Bug 1 fix: show_all_columns should disable auto_hide_empty."""
+
+    def test_show_all_columns_disables_auto_hide(self, table_config_manager, sample_dataframe):
+        """show_all_columns should set auto_hide_empty=False."""
+        table_config_manager.load_config("M")
+        table_config_manager._current_config.auto_hide_empty = True
+
+        # Create mock table view
+        table_view = MagicMock()
+        table_view.model.return_value = MagicMock()
+        table_view.horizontalHeader.return_value = MagicMock()
+
+        table_config_manager.show_all_columns(table_view, sample_dataframe)
+
+        assert table_config_manager._current_config.auto_hide_empty is False
+
+    def test_show_all_sets_all_visible(self, table_config_manager, sample_dataframe):
+        """show_all_columns should set all columns to visible."""
+        table_config_manager.load_config("M")
+        # Hide some columns
+        table_config_manager._current_config.visible_columns["SKU"] = False
+        table_config_manager._current_config.visible_columns["Product_Name"] = False
+
+        table_view = MagicMock()
+        table_view.model.return_value = MagicMock()
+        table_view.horizontalHeader.return_value = MagicMock()
+
+        table_config_manager.show_all_columns(table_view, sample_dataframe)
+
+        for col in sample_dataframe.columns:
+            assert table_config_manager._current_config.visible_columns[col] is True
+
+
+class TestBug3VerifySectionVisibility:
+    """Test Bug 3 fix: visibility verification and force-correction."""
+
+    def test_verify_section_visibility_no_mismatch(self, table_config_manager, sample_dataframe):
+        """No action when header state matches expected state."""
+        table_config_manager.load_config("M")
+
+        table_view = MagicMock()
+        header = MagicMock()
+        header.isSectionHidden.return_value = False  # Not hidden = visible
+        table_view.horizontalHeader.return_value = header
+        table_view.model.return_value = MagicMock()
+
+        table_config_manager._verify_section_visibility(
+            table_view, "SKU", True, sample_dataframe
+        )
+
+        # setSectionHidden should NOT be called again (no mismatch)
+        header.setSectionHidden.assert_not_called()
+
+    def test_verify_section_visibility_corrects_mismatch(self, table_config_manager, sample_dataframe):
+        """Force-correct when header state doesn't match expected state."""
+        table_config_manager.load_config("M")
+
+        table_view = MagicMock()
+        header = MagicMock()
+        header.isSectionHidden.return_value = True  # Hidden but should be visible
+        table_view.horizontalHeader.return_value = header
+        model = MagicMock()
+        table_view.model.return_value = model
+
+        table_config_manager._verify_section_visibility(
+            table_view, "SKU", True, sample_dataframe  # expected_visible=True
+        )
+
+        # Should force-correct: setSectionHidden(index, False)
+        header.setSectionHidden.assert_called_once()
+        call_args = header.setSectionHidden.call_args[0]
+        assert call_args[1] is False  # not expected_visible = False (show it)
+        header.updateGeometries.assert_called()
+
+
+class TestAutoFitColumnWidths:
+    """Test Feature 5.2: auto-fit column widths."""
+
+    def test_auto_fit_resizes_visible_columns(self, table_config_manager, sample_dataframe):
+        """Auto-fit should resize all visible columns to content."""
+        table_config_manager.load_config("M")
+
+        table_view = MagicMock()
+        header = MagicMock()
+        header.isSectionHidden.return_value = False
+        header.sectionSize.return_value = 120
+        table_view.horizontalHeader.return_value = header
+        model = MagicMock()
+        table_view.model.return_value = model
+
+        table_config_manager.auto_fit_column_widths(table_view, sample_dataframe)
+
+        # resizeColumnToContents should be called for each visible column
+        assert table_view.resizeColumnToContents.call_count == len(sample_dataframe.columns)
+
+    def test_auto_fit_skips_hidden_columns(self, table_config_manager, sample_dataframe):
+        """Auto-fit should skip hidden columns."""
+        table_config_manager.load_config("M")
+
+        table_view = MagicMock()
+        header = MagicMock()
+        # Make first column hidden, rest visible (no checkbox offset)
+        header.isSectionHidden.side_effect = lambda idx: idx == 0
+        header.sectionSize.return_value = 100
+        table_view.horizontalHeader.return_value = header
+        model = MagicMock()
+        model.sourceModel.return_value = None  # No proxy model
+        del model.enable_checkboxes  # Ensure no checkbox column
+        table_view.model.return_value = model
+
+        table_config_manager.auto_fit_column_widths(table_view, sample_dataframe)
+
+        # Should resize all except the hidden one
+        expected_calls = len(sample_dataframe.columns) - 1
+        assert table_view.resizeColumnToContents.call_count == expected_calls
+
+    def test_auto_fit_updates_config_widths(self, table_config_manager, sample_dataframe):
+        """Auto-fit should update column_widths in config."""
+        table_config_manager.load_config("M")
+        table_config_manager._current_config.column_widths = {}
+
+        table_view = MagicMock()
+        header = MagicMock()
+        header.isSectionHidden.return_value = False
+        header.sectionSize.return_value = 150
+        table_view.horizontalHeader.return_value = header
+        model = MagicMock()
+        table_view.model.return_value = model
+
+        table_config_manager.auto_fit_column_widths(table_view, sample_dataframe)
+
+        # All visible columns should have widths in config
+        for col in sample_dataframe.columns:
+            assert col in table_config_manager._current_config.column_widths
+            assert table_config_manager._current_config.column_widths[col] == 150
+
+
+class TestApplyConfigOrderOfOperations:
+    """Test that apply_config_to_view applies order before visibility (Bug 3 fix)."""
+
+    def test_order_applied_before_visibility(self, table_config_manager, sample_dataframe):
+        """Column order should be applied before visibility to avoid moveSection conflicts."""
+        table_config_manager.load_config("M")
+        table_config_manager._current_config.column_order = ["Order_Number", "SKU", "Product_Name"]
+
+        table_view = MagicMock()
+        header = MagicMock()
+        table_view.horizontalHeader.return_value = header
+        model = MagicMock()
+        table_view.model.return_value = model
+
+        # Track call order
+        call_log = []
+        original_apply_order = table_config_manager.apply_column_order
+        original_apply_widths = table_config_manager.apply_column_widths
+
+        def mock_apply_order(*args, **kwargs):
+            call_log.append("order")
+            return original_apply_order(*args, **kwargs)
+
+        def mock_set_hidden(idx, hidden):
+            call_log.append(f"visibility_{idx}")
+
+        def mock_apply_widths(*args, **kwargs):
+            call_log.append("widths")
+            return original_apply_widths(*args, **kwargs)
+
+        table_config_manager.apply_column_order = mock_apply_order
+        table_config_manager.apply_column_widths = mock_apply_widths
+        header.setSectionHidden = mock_set_hidden
+
+        table_config_manager.apply_config_to_view(table_view, sample_dataframe)
+
+        # Order should come before any visibility calls
+        assert call_log[0] == "order"
+        # Then visibility calls
+        assert any("visibility_" in c for c in call_log)
+        # Widths should be last
+        assert call_log[-1] == "widths"
+
+
+class TestSignalFeedbackGuard:
+    """Test that signal handlers are suppressed during bulk config application."""
+
+    def test_applying_config_flag_set_during_apply(self, table_config_manager, sample_dataframe):
+        """_applying_config should be True during apply_config_to_view."""
+        table_config_manager.load_config("M")
+
+        table_view = MagicMock()
+        header = MagicMock()
+        table_view.horizontalHeader.return_value = header
+        table_view.model.return_value = MagicMock()
+
+        flag_during_apply = []
+
+        original_impl = table_config_manager._apply_config_to_view_impl
+
+        def capture_flag(*args, **kwargs):
+            flag_during_apply.append(table_config_manager._applying_config)
+            return original_impl(*args, **kwargs)
+
+        table_config_manager._apply_config_to_view_impl = capture_flag
+
+        table_config_manager.apply_config_to_view(table_view, sample_dataframe)
+
+        assert flag_during_apply[0] is True
+        assert table_config_manager._applying_config is False  # Reset after
+
+    def test_on_column_resized_skipped_during_apply(self, table_config_manager, sample_dataframe):
+        """on_column_resized should be no-op when _applying_config is True."""
+        table_config_manager.load_config("M")
+        table_config_manager._current_config.column_widths = {"SKU": 100}
+
+        table_config_manager._applying_config = True
+        table_config_manager.on_column_resized(1, 100, 0)  # Would save 0-width
+
+        # Width should NOT be changed
+        assert table_config_manager._current_config.column_widths["SKU"] == 100
+        table_config_manager._applying_config = False
+
+    def test_on_column_resized_skips_zero_width(self, table_config_manager, sample_dataframe):
+        """on_column_resized should skip zero-width events."""
+        table_config_manager.load_config("M")
+        table_config_manager._current_config.column_widths = {"SKU": 100}
+
+        table_view = MagicMock()
+        header = MagicMock()
+        header.sectionSize.return_value = 0
+        table_view.horizontalHeader.return_value = header
+        model = MagicMock()
+        model.sourceModel.return_value = None
+        table_view.model.return_value = model
+        table_config_manager._current_table_view = table_view
+        table_config_manager._current_df = sample_dataframe
+
+        table_config_manager.on_column_resized(1, 100, 0)
+
+        # Width should NOT be changed to 0
+        assert table_config_manager._current_config.column_widths["SKU"] == 100
+
+    def test_on_column_moved_skipped_during_apply(self, table_config_manager, sample_dataframe):
+        """on_column_moved should be no-op when _applying_config is True."""
+        table_config_manager.load_config("M")
+        original_order = table_config_manager._current_config.column_order.copy()
+
+        table_config_manager._applying_config = True
+        table_config_manager.on_column_moved(1, 0, 3)
+
+        # Order should NOT be changed
+        assert table_config_manager._current_config.column_order == original_order
+        table_config_manager._applying_config = False
+
+    def test_apply_column_widths_skips_zero(self, table_config_manager, sample_dataframe):
+        """apply_column_widths should skip entries with width <= 0."""
+        table_config_manager.load_config("M")
+        table_config_manager._current_config.column_widths = {"SKU": 0, "Product_Name": 150}
+
+        table_view = MagicMock()
+        header = MagicMock()
+        table_view.horizontalHeader.return_value = header
+        model = MagicMock()
+        model.sourceModel.return_value = None
+        del model.enable_checkboxes
+        table_view.model.return_value = model
+
+        table_config_manager.apply_column_widths(table_view, sample_dataframe)
+
+        # Only Product_Name should be resized, not SKU (0-width)
+        calls = header.resizeSection.call_args_list
+        resized_indices = [c[0][0] for c in calls]
+        # Product_Name is at index 2 in the sample_dataframe
+        assert 2 in resized_indices
+        # SKU is at index 1 - should NOT be resized
+        assert 1 not in resized_indices
+
+    def test_load_config_cleans_zero_widths(self, table_config_manager, mock_profile_manager):
+        """load_config should clean up any zero-width entries."""
+        # Setup config with zero-width entries
+        mock_profile_manager.load_client_config.return_value = {
+            "ui_settings": {
+                "table_view": {
+                    "version": 1,
+                    "active_view": "Default",
+                    "views": {
+                        "Default": {
+                            "visible_columns": {"Order_Number": True, "SKU": True},
+                            "column_order": ["Order_Number", "SKU"],
+                            "column_widths": {"Order_Number": 150, "SKU": 0, "Product_Name": -1},
+                            "auto_hide_empty": True,
+                            "locked_columns": ["Order_Number"]
+                        }
+                    }
+                }
+            }
+        }
+
+        config = table_config_manager.load_config("M")
+
+        # Zero and negative widths should be removed
+        assert "SKU" not in config.column_widths
+        assert "Product_Name" not in config.column_widths
+        assert config.column_widths["Order_Number"] == 150
 
 
 if __name__ == "__main__":

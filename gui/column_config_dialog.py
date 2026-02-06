@@ -397,7 +397,7 @@ class ColumnConfigDialog(QDialog):
         self._current_columns.insert(current_row + 1, self._current_columns.pop(current_row))
 
     def _on_show_all(self):
-        """Show all columns."""
+        """Show all columns and disable auto-hide."""
         self._is_loading = True
         try:
             for i in range(self.column_list.count()):
@@ -405,6 +405,9 @@ class ColumnConfigDialog(QDialog):
                 item.setCheckState(Qt.Checked)
         finally:
             self._is_loading = False
+
+        # Disable auto-hide so empty columns stay visible after Apply
+        self.auto_hide_checkbox.setChecked(False)
 
     def _on_hide_all(self):
         """Hide all columns (except locked ones)."""
@@ -600,7 +603,8 @@ class ColumnConfigDialog(QDialog):
             # Save configuration
             if hasattr(self.parent_window, 'current_client_id') and self.parent_window.current_client_id:
                 client_id = self.parent_window.current_client_id
-                self.table_config_manager.save_config(client_id, config)
+                view_name = self.view_combo.currentText() or "Default"
+                self.table_config_manager.save_config(client_id, config, view_name)
 
                 # Apply to table view if available
                 if hasattr(self.parent_window, 'tableView') and \

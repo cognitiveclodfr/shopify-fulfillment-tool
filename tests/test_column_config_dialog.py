@@ -643,3 +643,86 @@ class TestUIState:
         dialog.column_list.setCurrentRow(-1)  # No selection
         # Buttons should be disabled (or at least up button)
         assert not dialog.up_button.isEnabled()
+
+
+class TestBug1ShowAllAutoHide:
+    """Test Bug 1 fix: Show All should disable auto-hide."""
+
+    def test_show_all_disables_auto_hide(self, dialog):
+        """Show All should uncheck the auto-hide checkbox."""
+        # Start with auto-hide enabled
+        dialog.auto_hide_checkbox.setChecked(True)
+        assert dialog.auto_hide_checkbox.isChecked()
+
+        # Click Show All
+        dialog._on_show_all()
+
+        # Auto-hide should be disabled
+        assert not dialog.auto_hide_checkbox.isChecked()
+
+    def test_show_all_checks_all_items(self, dialog):
+        """Show All should check all items including previously hidden ones."""
+        # First hide all
+        dialog._on_hide_all()
+
+        # Verify some are unchecked
+        unchecked = sum(
+            1 for i in range(dialog.column_list.count())
+            if dialog.column_list.item(i).checkState() == Qt.Unchecked
+        )
+        assert unchecked > 0
+
+        # Show All
+        dialog._on_show_all()
+
+        # All should be checked
+        for i in range(dialog.column_list.count()):
+            assert dialog.column_list.item(i).checkState() == Qt.Checked
+
+    def test_show_all_then_apply_keeps_auto_hide_off(self, dialog):
+        """After Show All + Apply, auto_hide_empty should be False in saved config."""
+        dialog.auto_hide_checkbox.setChecked(True)
+        dialog._on_show_all()
+
+        with patch.object(dialog, 'accept'):
+            dialog._on_apply()
+
+        config = dialog.table_config_manager.get_current_config()
+        assert config.auto_hide_empty is False
+
+
+class TestBug2ApplyViewName:
+    """Test Bug 2 fix: Apply should save to the selected view, not always Default."""
+
+    def test_apply_saves_to_selected_view(self, dialog):
+        """Apply should save to the currently selected view in combo."""
+        # Select Custom View
+        index = dialog.view_combo.findText("Custom View")
+        assert index >= 0, "Custom View should exist in combo"
+        dialog.view_combo.setCurrentIndex(index)
+
+        # Apply
+        with patch.object(dialog, 'accept'):
+            dialog._on_apply()
+
+        # Verify save_config was called with "Custom View" view name
+        save_calls = dialog.table_config_manager.pm.save_client_config.call_args_list
+        assert len(save_calls) > 0
+        last_saved_config = save_calls[-1][0][1]  # second arg to save_client_config
+        active_view = last_saved_config["ui_settings"]["table_view"]["active_view"]
+        assert active_view == "Custom View"
+
+    def test_apply_with_default_saves_to_default(self, dialog):
+        """Apply with Default selected should save to Default."""
+        # Ensure Default is selected
+        index = dialog.view_combo.findText("Default")
+        dialog.view_combo.setCurrentIndex(index)
+
+        with patch.object(dialog, 'accept'):
+            dialog._on_apply()
+
+        save_calls = dialog.table_config_manager.pm.save_client_config.call_args_list
+        assert len(save_calls) > 0
+        last_saved_config = save_calls[-1][0][1]
+        active_view = last_saved_config["ui_settings"]["table_view"]["active_view"]
+        assert active_view == "Default"

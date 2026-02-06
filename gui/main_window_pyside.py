@@ -525,7 +525,9 @@ class MainWindow(QMainWindow):
     def _on_column_config_applied(self):
         """Handle column configuration applied signal."""
         logger.info("Column configuration has been applied")
-        # The config is already applied in the dialog, no need to do anything here
+        # Update hidden columns indicator in summary bar
+        if hasattr(self, 'ui_manager'):
+            self.ui_manager.update_hidden_columns_indicator()
 
     def toggle_bulk_mode(self):
         """Toggle bulk operations mode.

@@ -91,6 +91,9 @@ class TableConfigManager:
         self._current_table_view: Optional[QTableView] = None
         self._current_df: Optional[pd.DataFrame] = None
 
+        # Flag to suppress signal handlers during bulk config application
+        self._applying_config = False
+
         # Setup debounced save timer
         self._save_timer = QTimer()
         self._save_timer.setSingleShot(True)
@@ -138,6 +141,14 @@ class TableConfigManager:
                 # View doesn't exist, create default
                 logger.info(f"View '{view_name}' not found for CLIENT_{client_id}, creating default")
                 self._current_config = TableConfig()
+
+            # Clean up any corrupted zero-width entries from prior bug
+            if self._current_config.column_widths:
+                zero_width_cols = [k for k, v in self._current_config.column_widths.items() if v <= 0]
+                for col in zero_width_cols:
+                    del self._current_config.column_widths[col]
+                if zero_width_cols:
+                    logger.debug(f"Cleaned up {len(zero_width_cols)} zero-width entries: {zero_width_cols}")
 
             return self._current_config
 
@@ -230,10 +241,13 @@ class TableConfigManager:
         """Apply configuration to QTableView.
 
         This method:
-        1. Detects empty columns (if auto-hide enabled)
-        2. Applies column visibility
-        3. Applies column order (Phase 3)
-        4. Applies column widths (Phase 3)
+        1. Applies column order (moveSection before visibility to avoid conflicts)
+        2. Detects empty columns (if auto-hide enabled)
+        3. Applies column visibility
+        4. Applies column widths
+
+        Signal handlers (on_column_resized, on_column_moved) are suppressed
+        during this method to prevent feedback loops that corrupt the config.
 
         Args:
             table_view: QTableView to configure
@@ -243,6 +257,15 @@ class TableConfigManager:
             logger.warning("No config loaded, skipping apply_config_to_view")
             return
 
+        # Suppress signal handlers during bulk config application
+        self._applying_config = True
+        try:
+            self._apply_config_to_view_impl(table_view, df)
+        finally:
+            self._applying_config = False
+
+    def _apply_config_to_view_impl(self, table_view: QTableView, df: pd.DataFrame):
+        """Internal implementation of apply_config_to_view."""
         # Store references for signal handlers
         self._current_table_view = table_view
         self._current_df = df
@@ -261,6 +284,10 @@ class TableConfigManager:
                     self._current_config,
                     self._current_view_name
                 )
+
+        # Apply column order FIRST (before visibility to avoid moveSection
+        # interacting with already-hidden sections)
+        self.apply_column_order(table_view, df)
 
         # Detect empty columns for auto-hide
         empty_columns = []
@@ -281,6 +308,9 @@ class TableConfigManager:
         if hasattr(model, 'sourceModel') and model.sourceModel() is not None:
             source_model = model.sourceModel()
 
+        has_checkbox = hasattr(source_model, 'enable_checkboxes') and source_model.enable_checkboxes
+        checkbox_offset = 1 if has_checkbox else 0
+
         # Apply visibility to each column
         for col_name in df_columns:
             # Find column index in model
@@ -290,9 +320,7 @@ class TableConfigManager:
                 logger.warning(f"Column '{col_name}' not found in DataFrame")
                 continue
 
-            # Adjust index if model has checkbox column
-            if hasattr(source_model, 'enable_checkboxes') and source_model.enable_checkboxes:
-                col_index += 1  # Shift by 1 for checkbox column
+            col_index += checkbox_offset
 
             # Determine visibility
             is_visible = self._current_config.visible_columns.get(col_name, True)
@@ -308,10 +336,10 @@ class TableConfigManager:
             # Apply visibility
             header.setSectionHidden(col_index, not is_visible)
 
-        # Apply column order (Phase 3)
-        self.apply_column_order(table_view, df)
+        # Force header to recalculate layout after visibility changes
+        header.updateGeometries()
 
-        # Apply column widths (Phase 3)
+        # Apply column widths (only non-zero values)
         self.apply_column_widths(table_view, df)
 
         logger.debug(f"Applied table config to view for {len(df_columns)} columns")
@@ -405,9 +433,11 @@ class TableConfigManager:
         has_checkbox = hasattr(source_model, 'enable_checkboxes') and source_model.enable_checkboxes
         checkbox_offset = 1 if has_checkbox else 0
 
-        # Apply widths from config
+        # Apply widths from config (skip zero-width entries that would hide columns)
         for col_name, width in self._current_config.column_widths.items():
             if col_name not in df_columns:
+                continue
+            if width <= 0:
                 continue
 
             # Get logical index
@@ -418,6 +448,45 @@ class TableConfigManager:
             logger.debug(f"Set column '{col_name}' width to {width}px")
 
         logger.debug("Applied column widths")
+
+    def auto_fit_column_widths(self, table_view: QTableView, df: pd.DataFrame):
+        """Auto-resize all visible columns to fit their content.
+
+        Args:
+            table_view: QTableView to resize columns for
+            df: DataFrame being displayed
+        """
+        if self._current_config is None:
+            return
+
+        header = table_view.horizontalHeader()
+        model = table_view.model()
+        if model is None:
+            return
+
+        source_model = model
+        if hasattr(model, 'sourceModel') and model.sourceModel() is not None:
+            source_model = model.sourceModel()
+
+        has_checkbox = hasattr(source_model, 'enable_checkboxes') and source_model.enable_checkboxes
+        checkbox_offset = 1 if has_checkbox else 0
+
+        df_columns = df.columns.tolist()
+
+        for i, col_name in enumerate(df_columns):
+            col_index = i + checkbox_offset
+            if not header.isSectionHidden(col_index):
+                table_view.resizeColumnToContents(col_index)
+                # Update config with new width
+                new_width = header.sectionSize(col_index)
+                self._current_config.column_widths[col_name] = new_width
+
+        # Save updated widths (debounced)
+        if self._current_client_id:
+            self._pending_save = True
+            self._save_timer.start(self.DEBOUNCE_DELAY_MS)
+
+        logger.info("Auto-fit column widths applied")
 
     def get_column_name_from_logical_index(self, logical_index: int, df: pd.DataFrame, table_view: QTableView) -> Optional[str]:
         """Get column name from logical index.
@@ -491,12 +560,21 @@ class TableConfigManager:
         """Handle column resize event (debounced save).
 
         Called when user resizes a column. Saves config after debounce delay.
+        Suppressed during bulk config application and for zero-width events.
 
         Args:
             logical_index: Logical index of resized column
             old_width: Previous width in pixels
             new_width: New width in pixels
         """
+        # Skip during bulk config application (prevents feedback loop)
+        if self._applying_config:
+            return
+
+        # Skip zero-width events (caused by hiding columns)
+        if new_width <= 0:
+            return
+
         if self._current_config is None or self._current_client_id is None:
             return
 
@@ -526,12 +604,17 @@ class TableConfigManager:
 
         Called when user reorders columns. Saves config after debounce delay.
         Prevents moving Order_Number from position 0.
+        Suppressed during bulk config application.
 
         Args:
             logical_index: Logical index of moved column
             old_visual_index: Previous visual position
             new_visual_index: New visual position
         """
+        # Skip during bulk config application (prevents feedback loop)
+        if self._applying_config:
+            return
+
         if self._current_config is None or self._current_client_id is None:
             return
 
@@ -650,8 +733,8 @@ class TableConfigManager:
         # Apply to view
         self._apply_single_column_visibility(table_view, column_name, new_visibility, df)
 
-        # Force update header geometry to reflect visibility change
-        table_view.horizontalHeader().updateGeometry()
+        # Verify the change actually took effect and force-correct if needed
+        self._verify_section_visibility(table_view, column_name, new_visibility, df)
 
         # Save config
         if self._current_client_id:
@@ -688,8 +771,8 @@ class TableConfigManager:
         # Apply to view
         self._apply_single_column_visibility(table_view, column_name, visible, df)
 
-        # Force update header geometry to reflect visibility change
-        table_view.horizontalHeader().updateGeometry()
+        # Verify the change actually took effect and force-correct if needed
+        self._verify_section_visibility(table_view, column_name, visible, df)
 
         # Save config
         if self._current_client_id:
@@ -739,10 +822,59 @@ class TableConfigManager:
         # Apply visibility
         header.setSectionHidden(col_index, not visible)
 
-        # Force viewport update to ensure change is visible
+        # When showing a column, ensure it has a non-zero width
+        # (width may have been set to 0 by prior hide/resize feedback)
+        if visible:
+            current_width = header.sectionSize(col_index)
+            if current_width <= 0:
+                table_view.resizeColumnToContents(col_index)
+                logger.debug(f"Restored width for column '{column_name}' (was 0)")
+
+        # Force header layout recalculation and repaint
+        header.updateGeometries()
+        header.viewport().update()
         table_view.viewport().update()
 
         logger.debug(f"Applied visibility to column '{column_name}' (index {col_index}): {visible}")
+
+    def _verify_section_visibility(self, table_view: QTableView, column_name: str, expected_visible: bool, df: pd.DataFrame):
+        """Verify header section visibility matches expected state; force-correct if mismatched.
+
+        Args:
+            table_view: QTableView to check
+            column_name: Column name to verify
+            expected_visible: Expected visibility state
+            df: DataFrame being displayed
+        """
+        header = table_view.horizontalHeader()
+        model = table_view.model()
+        if model is None:
+            return
+
+        source_model = model
+        if hasattr(model, 'sourceModel') and model.sourceModel() is not None:
+            source_model = model.sourceModel()
+
+        df_columns = df.columns.tolist()
+        try:
+            col_index = df_columns.index(column_name)
+        except ValueError:
+            return
+
+        if hasattr(source_model, 'enable_checkboxes') and source_model.enable_checkboxes:
+            col_index += 1
+
+        actual_hidden = header.isSectionHidden(col_index)
+        if actual_hidden == expected_visible:  # Mismatch: hidden when should be visible (or vice versa)
+            logger.warning(
+                f"Visibility mismatch for '{column_name}' (index {col_index}): "
+                f"expected {'visible' if expected_visible else 'hidden'}, "
+                f"got {'hidden' if actual_hidden else 'visible'}. Force-correcting."
+            )
+            header.setSectionHidden(col_index, not expected_visible)
+            header.updateGeometries()
+            header.viewport().update()
+            table_view.viewport().update()
 
     def get_column_visibility(self, column_name: str) -> bool:
         """Get current visibility state of a column.
@@ -790,11 +922,12 @@ class TableConfigManager:
             logger.warning("No config loaded, cannot show all columns")
             return
 
-        # Set all columns to visible
+        # Set all columns to visible and disable auto-hide
         for col in df.columns.tolist():
             self._current_config.visible_columns[col] = True
+        self._current_config.auto_hide_empty = False
 
-        # Re-apply config (will respect auto-hide for empty columns)
+        # Re-apply config
         self.apply_config_to_view(table_view, df)
 
         # Save config
