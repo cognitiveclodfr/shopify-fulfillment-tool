@@ -2,10 +2,18 @@
 
 This script generates realistic test data for orders and stock
 that can be used for testing without real business data.
+
+Usage:
+    python scripts/create_test_data.py
+    python scripts/create_test_data.py --server-path D:\\Dev\\fulfillment-server-mock
 """
 
-import pandas as pd
+import argparse
+import shutil
+import sys
 from pathlib import Path
+
+import pandas as pd
 
 
 def create_test_orders():
@@ -69,7 +77,7 @@ def create_test_orders():
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     df.to_csv(output_path, index=False, encoding='utf-8')
-    print(f"  ✓ Created: {output_path}")
+    print(f"  + Created: {output_path}")
     print(f"    Orders: {df['Name'].nunique()}, Line items: {len(df)}")
 
     return output_path
@@ -108,62 +116,73 @@ def create_test_stock():
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     df.to_csv(output_path, index=False, sep=";", encoding='utf-8')
-    print(f"  ✓ Created: {output_path}")
+    print(f"  + Created: {output_path}")
     print(f"    SKUs: {len(df)}, Total stock: {df['Наличност'].sum()}")
 
     return output_path
 
 
-def create_readme():
-    """Create README for test data."""
+def copy_to_server(orders_path: Path, stock_path: Path, server_path: str):
+    """Copy test data into mock server's latest session input directory.
 
-    readme_content = """# Test Data Files
+    Args:
+        orders_path: Path to generated orders CSV
+        stock_path: Path to generated stock CSV
+        server_path: Mock server base path
+    """
+    server = Path(server_path)
+    sessions_dir = server / "Sessions" / "CLIENT_M"
 
-These files are automatically generated test data for development.
+    if not sessions_dir.exists():
+        print(f"  (skipped server copy - {sessions_dir} does not exist)")
+        return
 
-## Files:
-- `test_orders.csv` - Sample Shopify orders export
-- `test_stock.csv` - Sample warehouse stock inventory
+    # Find latest session
+    session_dirs = sorted(
+        [d for d in sessions_dir.iterdir() if d.is_dir()],
+        key=lambda d: d.name,
+        reverse=True
+    )
 
-## Usage:
-1. Run analysis with these files in the Shopify Tool
-2. Test packing list generation
-3. Test stock export generation
+    if not session_dirs:
+        print(f"  (skipped server copy - no sessions found in {sessions_dir})")
+        return
 
-## Regenerate:
-To regenerate these files, run:
-```
-python scripts/create_test_data.py
-```
+    latest_session = session_dirs[0]
+    input_dir = latest_session / "input"
+    input_dir.mkdir(parents=True, exist_ok=True)
 
-## Notes:
-- Order #1003 has "Priority" tag for testing rules
-- Order #1005 has "Repeat" tag for testing repeat orders
-- SKU "07" is included for testing exclude_skus functionality
-- Stock levels vary to test low stock alerts
-"""
-
-    readme_path = Path("data/test_input/README.md")
-    with open(readme_path, 'w', encoding='utf-8') as f:
-        f.write(readme_content)
-
-    print(f"  ✓ Created: {readme_path}")
+    shutil.copy2(orders_path, input_dir / "orders.csv")
+    shutil.copy2(stock_path, input_dir / "stock.csv")
+    print(f"  + Copied to: {input_dir}")
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Create test CSV files for development")
+    parser.add_argument(
+        '--server-path',
+        default=None,
+        help="Mock server path - also copy test data into latest session's input/"
+    )
+    args = parser.parse_args()
+
     print("=" * 60)
     print("CREATING TEST DATA FILES")
     print("=" * 60)
     print()
 
     try:
-        create_test_orders()
-        create_test_stock()
-        create_readme()
+        orders_path = create_test_orders()
+        stock_path = create_test_stock()
+
+        if args.server_path:
+            print()
+            print("Copying to mock server...")
+            copy_to_server(orders_path, stock_path, args.server_path)
 
         print()
         print("=" * 60)
-        print("✅ TEST DATA CREATED SUCCESSFULLY")
+        print("TEST DATA CREATED SUCCESSFULLY")
         print("=" * 60)
         print()
         print("Files created in: data/test_input/")
@@ -175,6 +194,7 @@ if __name__ == "__main__":
         print()
 
     except Exception as e:
-        print(f"❌ Error creating test data: {e}")
+        print(f"Error creating test data: {e}")
         import traceback
         traceback.print_exc()
+        sys.exit(1)

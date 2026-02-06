@@ -497,8 +497,11 @@ class ProfileManager:
 
         return migrated
 
-    def _create_default_shopify_config(self, client_id: str, client_name: str) -> Dict:
+    @staticmethod
+    def _create_default_shopify_config(client_id: str, client_name: str) -> Dict:
         """Create default Shopify configuration.
+
+        Can be called without an instance for dev/test setup scripts.
 
         Args:
             client_id (str): Client ID
@@ -1035,29 +1038,65 @@ class ProfileManager:
         except Exception as e:
             logger.warning(f"Failed to create backup: {e}")
 
+    @staticmethod
+    def _get_default_ui_settings() -> Dict:
+        """Return default ui_settings including table_view for client_config.
+
+        Can be called without an instance for dev/test setup scripts.
+
+        Returns:
+            Dict: Default ui_settings structure
+        """
+        return {
+            "is_pinned": False,
+            "group_id": None,
+            "custom_color": "#4CAF50",
+            "custom_badges": [],
+            "display_order": 0,
+            "table_view": {
+                "version": 1,
+                "active_view": "Default",
+                "views": {
+                    "Default": {
+                        "visible_columns": {},
+                        "column_order": [],
+                        "column_widths": {},
+                        "auto_hide_empty": True,
+                        "locked_columns": ["Order_Number"]
+                    }
+                },
+                "additional_columns": []
+            }
+        }
+
     def _migrate_add_ui_settings(self, client_id: str, config: Dict) -> bool:
-        """Add ui_settings section if missing.
+        """Add ui_settings section if missing, including table_view.
 
         Args:
             client_id: Client ID (for logging)
             config: Configuration dictionary to migrate (modified in-place)
 
         Returns:
-            bool: True if migration was performed, False if already has ui_settings
+            bool: True if migration was performed, False if no migration needed
         """
-        if "ui_settings" in config:
-            return False
+        migrated = False
 
-        config["ui_settings"] = {
-            "is_pinned": False,
-            "group_id": None,
-            "custom_color": "#4CAF50",
-            "custom_badges": [],
-            "display_order": 0
-        }
+        defaults = self._get_default_ui_settings()
 
-        logger.info(f"Added ui_settings for CLIENT_{client_id}")
-        return True
+        # Add ui_settings if missing
+        if "ui_settings" not in config:
+            # Start with all defaults except table_view (added separately below)
+            config["ui_settings"] = {k: v for k, v in defaults.items() if k != "table_view"}
+            logger.info(f"Added ui_settings for CLIENT_{client_id}")
+            migrated = True
+
+        # Add table_view section to ui_settings if missing
+        if "table_view" not in config["ui_settings"]:
+            config["ui_settings"]["table_view"] = defaults["table_view"]
+            logger.info(f"Added table_view settings for CLIENT_{client_id}")
+            migrated = True
+
+        return migrated
 
     def save_client_config(self, client_id: str, config: Dict) -> bool:
         """Save client_config.json with file locking and backup.

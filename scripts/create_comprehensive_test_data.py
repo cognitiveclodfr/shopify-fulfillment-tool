@@ -21,8 +21,12 @@ from datetime import datetime, timedelta
 import random
 
 
-def create_comprehensive_orders():
-    """Create comprehensive orders CSV with all test scenarios."""
+def create_comprehensive_orders(output_path: Path = None):
+    """Create comprehensive orders CSV with all test scenarios.
+
+    Args:
+        output_path: Optional path for output CSV. Defaults to data/test_input/comprehensive_orders.csv
+    """
 
     print("Creating comprehensive test orders...")
 
@@ -723,11 +727,13 @@ def create_comprehensive_orders():
     df = pd.DataFrame(orders_data)
 
     # Save to CSV
-    output_path = Path("data/test_input/comprehensive_orders.csv")
+    if output_path is None:
+        output_path = Path("data/test_input/comprehensive_orders.csv")
+    output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_path, index=False, encoding='utf-8-sig')
 
-    print(f"  ✓ Created: {output_path}")
+    print(f"  + Created: {output_path}")
     print(f"    Total orders: {df['Name'].nunique()}")
     print(f"    Total line items: {len(df)}")
     print(f"    Date range: {df['Created at'].min()} to {df['Created at'].max()}")
@@ -735,8 +741,12 @@ def create_comprehensive_orders():
     return output_path
 
 
-def create_comprehensive_stock():
-    """Create comprehensive stock CSV matching all order SKUs."""
+def create_comprehensive_stock(output_path: Path = None):
+    """Create comprehensive stock CSV matching all order SKUs.
+
+    Args:
+        output_path: Optional path for output CSV. Defaults to data/test_input/comprehensive_stock.csv
+    """
 
     print("Creating comprehensive stock inventory...")
 
@@ -824,11 +834,13 @@ def create_comprehensive_stock():
     df = pd.DataFrame(stock_data)
 
     # Save to CSV
-    output_path = Path("data/test_input/comprehensive_stock.csv")
+    if output_path is None:
+        output_path = Path("data/test_input/comprehensive_stock.csv")
+    output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_path, index=False, sep=";", encoding='utf-8-sig')
 
-    print(f"  ✓ Created: {output_path}")
+    print(f"  + Created: {output_path}")
     print(f"    Total SKUs: {len(df)}")
     print(f"    Total stock quantity: {df['Наличност'].sum()}")
     print(f"    Low stock items (<=15): {len(df[df['Наличност'] <= 15])}")

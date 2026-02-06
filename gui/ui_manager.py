@@ -641,8 +641,13 @@ class UIManager:
         self.mw.settings_button.setToolTip("Open the settings window for the active client.")
         self.mw.settings_button.setEnabled(False)  # Enabled when client is selected
 
+        self.mw.configure_columns_button = QPushButton("📊 Configure Columns")
+        self.mw.configure_columns_button.setToolTip("Customize table column visibility and order")
+        self.mw.configure_columns_button.setEnabled(False)  # Enabled after analysis
+
         actions_layout.addWidget(self.mw.run_analysis_button, 1)
         actions_layout.addWidget(self.mw.settings_button)
+        actions_layout.addWidget(self.mw.configure_columns_button)
         main_layout.addLayout(actions_layout)
 
         # Manual operations
@@ -846,7 +851,20 @@ class UIManager:
             # Populate tag filter combo box
             self._populate_tag_filter()
 
+        # Auto-fit columns to content FIRST, then apply saved config on top
+        # (config may override widths; doing it in this order prevents
+        # resizeColumnsToContents from triggering sectionResized on hidden columns)
         self.mw.tableView.resizeColumnsToContents()
+
+        # Apply table configuration (column visibility, order, widths)
+        if hasattr(self.mw, 'table_config_manager'):
+            self.mw.table_config_manager.apply_config_to_view(
+                self.mw.tableView,
+                data_df
+            )
+
+        # Update hidden columns indicator
+        self.update_hidden_columns_indicator()
 
     def _populate_tag_filter(self):
         """Populate the tag filter combo box with available tags from categories."""
@@ -997,6 +1015,18 @@ class UIManager:
         )
         layout.addWidget(self.mw.settings_button_tab2)
 
+        # Configure Columns button (Tab 2 version)
+        self.mw.configure_columns_button_tab2 = QPushButton("📊 Configure Columns")
+        self.mw.configure_columns_button_tab2.setEnabled(False)
+        self.mw.configure_columns_button_tab2.setToolTip(
+            "Customize table column visibility and order"
+        )
+        self.mw.configure_columns_button_tab2.clicked.connect(
+            lambda: self.mw.open_column_config_dialog()
+            if hasattr(self.mw, 'open_column_config_dialog') else None
+        )
+        layout.addWidget(self.mw.configure_columns_button_tab2)
+
         # Add separator
         layout.addSpacing(20)
 
@@ -1054,7 +1084,155 @@ class UIManager:
         # Add tag panel to layout
         layout.addWidget(self.mw.tag_management_panel)
 
+        # Setup header context menu for column visibility
+        self._setup_header_context_menu()
+
         return container
+
+    def _setup_header_context_menu(self):
+        """Setup context menu and signals for table header.
+
+        Sets up:
+        - Context menu for column visibility control
+        - Signal handlers for column resize (with debounced save)
+        - Signal handlers for column move (with Order_Number protection)
+        """
+        header = self.mw.tableView.horizontalHeader()
+        header.setContextMenuPolicy(Qt.CustomContextMenu)
+        header.customContextMenuRequested.connect(self._show_header_context_menu)
+
+        # Enable column moving (user can drag-and-drop columns)
+        header.setSectionsMovable(True)
+
+        # Connect resize and move signals to TableConfigManager
+        if hasattr(self.mw, 'table_config_manager'):
+            header.sectionResized.connect(self.mw.table_config_manager.on_column_resized)
+            header.sectionMoved.connect(self.mw.table_config_manager.on_column_moved)
+
+    def _show_header_context_menu(self, position):
+        """Show context menu for table header.
+
+        Args:
+            position: Position where menu was requested
+        """
+        from PySide6.QtWidgets import QMenu
+        from PySide6.QtGui import QAction
+
+        # Only show menu if table config manager is available
+        if not hasattr(self.mw, 'table_config_manager'):
+            return
+
+        # Only show menu if data is loaded
+        if self.mw.analysis_results_df is None or self.mw.analysis_results_df.empty:
+            return
+
+        header = self.mw.tableView.horizontalHeader()
+
+        # Get logical index at position
+        logical_index = header.logicalIndexAt(position)
+
+        if logical_index < 0:
+            return
+
+        # Get column name from index
+        model = self.mw.tableView.model()
+        if model is None:
+            return
+
+        # Get source model (unwrap proxy if present)
+        source_model = model
+        if hasattr(model, 'sourceModel') and model.sourceModel() is not None:
+            source_model = model.sourceModel()
+
+        # Adjust index if checkbox column exists
+        col_index = logical_index
+        if hasattr(source_model, 'enable_checkboxes') and source_model.enable_checkboxes:
+            if col_index == 0:
+                # Checkbox column, no menu
+                return
+            col_index -= 1  # Adjust for checkbox column
+
+        # Get DataFrame columns
+        df_columns = self.mw.analysis_results_df.columns.tolist()
+
+        if col_index >= len(df_columns):
+            return
+
+        column_name = df_columns[col_index]
+
+        # Check if column is locked
+        is_locked = (hasattr(self.mw.table_config_manager, '_current_config') and
+                     self.mw.table_config_manager._current_config and
+                     column_name in self.mw.table_config_manager._current_config.locked_columns)
+
+        # Create context menu
+        menu = QMenu(self.mw)
+
+        # Get current visibility
+        is_visible = self.mw.table_config_manager.get_column_visibility(column_name)
+
+        # Add toggle visibility action
+        if is_locked:
+            action_text = f"{column_name} (Locked - Always Visible)"
+            action = QAction(action_text, self.mw)
+            action.setEnabled(False)
+            menu.addAction(action)
+        else:
+            action_text = f"Hide '{column_name}'" if is_visible else f"Show '{column_name}'"
+            action = QAction(action_text, self.mw)
+            action.triggered.connect(
+                lambda: (
+                    self.mw.table_config_manager.toggle_column_visibility(
+                        self.mw.tableView, column_name, self.mw.analysis_results_df
+                    ),
+                    self.update_hidden_columns_indicator()
+                )
+            )
+            menu.addAction(action)
+
+        menu.addSeparator()
+
+        # Add "Show All Columns" action
+        show_all_action = QAction("Show All Columns", self.mw)
+        show_all_action.triggered.connect(
+            lambda: (
+                self.mw.table_config_manager.show_all_columns(
+                    self.mw.tableView, self.mw.analysis_results_df
+                ),
+                self.update_hidden_columns_indicator()
+            )
+        )
+        menu.addAction(show_all_action)
+
+        # Add submenu for showing hidden columns
+        hidden_columns = self.mw.table_config_manager.get_hidden_columns(self.mw.analysis_results_df)
+        if hidden_columns:
+            show_menu = menu.addMenu("Show Column")
+            for hidden_col in hidden_columns:
+                col_action = QAction(hidden_col, self.mw)
+                col_action.triggered.connect(
+                    lambda checked=False, col=hidden_col: (
+                        self.mw.table_config_manager.set_column_visibility(
+                            self.mw.tableView, col, True, self.mw.analysis_results_df
+                        ),
+                        self.update_hidden_columns_indicator()
+                    )
+                )
+                show_menu.addAction(col_action)
+
+        menu.addSeparator()
+
+        # Add "Auto-Fit Column Widths" action
+        auto_fit_action = QAction("Auto-Fit Column Widths", self.mw)
+        auto_fit_action.triggered.connect(
+            lambda: self.mw.table_config_manager.auto_fit_column_widths(
+                self.mw.tableView, self.mw.analysis_results_df
+            )
+        )
+        menu.addAction(auto_fit_action)
+
+        # Show menu at cursor position
+        menu.exec(header.mapToGlobal(position))
 
     def _create_summary_bar(self):
         """Create summary bar at bottom of Tab 2."""
@@ -1068,6 +1246,18 @@ class UIManager:
         layout.addWidget(self.mw.summary_label)
 
         layout.addStretch()
+
+        # Hidden columns indicator (clickable)
+        self.mw.hidden_columns_indicator = QPushButton("")
+        self.mw.hidden_columns_indicator.setFlat(True)
+        self.mw.hidden_columns_indicator.setStyleSheet(
+            "QPushButton { color: #4A90D9; text-decoration: underline; border: none; padding: 0 5px; }"
+            "QPushButton:hover { color: #2A70B9; }"
+        )
+        self.mw.hidden_columns_indicator.setToolTip("Click to show/restore hidden columns")
+        self.mw.hidden_columns_indicator.setVisible(False)
+        self.mw.hidden_columns_indicator.clicked.connect(self._show_hidden_columns_popup)
+        layout.addWidget(self.mw.hidden_columns_indicator)
 
         return widget
 
@@ -1087,6 +1277,78 @@ class UIManager:
             f"📊 {total_orders} orders │ {total_items} items │ "
             f"{fulfillable} fulfillable"
         )
+
+    def update_hidden_columns_indicator(self):
+        """Update the hidden columns indicator in the summary bar."""
+        if not hasattr(self.mw, 'hidden_columns_indicator'):
+            return
+
+        if not hasattr(self.mw, 'table_config_manager') or \
+           not hasattr(self.mw, 'analysis_results_df') or \
+           self.mw.analysis_results_df is None:
+            self.mw.hidden_columns_indicator.setVisible(False)
+            return
+
+        hidden = self.mw.table_config_manager.get_hidden_columns(self.mw.analysis_results_df)
+        if hidden:
+            self.mw.hidden_columns_indicator.setText(f"{len(hidden)} columns hidden")
+            self.mw.hidden_columns_indicator.setVisible(True)
+        else:
+            self.mw.hidden_columns_indicator.setVisible(False)
+
+    def _show_hidden_columns_popup(self):
+        """Show popup menu listing hidden columns with quick-toggle options."""
+        from PySide6.QtWidgets import QMenu
+        from PySide6.QtGui import QAction
+
+        if not hasattr(self.mw, 'table_config_manager') or \
+           self.mw.analysis_results_df is None:
+            return
+
+        hidden = self.mw.table_config_manager.get_hidden_columns(self.mw.analysis_results_df)
+        if not hidden:
+            return
+
+        menu = QMenu(self.mw)
+
+        for col in hidden:
+            action = QAction(f"Show '{col}'", self.mw)
+            action.triggered.connect(
+                lambda checked=False, c=col: self._restore_hidden_column(c)
+            )
+            menu.addAction(action)
+
+        menu.addSeparator()
+
+        show_all_action = QAction("Show All Columns", self.mw)
+        show_all_action.triggered.connect(self._restore_all_hidden_columns)
+        menu.addAction(show_all_action)
+
+        # Show menu above the indicator button
+        pos = self.mw.hidden_columns_indicator.mapToGlobal(
+            self.mw.hidden_columns_indicator.rect().topLeft()
+        )
+        menu.exec(pos)
+
+    def _restore_hidden_column(self, column_name: str):
+        """Restore a single hidden column via the indicator popup."""
+        if hasattr(self.mw, 'table_config_manager') and \
+           hasattr(self.mw, 'tableView') and \
+           self.mw.analysis_results_df is not None:
+            self.mw.table_config_manager.set_column_visibility(
+                self.mw.tableView, column_name, True, self.mw.analysis_results_df
+            )
+            self.update_hidden_columns_indicator()
+
+    def _restore_all_hidden_columns(self):
+        """Restore all hidden columns via the indicator popup."""
+        if hasattr(self.mw, 'table_config_manager') and \
+           hasattr(self.mw, 'tableView') and \
+           self.mw.analysis_results_df is not None:
+            self.mw.table_config_manager.show_all_columns(
+                self.mw.tableView, self.mw.analysis_results_df
+            )
+            self.update_hidden_columns_indicator()
 
     def _create_statistics_subtab(self):
         """Create statistics sub-tab for Tab 4."""
