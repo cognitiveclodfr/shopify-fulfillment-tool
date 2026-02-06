@@ -9,7 +9,8 @@ logger = logging.getLogger(__name__)
 def _clean_and_prepare_data(
     orders_df: pd.DataFrame,
     stock_df: pd.DataFrame,
-    column_mappings: Optional[dict] = None
+    column_mappings: Optional[dict] = None,
+    additional_columns_config: Optional[List[dict]] = None
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Clean and standardize input data for analysis.
@@ -97,6 +98,20 @@ def _clean_and_prepare_data(
         if stock_rename_map:
             stock_df = stock_df.rename(columns=stock_rename_map)
 
+    # Rename additional columns from CSV names to internal names
+    if additional_columns_config:
+        logger.info(f"Processing {len(additional_columns_config)} additional columns config")
+        additional_rename_map = {
+            col["csv_name"]: col["internal_name"]
+            for col in additional_columns_config
+            if col.get("enabled", True) and col["csv_name"] in orders_df.columns
+        }
+        if additional_rename_map:
+            orders_df = orders_df.rename(columns=additional_rename_map)
+            logger.info(f"Renamed {len(additional_rename_map)} additional columns: {list(additional_rename_map.values())}")
+        else:
+            logger.info("No additional columns to rename (none enabled or found in CSV)")
+
     # --- Step 1: Data Cleaning (now using internal standard names) ---
     # Forward-fill order-level columns
     if "Order_Number" in orders_df.columns:
@@ -110,8 +125,21 @@ def _clean_and_prepare_data(
     if "Subtotal" in orders_df.columns:
         orders_df["Subtotal"] = orders_df["Subtotal"].ffill()
 
+    # Forward-fill additional order-level columns from config
+    if additional_columns_config:
+        order_level_additional = [
+            col["internal_name"]
+            for col in additional_columns_config
+            if col.get("is_order_level", False) and col.get("enabled", True)
+        ]
+        for col_name in order_level_additional:
+            if col_name in orders_df.columns:
+                orders_df[col_name] = orders_df[col_name].ffill()
+                logger.debug(f"Forward-filled order-level additional column: {col_name}")
+
     # Keep only relevant columns (internal names)
-    columns_to_keep = [
+    # Base columns (critical + standard optional)
+    base_columns = [
         "Order_Number",
         "SKU",
         "Quantity",
@@ -123,8 +151,38 @@ def _clean_and_prepare_data(
         "Total_Price",
         "Subtotal",
     ]
+
+    # Get enabled additional columns from config
+    additional_columns = []
+    if additional_columns_config:
+        additional_columns = [
+            col["internal_name"]
+            for col in additional_columns_config
+            if col.get("enabled", True) and col["internal_name"] in orders_df.columns
+        ]
+
+        logger.info(f"Additional columns to keep: {len(additional_columns)} columns")
+        if additional_columns:
+            logger.info(f"  Columns: {additional_columns}")
+
+        # Log if configured columns are missing from CSV
+        missing_cols = [
+            col["csv_name"]
+            for col in additional_columns_config
+            if col.get("enabled", True) and col["internal_name"] not in orders_df.columns
+        ]
+        if missing_cols:
+            logger.warning(
+                f"Configured additional columns not found in CSV: {missing_cols}. "
+                f"These columns will be skipped."
+            )
+
+    # Combine base + additional columns
+    columns_to_keep = base_columns + additional_columns
+    logger.info(f"Total columns to keep: {len(columns_to_keep)} ({len(base_columns)} base + {len(additional_columns)} additional)")
     # Filter for existing columns only
     columns_to_keep_existing = [col for col in columns_to_keep if col in orders_df.columns]
+    logger.info(f"Columns existing in DataFrame: {len(columns_to_keep_existing)}")
     orders_clean_df = orders_df[columns_to_keep_existing].copy()
 
     # Mark rows without SKU but keep them (don't drop)
@@ -539,7 +597,8 @@ def _merge_results_to_dataframe(
     fulfillment_results: Dict[str, str],
     history_df: pd.DataFrame,
     courier_mappings: Optional[dict] = None,
-    repeat_window_days: int = 1
+    repeat_window_days: int = 1,
+    additional_columns_config: Optional[list] = None
 ) -> pd.DataFrame:
     """
     Merge all analysis results into final output DataFrame.
@@ -741,6 +800,26 @@ def _merge_results_to_dataframe(
     if "Has_SKU" in final_df.columns:
         # Insert 'Has_SKU' after SKU (position 3)
         output_columns.insert(3, "Has_SKU")
+
+    # IMPORTANT: Add additional columns from configuration
+    # Only add columns that are:
+    # 1. Enabled in the configuration
+    # 2. Actually present in the DataFrame
+    if additional_columns_config:
+        enabled_additional = [
+            col["internal_name"]
+            for col in additional_columns_config
+            if col.get("enabled", False) and col["internal_name"] in final_df.columns
+        ]
+
+        if enabled_additional:
+            logger.info(f"Adding {len(enabled_additional)} enabled additional columns to output: {enabled_additional}")
+            # Add enabled additional columns at the end
+            output_columns.extend(enabled_additional)
+        else:
+            logger.debug("No enabled additional columns to add to output")
+    else:
+        logger.debug("No additional columns configuration provided")
 
     # Filter the list to include only columns that actually exist in the DataFrame.
     # This prevents errors if a column is unexpectedly missing.
@@ -961,9 +1040,19 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None, courier_
     try:
         # Phase 1: Clean and prepare data
         logger.info("Phase 1/7: Data cleaning and preparation")
+
+        # Extract additional columns config if present
+        additional_columns_config = column_mappings.get("additional_columns", []) if column_mappings else []
+        enabled_additional = [col for col in additional_columns_config if col.get("enabled", False)]
+        logger.info(f"Additional columns: {len(additional_columns_config)} total, {len(enabled_additional)} enabled")
+        if enabled_additional:
+            logger.info(f"Enabled columns: {[col['csv_name'] for col in enabled_additional]}")
+
         orders_clean, stock_clean = _clean_and_prepare_data(
-            orders_df, stock_df, column_mappings
+            orders_df, stock_df, column_mappings, additional_columns_config
         )
+
+        logger.info(f"After cleaning: orders_clean has {len(orders_clean.columns)} columns: {list(orders_clean.columns)}")
 
         # Phase 2: Prioritize orders
         logger.info("Phase 2/7: Order prioritization (multi-item first)")
@@ -987,7 +1076,8 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None, courier_
         order_item_counts = orders_clean.groupby("Order_Number").size().rename("item_count")
         final_df = _merge_results_to_dataframe(
             orders_clean, stock_clean, order_item_counts, final_stock,
-            fulfillment_results, history_df, courier_mappings, repeat_window_days
+            fulfillment_results, history_df, courier_mappings, repeat_window_days,
+            additional_columns_config
         )
 
         # Phase 7: Generate summary reports
@@ -1002,6 +1092,8 @@ def run_analysis(stock_df, orders_df, history_df, column_mappings=None, courier_
         logger.info("ANALYSIS COMPLETED SUCCESSFULLY")
         logger.info(f"Total Orders Completed: {stats['total_orders_completed']}")
         logger.info(f"Total Orders Not Completed: {stats['total_orders_not_completed']}")
+        logger.info(f"Final DataFrame: {len(final_df)} rows, {len(final_df.columns)} columns")
+        logger.info(f"Columns: {list(final_df.columns)}")
         logger.info("=" * 60)
 
         return final_df, summary_present_df, summary_missing_df, stats

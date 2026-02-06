@@ -110,6 +110,17 @@ class FileHandler:
                 delimiter = config_delimiter
                 self.log.info(f"Using configured orders delimiter: '{delimiter}'")
 
+        # Load and store original orders DataFrame for column discovery
+        try:
+            import pandas as pd
+            orders_df = pd.read_csv(filepath, delimiter=delimiter, encoding='utf-8-sig')
+            self.mw.last_loaded_orders_df = orders_df.copy()
+            self.log.info(f"Loaded orders DataFrame: {len(orders_df)} rows, {len(orders_df.columns)} columns")
+        except Exception as e:
+            self.log.warning(f"Failed to load orders DataFrame for column discovery: {e}")
+            # Don't fail the file selection, just skip storing the DataFrame
+            self.mw.last_loaded_orders_df = None
+
         self.validate_file("orders")
         self.check_files_ready()
 
@@ -422,6 +433,17 @@ class FileHandler:
         # 7. Store merged path and update UI
         self.mw.orders_file_path = merged_path
         self.mw.orders_source_files = valid_files  # Store for reference
+
+        # Load and store original orders DataFrame for column discovery
+        try:
+            import pandas as pd
+            orders_df = pd.read_csv(merged_path, delimiter=delimiter, encoding='utf-8-sig')
+            self.mw.last_loaded_orders_df = orders_df.copy()
+            self.log.info(f"Loaded merged orders DataFrame: {len(orders_df)} rows, {len(orders_df.columns)} columns")
+        except Exception as e:
+            self.log.warning(f"Failed to load merged orders DataFrame for column discovery: {e}")
+            # Don't fail the merge, just skip storing the DataFrame
+            self.mw.last_loaded_orders_df = None
 
         # Update UI
         self.mw.orders_file_path_label.setText(
