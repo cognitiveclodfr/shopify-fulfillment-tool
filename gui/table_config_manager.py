@@ -284,6 +284,29 @@ class TableConfigManager:
                     self._current_config,
                     self._current_view_name
                 )
+        else:
+            # Config exists, but check for new columns from DataFrame
+            config_columns = set(self._current_config.visible_columns.keys())
+            new_columns = [col for col in df_columns if col not in config_columns]
+
+            if new_columns:
+                logger.info(f"Found {len(new_columns)} new columns in DataFrame, adding to config: {new_columns}")
+
+                # Add new columns as visible by default
+                for col in new_columns:
+                    self._current_config.visible_columns[col] = True
+
+                # Add new columns to end of column_order
+                self._current_config.column_order.extend(new_columns)
+
+                # Save updated config
+                if self._current_client_id:
+                    self.save_config(
+                        self._current_client_id,
+                        self._current_config,
+                        self._current_view_name
+                    )
+                    logger.debug(f"Saved updated config with {len(new_columns)} new columns")
 
         # Apply column order FIRST (before visibility to avoid moveSection
         # interacting with already-hidden sections)

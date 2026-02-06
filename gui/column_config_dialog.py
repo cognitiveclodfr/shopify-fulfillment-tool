@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QInputDialog,
     QGroupBox,
+    QWidget,
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QIcon
@@ -53,6 +54,9 @@ class ColumnConfigDialog(QDialog):
         self._original_view_name = None  # Store original view name for cancel
         self._current_columns: List[str] = []
         self._is_loading = False
+
+        # Initialize additional columns config (always defined)
+        self.additional_columns_config: List[dict] = []
 
         self.setWindowTitle("Manage Table Columns")
         self.setMinimumSize(600, 700)
@@ -135,6 +139,43 @@ class ColumnConfigDialog(QDialog):
         view_group.setLayout(view_layout)
         main_layout.addWidget(view_group)
 
+        # Additional Columns Section
+        additional_group = QGroupBox("Additional CSV Columns")
+        additional_layout = QVBoxLayout()
+
+        # Info label
+        info_label = QLabel(
+            "Configure additional columns from your CSV file to include in analysis.\n"
+            "These columns are not in the standard mapping but can be preserved if needed."
+        )
+        info_label.setWordWrap(True)
+        info_label.setStyleSheet("color: #666; font-style: italic;")
+        additional_layout.addWidget(info_label)
+
+        # Scan button
+        self.scan_csv_button = QPushButton("Scan Current CSV for Available Columns")
+        self.scan_csv_button.clicked.connect(self._on_scan_csv)
+        additional_layout.addWidget(self.scan_csv_button)
+
+        # Additional columns list
+        self.additional_columns_list = QListWidget()
+        self.additional_columns_list.setMaximumHeight(200)
+        additional_layout.addWidget(self.additional_columns_list)
+
+        # Bulk operations
+        additional_buttons = QHBoxLayout()
+        self.enable_all_additional_button = QPushButton("Enable All")
+        self.enable_all_additional_button.clicked.connect(self._on_enable_all_additional)
+        self.disable_all_additional_button = QPushButton("Disable All")
+        self.disable_all_additional_button.clicked.connect(self._on_disable_all_additional)
+        additional_buttons.addWidget(self.enable_all_additional_button)
+        additional_buttons.addWidget(self.disable_all_additional_button)
+        additional_buttons.addStretch()
+        additional_layout.addLayout(additional_buttons)
+
+        additional_group.setLayout(additional_layout)
+        main_layout.addWidget(additional_group)
+
         # Reset section
         reset_layout = QHBoxLayout()
         self.reset_button = QPushButton("Reset to Default")
@@ -211,6 +252,9 @@ class ColumnConfigDialog(QDialog):
 
             # Load columns
             self._load_columns(config)
+
+            # Load existing additional columns configuration
+            self._load_additional_columns_config()
 
         finally:
             self._is_loading = False
@@ -606,6 +650,35 @@ class ColumnConfigDialog(QDialog):
                 view_name = self.view_combo.currentText() or "Default"
                 self.table_config_manager.save_config(client_id, config, view_name)
 
+                # Save additional columns config (always save, even if empty)
+                if hasattr(self, 'additional_columns_config'):
+                    # CRITICAL: Sync UI state to config before saving
+                    # This ensures all checkbox changes are captured, even if signal handlers missed any
+                    if self.additional_columns_config:
+                        logger.debug("Syncing UI checkbox states to config before saving...")
+                        self._sync_ui_to_config()
+
+                    enabled_cols = [col for col in self.additional_columns_config if col.get('enabled', False)]
+                    disabled_cols = [col for col in self.additional_columns_config if not col.get('enabled', False)]
+
+                    logger.debug(f"Saving additional columns config: {len(self.additional_columns_config)} columns")
+                    logger.debug(f"  Enabled: {len(enabled_cols)} - {[col['csv_name'] for col in enabled_cols]}")
+                    logger.debug(f"  Disabled: {len(disabled_cols)}")
+
+                    client_config = self.table_config_manager.pm.load_client_config(client_id)
+
+                    # Update additional_columns in config
+                    if "ui_settings" not in client_config:
+                        client_config["ui_settings"] = {}
+                    if "table_view" not in client_config["ui_settings"]:
+                        client_config["ui_settings"]["table_view"] = {}
+
+                    client_config["ui_settings"]["table_view"]["additional_columns"] = self.additional_columns_config
+
+                    # Save config
+                    self.table_config_manager.pm.save_client_config(client_id, client_config)
+                    logger.info(f"✓ Saved additional columns: {len(enabled_cols)} enabled ({', '.join([col['csv_name'] for col in enabled_cols])})")
+
                 # Apply to table view if available
                 if hasattr(self.parent_window, 'tableView') and \
                    hasattr(self.parent_window, 'analysis_results_df') and \
@@ -616,6 +689,16 @@ class ColumnConfigDialog(QDialog):
                     )
 
                 logger.info("Column configuration applied successfully")
+
+                # Show info message if additional columns were configured and enabled
+                if hasattr(self, 'additional_columns_config') and any(col.get('enabled', False) for col in self.additional_columns_config):
+                    QMessageBox.information(
+                        self,
+                        "Configuration Saved",
+                        "Table configuration has been saved.\n\n"
+                        "Note: If you changed additional columns, you must re-run the analysis "
+                        "to see the changes in the results table."
+                    )
 
                 # Emit signal
                 self.config_applied.emit()
@@ -686,3 +769,218 @@ class ColumnConfigDialog(QDialog):
         view_name = self.view_combo.currentText()
         # Cannot delete Default view
         self.delete_view_button.setEnabled(view_name != "Default" and bool(view_name))
+
+    def _on_scan_csv(self):
+        """Scan current analysis dataframe for additional columns."""
+        # Get main window reference
+        main_window = self.table_config_manager.mw
+
+        if not hasattr(main_window, 'last_loaded_orders_df') or main_window.last_loaded_orders_df is None:
+            QMessageBox.information(
+                self,
+                "No CSV Loaded",
+                "Please load an orders CSV file first, then open this dialog to scan for additional columns."
+            )
+            return
+
+        # IMPORTANT: Save current UI state before scanning, so user's checkbox changes aren't lost
+        if hasattr(self, 'additional_columns_config') and self.additional_columns_config:
+            self._sync_ui_to_config()
+
+        # Get the original orders dataframe (before analysis)
+        orders_df = main_window.last_loaded_orders_df
+
+        # Get column mappings from shopify config
+        client_id = main_window.current_client_id
+        shopify_config = self.table_config_manager.pm.load_shopify_config(client_id)
+        column_mappings = shopify_config.get("column_mappings", {})
+
+        # Use current in-memory config if available, otherwise load from disk
+        if hasattr(self, 'additional_columns_config') and self.additional_columns_config:
+            current_additional = self.additional_columns_config
+        else:
+            client_config = self.table_config_manager.pm.load_client_config(client_id)
+            current_additional = client_config.get("ui_settings", {}).get("table_view", {}).get("additional_columns", [])
+
+        # Discover available columns
+        from shopify_tool.csv_utils import discover_additional_columns
+        discovered = discover_additional_columns(orders_df, column_mappings, current_additional)
+
+        # Update UI list
+        self._populate_additional_columns_list(discovered)
+
+        # Store config for saving later
+        self.additional_columns_config = discovered
+
+        # Show result message
+        available_count = sum(1 for col in discovered if col["exists_in_df"])
+        QMessageBox.information(
+            self,
+            "Scan Complete",
+            f"Found {available_count} additional columns available in the current CSV file.\n\n"
+            f"Check the columns you want to include in your analysis, then click Apply."
+        )
+
+    def _populate_additional_columns_list(self, columns_config: List[dict]):
+        """Populate the additional columns list widget."""
+        self.additional_columns_list.clear()
+
+        for col_config in columns_config:
+            item = QListWidgetItem()
+
+            # Create widget for list item
+            widget = QWidget()
+            layout = QHBoxLayout()
+            layout.setContentsMargins(4, 2, 4, 2)
+
+            # Checkbox for enabled state
+            checkbox = QCheckBox(col_config["csv_name"])
+            checkbox.setChecked(col_config["enabled"])
+            checkbox.setProperty("internal_name", col_config["internal_name"])
+            checkbox.stateChanged.connect(self._on_additional_column_toggled)
+
+            # Order-level checkbox
+            order_level_cb = QCheckBox("Order-Level")
+            order_level_cb.setChecked(col_config["is_order_level"])
+            order_level_cb.setProperty("internal_name", col_config["internal_name"])
+            order_level_cb.setToolTip("If checked, this column will be forward-filled for multi-item orders")
+            order_level_cb.stateChanged.connect(self._on_order_level_toggled)
+
+            layout.addWidget(checkbox)
+            layout.addStretch()
+            layout.addWidget(order_level_cb)
+
+            # Visual indicator if column doesn't exist in current CSV
+            if not col_config["exists_in_df"]:
+                not_found_label = QLabel("(not in current CSV)")
+                not_found_label.setStyleSheet("color: #999; font-style: italic;")
+                layout.addWidget(not_found_label)
+                checkbox.setEnabled(False)
+
+            widget.setLayout(layout)
+
+            # Add to list
+            item.setSizeHint(widget.sizeHint())
+            self.additional_columns_list.addItem(item)
+            self.additional_columns_list.setItemWidget(item, widget)
+
+    def _load_additional_columns_config(self):
+        """Load existing additional columns configuration from client config."""
+        if not hasattr(self.parent_window, 'current_client_id') or not self.parent_window.current_client_id:
+            logger.debug("No client selected, skipping additional columns load")
+            return
+
+        try:
+            client_id = self.parent_window.current_client_id
+            client_config = self.table_config_manager.pm.load_client_config(client_id)
+
+            if not client_config:
+                logger.debug("No client config found")
+                return
+
+            # Get existing additional columns configuration
+            existing_additional = client_config.get("ui_settings", {}).get("table_view", {}).get("additional_columns", [])
+
+            if existing_additional:
+                # Store config
+                self.additional_columns_config = existing_additional
+
+                # Populate the list with existing configuration
+                self._populate_additional_columns_list(existing_additional)
+
+                logger.info(f"Loaded {len(existing_additional)} additional columns from client config")
+            else:
+                logger.debug("No additional columns configuration found for this client")
+
+        except Exception as e:
+            logger.warning(f"Failed to load additional columns configuration: {e}")
+
+    def _on_additional_column_toggled(self, state):
+        """Handle checkbox state change for additional column."""
+        checkbox = self.sender()
+        internal_name = checkbox.property("internal_name")
+        csv_name = checkbox.text()
+        is_enabled = (state == Qt.CheckState.Checked)
+
+        # Update config
+        for col in self.additional_columns_config:
+            if col["internal_name"] == internal_name:
+                col["enabled"] = is_enabled
+                logger.debug(f"Toggled '{csv_name}' ({internal_name}): enabled={is_enabled}")
+                break
+
+    def _on_order_level_toggled(self, state):
+        """Handle order-level checkbox state change."""
+        checkbox = self.sender()
+        internal_name = checkbox.property("internal_name")
+
+        # Update config
+        for col in self.additional_columns_config:
+            if col["internal_name"] == internal_name:
+                col["is_order_level"] = (state == Qt.CheckState.Checked)
+                break
+
+    def _on_enable_all_additional(self):
+        """Enable all additional columns that exist in current CSV."""
+        for col in self.additional_columns_config:
+            if col["exists_in_df"]:
+                col["enabled"] = True
+        self._populate_additional_columns_list(self.additional_columns_config)
+
+    def _on_disable_all_additional(self):
+        """Disable all additional columns."""
+        for col in self.additional_columns_config:
+            col["enabled"] = False
+        self._populate_additional_columns_list(self.additional_columns_config)
+
+    def _sync_ui_to_config(self):
+        """Sync current UI checkbox states back to self.additional_columns_config.
+
+        This is called before scanning CSV again, so that user's checkbox changes
+        are not lost when the list is regenerated.
+        """
+        if not hasattr(self, 'additional_columns_config') or not self.additional_columns_config:
+            return
+
+        # Build a map of current checkbox states from UI
+        ui_states = {}
+
+        for i in range(self.additional_columns_list.count()):
+            item = self.additional_columns_list.item(i)
+            widget = self.additional_columns_list.itemWidget(item)
+
+            if widget is None:
+                continue
+
+            # Find checkboxes in the widget
+            checkboxes = widget.findChildren(QCheckBox)
+            if len(checkboxes) >= 2:
+                main_checkbox = checkboxes[0]  # Column name checkbox
+                order_level_checkbox = checkboxes[1]  # Order-Level checkbox
+
+                internal_name = main_checkbox.property("internal_name")
+                if internal_name:
+                    ui_states[internal_name] = {
+                        "enabled": main_checkbox.isChecked(),
+                        "is_order_level": order_level_checkbox.isChecked()
+                    }
+
+        # Update config with UI states
+        changes_count = 0
+        for col in self.additional_columns_config:
+            internal_name = col["internal_name"]
+            if internal_name in ui_states:
+                old_enabled = col["enabled"]
+                new_enabled = ui_states[internal_name]["enabled"]
+
+                col["enabled"] = new_enabled
+                col["is_order_level"] = ui_states[internal_name]["is_order_level"]
+
+                if old_enabled != new_enabled:
+                    changes_count += 1
+                    logger.debug(f"  Synced '{col['csv_name']}': {old_enabled} -> {new_enabled}")
+
+        if changes_count > 0:
+            logger.debug(f"Synced {changes_count} checkbox state changes from UI")
+
+        logger.debug(f"Synced UI state to config: {len(ui_states)} columns updated")

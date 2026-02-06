@@ -625,6 +625,16 @@ def _run_analysis_and_rules(
     if not isinstance(column_mappings, dict):
         column_mappings = {}
     column_mappings["set_decoders"] = config.get("set_decoders", {})
+
+    # Add additional columns from UI settings to column_mappings
+    client_config = config.get("_client_config", {})  # Passed from main_window
+    ui_settings = client_config.get("ui_settings", {})
+    table_view = ui_settings.get("table_view", {})
+    additional_columns = table_view.get("additional_columns", [])
+
+    # Inject into column_mappings so analysis receives it
+    column_mappings["additional_columns"] = additional_columns
+    logger.debug(f"Additional columns config: {len(additional_columns)} columns")
     logger.debug(f"Using column mappings: {column_mappings}")
 
     # Get courier mappings from config
@@ -752,11 +762,28 @@ def _save_results_and_reports(
 
         worksheet = writer.sheets["fulfillment_analysis"]
         highlight_format = workbook.add_format({"bg_color": "#FFC7CE", "font_color": "#9C0006"})
-        for idx, col in enumerate(final_df):
-            # Convert to string and handle NaN values before calculating length
-            col_strings = final_df[col].astype(str).fillna('')
-            max_len = max((col_strings.str.len().max(), len(str(col)))) + 2
-            worksheet.set_column(idx, idx, max_len)
+        for idx, col in enumerate(final_df.columns):
+            try:
+                # Convert to string and handle NaN values before calculating length
+                col_data = final_df[col]
+                # Ensure we have a Series, not DataFrame
+                if isinstance(col_data, pd.DataFrame):
+                    col_data = col_data.iloc[:, 0]
+
+                col_strings = col_data.astype(str).fillna('')
+
+                # Calculate max length safely
+                if len(col_strings) > 0:
+                    max_data_len = col_strings.str.len().max()
+                    max_len = max(max_data_len, len(str(col))) + 2
+                else:
+                    max_len = len(str(col)) + 2
+
+                worksheet.set_column(idx, idx, max_len)
+            except Exception as e:
+                # If column width calculation fails, use default width
+                logger.warning(f"Could not calculate width for column '{col}': {e}")
+                worksheet.set_column(idx, idx, 15)  # Default width
         for row_num, status in enumerate(final_df["Order_Fulfillment_Status"]):
             if status == "Not Fulfillable":
                 worksheet.set_row(row_num + 1, None, highlight_format)
@@ -987,6 +1014,23 @@ def run_full_analysis(
 
         # Step 4: Run analysis and apply rules
         logger.info("Step 4: Running analysis and applying rules...")
+
+        # ALWAYS reload client config from disk to get fresh configuration
+        # (GUI may have stale config in memory if user changed settings)
+        if profile_manager and client_id:
+            logger.info("Reloading fresh client config from disk...")
+            client_config = profile_manager.load_client_config(client_id)
+            config["_client_config"] = client_config
+
+            # Check if there are additional columns configured
+            additional_cols = client_config.get("ui_settings", {}).get("table_view", {}).get("additional_columns", [])
+            enabled_cols = [col for col in additional_cols if col.get("enabled", False)]
+            logger.info(f"Loaded client config: {len(additional_cols)} additional columns configured, {len(enabled_cols)} enabled")
+            if enabled_cols:
+                logger.info(f"Enabled additional columns: {[col['csv_name'] for col in enabled_cols]}")
+        else:
+            logger.warning(f"Cannot load client config: profile_manager={profile_manager is not None}, client_id={client_id}")
+
         final_df, summary_present_df, summary_missing_df, stats = _run_analysis_and_rules(
             orders_df,
             stock_df,

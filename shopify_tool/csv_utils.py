@@ -387,3 +387,92 @@ def merge_csv_files(
             logger.info(f"Removed {removed} duplicate rows")
 
     return merged_df
+
+
+def discover_additional_columns(
+    orders_df: pd.DataFrame,
+    column_mappings: dict,
+    current_additional_columns: List[dict]
+) -> List[dict]:
+    """
+    Discover available additional columns from orders DataFrame.
+
+    Identifies CSV columns that are not in the standard column mappings
+    and could be preserved as additional columns for analysis.
+
+    Args:
+        orders_df: Orders DataFrame with CSV column names (before mapping)
+        column_mappings: Column mappings dict with 'orders' key
+        current_additional_columns: Existing additional columns config
+
+    Returns:
+        List of dicts with keys:
+            - csv_name: Original CSV column name
+            - internal_name: Normalized internal name (spaces→underscores)
+            - enabled: Current enabled state (from config or False by default)
+            - is_order_level: Current order-level flag (from config or True by default)
+            - exists_in_df: Whether column exists in current DataFrame
+
+    Example:
+        >>> config = {"orders": {"Name": "Order_Number", "SKU": "SKU"}}
+        >>> df = pd.DataFrame({"Name": [1], "SKU": ["A"], "Email": ["x@y.com"]})
+        >>> result = discover_additional_columns(df, config, [])
+        >>> print(result)
+        [{'csv_name': 'Email', 'internal_name': 'Email', 'enabled': False,
+          'is_order_level': True, 'exists_in_df': True}]
+    """
+    # Get standard mapped columns
+    mapped_columns = set(column_mappings.get("orders", {}).keys())
+
+    # Get critical internal columns that should never be considered "additional"
+    critical_internal = {"Order_Number", "SKU", "Quantity", "Shipping_Method"}
+
+    # Get all DataFrame columns
+    all_csv_columns = set(orders_df.columns)
+
+    # Find unmapped columns (candidates for additional columns)
+    unmapped_columns = all_csv_columns - mapped_columns
+
+    # Build lookup from existing config
+    existing_config_map = {col["csv_name"]: col for col in current_additional_columns}
+
+    # Build result list
+    discovered = []
+    for csv_name in sorted(unmapped_columns):
+        # Normalize name: spaces to underscores, strip whitespace
+        internal_name = csv_name.strip().replace(" ", "_").replace("-", "_")
+
+        # Skip if conflicts with critical internal columns
+        if internal_name in critical_internal:
+            logger.debug(f"Skipping column '{csv_name}' - conflicts with critical column")
+            continue
+
+        # Get existing config or use defaults
+        if csv_name in existing_config_map:
+            existing = existing_config_map[csv_name]
+            enabled = existing.get("enabled", False)
+            is_order_level = existing.get("is_order_level", True)
+        else:
+            enabled = False  # New columns default to disabled
+            is_order_level = True  # Most Shopify columns are order-level
+
+        discovered.append({
+            "csv_name": csv_name,
+            "internal_name": internal_name,
+            "enabled": enabled,
+            "is_order_level": is_order_level,
+            "exists_in_df": True
+        })
+
+    # Also include previously configured columns that don't exist in current CSV
+    for csv_name, config in existing_config_map.items():
+        if csv_name not in all_csv_columns:
+            discovered.append({
+                "csv_name": csv_name,
+                "internal_name": config["internal_name"],
+                "enabled": config.get("enabled", False),
+                "is_order_level": config.get("is_order_level", True),
+                "exists_in_df": False
+            })
+
+    return discovered
