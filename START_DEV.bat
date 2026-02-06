@@ -13,15 +13,8 @@ echo.
 
 REM Check if dev structure exists
 if not exist "%FULFILLMENT_SERVER_PATH%\Clients" (
-    echo Dev environment not found. Running setup...
-    python scripts/setup_dev_env.py "%FULFILLMENT_SERVER_PATH%"
-    echo.
-)
-
-REM Check if test data exists
-if not exist "data\test_input\test_orders.csv" (
-    echo Test data not found. Creating...
-    python scripts/create_test_data.py
+    echo Dev environment not found. Running setup with pre-populated session...
+    python scripts/setup_dev_env.py --with-session --with-analysis "%FULFILLMENT_SERVER_PATH%"
     echo.
 )
 
