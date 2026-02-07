@@ -105,6 +105,7 @@ class SettingsWindow(QDialog):
         "date after",
         "date equals",
         "matches regex",
+        "does not match regex",
     ]
     ACTION_TYPES = [
         "ADD_TAG",
@@ -290,7 +291,10 @@ class SettingsWindow(QDialog):
             "--- ORDER-LEVEL FIELDS ---",
             "item_count",
             "total_quantity",
+            "unique_sku_count",
+            "max_quantity",
             "has_sku",
+            "has_product",
         ]
 
         # Common article-level fields
@@ -533,24 +537,110 @@ class SettingsWindow(QDialog):
             "  → Use order-level fields:\n"
             "     • item_count - number of rows in order\n"
             "     • total_quantity - sum of all quantities\n"
+            "     • unique_sku_count - count of unique SKUs\n"
+            "     • max_quantity - max quantity of single item\n"
             "     • has_sku - check if order contains specific SKU\n"
+            "     • has_product - check by Product_Name\n"
             "  → Actions behavior:\n"
             "     • ADD_TAG - applies to ALL rows (for filtering)\n"
             "     • ADD_ORDER_TAG - applies to first row only (for counting)\n"
-            "     • SET_PACKAGING_TAG - applies to first row only (for counting)\n"
             "     • ADD_INTERNAL_TAG - applies to ALL rows (structured tags)"
         )
         level_layout.addWidget(level_combo)
         level_layout.addStretch()
 
         rule_layout.addLayout(level_layout)
+
+        # Steps container
+        steps_container = QVBoxLayout()
+        rule_layout.addLayout(steps_container)
+
+        # "Add Step" button
+        add_step_btn = QPushButton("+ Add Step")
+        add_step_btn.setToolTip("Add a new step to this rule (narrowing: each step filters rows from previous step)")
+        add_step_btn.setStyleSheet("color: #2196F3; font-weight: bold;")
+        rule_layout.addWidget(add_step_btn, 0, Qt.AlignLeft)
+
+        self.rules_layout.addWidget(rule_box)
+        widget_refs = {
+            "group_box": rule_box,
+            "priority_label": priority_label,
+            "up_btn": up_btn,
+            "down_btn": down_btn,
+            "test_btn": test_btn,
+            "name_edit": name_edit,
+            "level_combo": level_combo,
+            "steps_container": steps_container,
+            "steps": [],
+        }
+        self.rule_widgets.append(widget_refs)
+        delete_rule_btn.clicked.connect(lambda: self._delete_widget_from_list(widget_refs, self.rule_widgets))
+        up_btn.clicked.connect(lambda: self._move_rule_up(widget_refs))
+        down_btn.clicked.connect(lambda: self._move_rule_down(widget_refs))
+        test_btn.clicked.connect(lambda: self._test_rule(widget_refs))
+        add_step_btn.clicked.connect(lambda: self._add_step_widget(widget_refs))
+
+        # Update test button state based on data availability
+        self._update_test_button_state(widget_refs)
+
+        # Load steps (backward compat: old format has root-level conditions/actions)
+        steps_config = config.get("steps")
+        if steps_config:
+            for step_config in steps_config:
+                self._add_step_widget(widget_refs, step_config)
+        else:
+            # Old format: single step from root-level conditions/actions
+            single_step = {
+                "conditions": config.get("conditions", []),
+                "match": config.get("match", "ALL"),
+                "actions": config.get("actions", []),
+            }
+            self._add_step_widget(widget_refs, single_step)
+
+    def _add_step_widget(self, rule_widget_refs, step_config=None):
+        """Adds a step (IF conditions + THEN actions) to a rule.
+
+        Each step is a narrowing filter: step N only processes rows
+        that matched step N-1.
+
+        Args:
+            rule_widget_refs (dict): Rule widget references containing steps list
+            step_config (dict, optional): Step configuration with conditions/match/actions
+        """
+        if not isinstance(step_config, dict):
+            step_config = {"conditions": [], "match": "ALL", "actions": []}
+
+        steps = rule_widget_refs["steps"]
+        step_number = len(steps) + 1
+        steps_container = rule_widget_refs["steps_container"]
+
+        # Add separator between steps (not before first step)
+        separator_label = None
+        if step_number > 1:
+            separator_label = QLabel("   ↓ THEN CHECK ↓")
+            separator_label.setAlignment(Qt.AlignCenter)
+            separator_label.setStyleSheet(
+                "color: #FF9800; font-weight: bold; font-size: 11pt; "
+                "padding: 4px; margin: 2px 0;"
+            )
+            steps_container.addWidget(separator_label)
+
+        # Step wrapper
+        step_box = QGroupBox(f"Step {step_number}")
+        step_box.setStyleSheet(
+            "QGroupBox { font-weight: bold; border: 1px solid #ccc; "
+            "border-radius: 4px; margin-top: 6px; padding-top: 10px; }"
+        )
+        step_layout = QVBoxLayout(step_box)
+
+        # Conditions box ("IF")
         conditions_box = QGroupBox("IF")
         conditions_layout = QVBoxLayout(conditions_box)
         match_layout = QHBoxLayout()
         match_layout.addWidget(QLabel("Execute actions if"))
         match_combo = WheelIgnoreComboBox()
         match_combo.addItems(["ALL", "ANY"])
-        match_combo.setCurrentText(config.get("match", "ALL"))
+        match_combo.setCurrentText(step_config.get("match", "ALL"))
         match_layout.addWidget(match_combo)
         match_layout.addWidget(QLabel("of the following conditions are met:"))
         match_layout.addStretch()
@@ -559,43 +649,74 @@ class SettingsWindow(QDialog):
         conditions_layout.addLayout(conditions_rows_layout)
         add_condition_btn = QPushButton("Add Condition")
         conditions_layout.addWidget(add_condition_btn, 0, Qt.AlignLeft)
-        rule_layout.addWidget(conditions_box)
+        step_layout.addWidget(conditions_box)
+
+        # Actions box ("THEN")
         actions_box = QGroupBox("THEN perform these actions:")
         actions_layout = QVBoxLayout(actions_box)
         actions_rows_layout = QVBoxLayout()
         actions_layout.addLayout(actions_rows_layout)
         add_action_btn = QPushButton("Add Action")
         actions_layout.addWidget(add_action_btn, 0, Qt.AlignLeft)
-        rule_layout.addWidget(actions_box)
-        self.rules_layout.addWidget(rule_box)
-        widget_refs = {
-            "group_box": rule_box,
-            "priority_label": priority_label,  # NEW
-            "up_btn": up_btn,                  # NEW
-            "down_btn": down_btn,              # NEW
-            "test_btn": test_btn,              # NEW
-            "name_edit": name_edit,
-            "level_combo": level_combo,
+        step_layout.addWidget(actions_box)
+
+        # Delete step button (not for step 1)
+        delete_step_btn = None
+        if step_number > 1:
+            delete_step_btn = QPushButton("Delete Step")
+            delete_step_btn.setStyleSheet("color: #f44336;")
+            step_layout.addWidget(delete_step_btn, 0, Qt.AlignRight)
+
+        steps_container.addWidget(step_box)
+
+        # Step references (same keys as old rule_widget_refs for compatibility)
+        step_refs = {
+            "step_box": step_box,
+            "separator_label": separator_label,
             "match_combo": match_combo,
             "conditions_layout": conditions_rows_layout,
             "actions_layout": actions_rows_layout,
             "conditions": [],
             "actions": [],
         }
-        self.rule_widgets.append(widget_refs)
-        add_condition_btn.clicked.connect(lambda: self.add_condition_row(widget_refs))
-        add_action_btn.clicked.connect(lambda: self.add_action_row(widget_refs))
-        delete_rule_btn.clicked.connect(lambda: self._delete_widget_from_list(widget_refs, self.rule_widgets))
-        up_btn.clicked.connect(lambda: self._move_rule_up(widget_refs))      # NEW
-        down_btn.clicked.connect(lambda: self._move_rule_down(widget_refs))  # NEW
-        test_btn.clicked.connect(lambda: self._test_rule(widget_refs))       # NEW
+        steps.append(step_refs)
 
-        # Update test button state based on data availability
-        self._update_test_button_state(widget_refs)
-        for cond_config in config.get("conditions", []):
-            self.add_condition_row(widget_refs, cond_config)
-        for act_config in config.get("actions", []):
-            self.add_action_row(widget_refs, act_config)
+        # Connect buttons
+        add_condition_btn.clicked.connect(lambda: self.add_condition_row(step_refs))
+        add_action_btn.clicked.connect(lambda: self.add_action_row(step_refs))
+        if delete_step_btn:
+            delete_step_btn.clicked.connect(lambda: self._delete_step(rule_widget_refs, step_refs))
+
+        # Load conditions and actions
+        for cond_config in step_config.get("conditions", []):
+            self.add_condition_row(step_refs, cond_config)
+        for act_config in step_config.get("actions", []):
+            self.add_action_row(step_refs, act_config)
+
+    def _delete_step(self, rule_widget_refs, step_refs):
+        """Delete a step from a rule (never deletes step 1)."""
+        steps = rule_widget_refs["steps"]
+        if step_refs not in steps or len(steps) <= 1:
+            return
+
+        idx = steps.index(step_refs)
+        steps.remove(step_refs)
+
+        # Remove widgets
+        if step_refs.get("separator_label"):
+            step_refs["separator_label"].setParent(None)
+            step_refs["separator_label"].deleteLater()
+        step_refs["step_box"].setParent(None)
+        step_refs["step_box"].deleteLater()
+
+        # Re-number remaining steps
+        for i, s in enumerate(steps):
+            s["step_box"].setTitle(f"Step {i + 1}")
+            # Remove separator from new step 1
+            if i == 0 and s.get("separator_label"):
+                s["separator_label"].setParent(None)
+                s["separator_label"].deleteLater()
+                s["separator_label"] = None
 
     def add_condition_row(self, rule_widget_refs, config=None):
         """Adds a new row of widgets for a single condition within a rule.
@@ -605,7 +726,7 @@ class SettingsWindow(QDialog):
 
         Args:
             rule_widget_refs (dict): A dictionary of widget references for the
-                parent rule.
+                parent rule (or step).
             config (dict, optional): The configuration for a pre-existing
                 condition. If None, creates a new, blank condition.
         """
@@ -769,7 +890,7 @@ class SettingsWindow(QDialog):
                 placeholder = "Value1, Value2, Value3"
             elif op in ["between", "not between"]:
                 placeholder = "10-100"
-            elif op == "matches regex":
+            elif op in ["matches regex", "does not match regex"]:
                 placeholder = "^SKU-\\d{4}$"
 
             new_widget.setPlaceholderText(placeholder)
@@ -804,7 +925,7 @@ class SettingsWindow(QDialog):
             condition_refs["validation_timer"].stop()
 
         # For regex: debounce 500ms
-        if op == "matches regex":
+        if op in ["matches regex", "does not match regex"]:
             timer = QTimer()
             timer.setSingleShot(True)
             timer.timeout.connect(lambda: self._perform_validation(condition_refs))
@@ -847,7 +968,7 @@ class SettingsWindow(QDialog):
             return
 
         # Validate based on operator
-        if op == "matches regex":
+        if op in ["matches regex", "does not match regex"]:
             is_valid, error_msg = validate_regex(value)
             if is_valid:
                 self._show_validation_feedback(condition_refs, "clear", "")
@@ -983,12 +1104,15 @@ class SettingsWindow(QDialog):
         # Build rule config from current UI state
         rule_config = self._build_rule_config_from_widgets(rule_widget_refs)
 
-        # Validate rule has conditions
-        if not rule_config.get("conditions"):
+        # Validate rule has conditions in at least one step
+        has_conditions = any(
+            step.get("conditions") for step in rule_config.get("steps", [])
+        )
+        if not has_conditions:
             QMessageBox.warning(
                 self,
                 "No Conditions",
-                "This rule has no conditions defined.\n\n"
+                "This rule has no conditions defined in any step.\n\n"
                 "Add at least one condition before testing."
             )
             return
@@ -1002,7 +1126,7 @@ class SettingsWindow(QDialog):
         Extract current rule configuration from widget state.
 
         Builds a config dict compatible with RuleEngine from the current
-        UI state of all condition and action widgets.
+        UI state of all condition and action widgets. Supports multi-step rules.
 
         Args:
             rule_widget_refs (dict): Rule widget references
@@ -1012,50 +1136,53 @@ class SettingsWindow(QDialog):
         """
         from PySide6.QtWidgets import QComboBox, QLineEdit, QDateEdit
 
-        # Extract conditions
-        conditions = []
-        for condition_refs in rule_widget_refs["conditions"]:
-            value_widget = condition_refs.get("value_widget")
-            val = ""
+        steps = []
+        for step_refs in rule_widget_refs.get("steps", []):
+            # Extract conditions
+            conditions = []
+            for condition_refs in step_refs["conditions"]:
+                value_widget = condition_refs.get("value_widget")
+                val = ""
 
-            if value_widget:
-                if isinstance(value_widget, QComboBox):
-                    val = value_widget.currentText()
-                elif isinstance(value_widget, QDateEdit):
-                    # Format date as YYYY-MM-DD for rule engine
-                    val = value_widget.date().toString("yyyy-MM-dd")
-                elif isinstance(value_widget, QLineEdit):
-                    val = value_widget.text()
+                if value_widget:
+                    if isinstance(value_widget, QComboBox):
+                        val = value_widget.currentText()
+                    elif isinstance(value_widget, QDateEdit):
+                        val = value_widget.date().toString("yyyy-MM-dd")
+                    elif isinstance(value_widget, QLineEdit):
+                        val = value_widget.text()
 
-            conditions.append({
-                "field": condition_refs["field"].currentText(),
-                "operator": condition_refs["op"].currentText(),
-                "value": val,
+                conditions.append({
+                    "field": condition_refs["field"].currentText(),
+                    "operator": condition_refs["op"].currentText(),
+                    "value": val,
+                })
+
+            # Extract actions
+            actions = []
+            for action_refs in step_refs["actions"]:
+                action_type = action_refs["type"].currentText()
+                action_dict = {"type": action_type}
+
+                param_widgets = action_refs.get("param_widgets", {})
+                for param_name, widget in param_widgets.items():
+                    if isinstance(widget, QComboBox):
+                        action_dict[param_name] = widget.currentText()
+                    elif isinstance(widget, QLineEdit):
+                        action_dict[param_name] = widget.text()
+
+                actions.append(action_dict)
+
+            steps.append({
+                "conditions": conditions,
+                "match": step_refs["match_combo"].currentText(),
+                "actions": actions,
             })
-
-        # Extract actions
-        actions = []
-        for action_refs in rule_widget_refs["actions"]:
-            action_type = action_refs["type"].currentText()
-            action_dict = {"type": action_type}
-
-            # Extract parameters based on action type
-            param_widgets = action_refs.get("param_widgets", {})
-
-            for param_name, widget in param_widgets.items():
-                if isinstance(widget, QComboBox):
-                    action_dict[param_name] = widget.currentText()
-                elif isinstance(widget, QLineEdit):
-                    action_dict[param_name] = widget.text()
-
-            actions.append(action_dict)
 
         return {
             "name": rule_widget_refs["name_edit"].text(),
             "level": rule_widget_refs["level_combo"].currentText(),
-            "match": rule_widget_refs["match_combo"].currentText(),
-            "conditions": conditions,
-            "actions": actions,
+            "steps": steps,
         }
 
     def _update_test_button_state(self, rule_widget_refs):
@@ -1932,61 +2059,67 @@ class SettingsWindow(QDialog):
             # ========================================
             new_rules = []
             for idx, rule_w in enumerate(self.rule_widgets):
-                conditions = []
-                for c in rule_w["conditions"]:
-                    value_widget = c.get("value_widget")
-                    val = ""
-                    if value_widget:
-                        if isinstance(value_widget, QComboBox):
-                            val = value_widget.currentText()
-                        else:
-                            val = value_widget.text()
+                steps = []
+                for step_refs in rule_w.get("steps", []):
+                    conditions = []
+                    for c in step_refs["conditions"]:
+                        value_widget = c.get("value_widget")
+                        val = ""
+                        if value_widget:
+                            if isinstance(value_widget, QComboBox):
+                                val = value_widget.currentText()
+                            else:
+                                val = value_widget.text()
 
-                    conditions.append({
-                        "field": c["field"].currentText(),
-                        "operator": c["op"].currentText(),
-                        "value": val,
+                        conditions.append({
+                            "field": c["field"].currentText(),
+                            "operator": c["op"].currentText(),
+                            "value": val,
+                        })
+
+                    actions = []
+                    for act_refs in step_refs["actions"]:
+                        action_type = act_refs["type"].currentText()
+                        act = {"type": action_type}
+
+                        # Serialize parameters based on type
+                        if action_type in ["ADD_TAG", "ADD_ORDER_TAG", "ADD_INTERNAL_TAG", "SET_STATUS"]:
+                            act["value"] = act_refs["param_widgets"]["value"].text()
+
+                        elif action_type == "COPY_FIELD":
+                            act["source"] = act_refs["param_widgets"]["source"].currentText()
+                            act["target"] = act_refs["param_widgets"]["target"].text()
+
+                        elif action_type == "CALCULATE":
+                            act["operation"] = act_refs["param_widgets"]["operation"].currentText()
+                            act["field1"] = act_refs["param_widgets"]["field1"].currentText()
+                            act["field2"] = act_refs["param_widgets"]["field2"].currentText()
+                            act["target"] = act_refs["param_widgets"]["target"].text()
+
+                        elif action_type == "SET_MULTI_TAGS":
+                            act["value"] = act_refs["param_widgets"]["value"].text()
+
+                        elif action_type == "ALERT_NOTIFICATION":
+                            act["message"] = act_refs["param_widgets"]["message"].text()
+                            act["severity"] = act_refs["param_widgets"]["severity"].currentText()
+
+                        elif action_type == "ADD_PRODUCT":
+                            act["sku"] = act_refs["param_widgets"]["sku"].text()
+                            act["quantity"] = act_refs["param_widgets"]["quantity"].value()
+
+                        actions.append(act)
+
+                    steps.append({
+                        "conditions": conditions,
+                        "match": step_refs["match_combo"].currentText(),
+                        "actions": actions,
                     })
-
-                actions = []
-                for act_refs in rule_w["actions"]:
-                    action_type = act_refs["type"].currentText()
-                    act = {"type": action_type}
-
-                    # Serialize parameters based on type
-                    if action_type in ["ADD_TAG", "ADD_ORDER_TAG", "ADD_INTERNAL_TAG", "SET_STATUS"]:
-                        act["value"] = act_refs["param_widgets"]["value"].text()
-
-                    elif action_type == "COPY_FIELD":
-                        act["source"] = act_refs["param_widgets"]["source"].currentText()
-                        act["target"] = act_refs["param_widgets"]["target"].text()
-
-                    elif action_type == "CALCULATE":
-                        act["operation"] = act_refs["param_widgets"]["operation"].currentText()
-                        act["field1"] = act_refs["param_widgets"]["field1"].currentText()
-                        act["field2"] = act_refs["param_widgets"]["field2"].currentText()
-                        act["target"] = act_refs["param_widgets"]["target"].text()
-
-                    elif action_type == "SET_MULTI_TAGS":
-                        act["value"] = act_refs["param_widgets"]["value"].text()
-
-                    elif action_type == "ALERT_NOTIFICATION":
-                        act["message"] = act_refs["param_widgets"]["message"].text()
-                        act["severity"] = act_refs["param_widgets"]["severity"].currentText()
-
-                    elif action_type == "ADD_PRODUCT":
-                        act["sku"] = act_refs["param_widgets"]["sku"].text()
-                        act["quantity"] = act_refs["param_widgets"]["quantity"].value()
-
-                    actions.append(act)
 
                 new_rules.append({
                     "name": rule_w["name_edit"].text(),
-                    "priority": idx + 1,  # NEW: Position-based priority
+                    "priority": idx + 1,
                     "level": rule_w["level_combo"].currentText(),
-                    "match": rule_w["match_combo"].currentText(),
-                    "conditions": conditions,
-                    "actions": actions,
+                    "steps": steps,
                 })
 
             self.config_data["rules"] = new_rules

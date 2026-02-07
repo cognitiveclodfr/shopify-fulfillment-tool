@@ -45,8 +45,9 @@ OPERATOR_MAP = {
     "date before": "_op_date_before",
     "date after": "_op_date_after",
     "date equals": "_op_date_equals",
-    # NEW: Regex operator
+    # NEW: Regex operators
     "matches regex": "_op_matches_regex",
+    "does not match regex": "_op_does_not_match_regex",
 }
 
 # --- Operator Implementations ---
@@ -559,6 +560,19 @@ def _op_matches_regex(series_val, rule_val):
     return series_val.astype(str).str.contains(rule_val, na=False, regex=True)
 
 
+def _op_does_not_match_regex(series_val, rule_val):
+    """Returns True where the series value does NOT match the regex pattern.
+
+    Args:
+        series_val: pandas Series to check
+        rule_val: Regex pattern string
+
+    Returns:
+        pd.Series[bool]: True where value does NOT match pattern
+    """
+    return ~_op_matches_regex(series_val, rule_val)
+
+
 class RuleEngine:
     """Applies a set of configured rules to a DataFrame of order data."""
 
@@ -566,7 +580,10 @@ class RuleEngine:
     ORDER_LEVEL_FIELDS = {
         "item_count": "_calculate_item_count",
         "total_quantity": "_calculate_total_quantity",
+        "unique_sku_count": "_calculate_unique_sku_count",
+        "max_quantity": "_calculate_max_quantity",
         "has_sku": "_check_has_sku",
+        "has_product": "_check_has_product",
     }
 
     def _normalize_priorities(self, rules):
@@ -588,6 +605,27 @@ class RuleEngine:
                 default_priority += 1
         return rules
 
+    @staticmethod
+    def _normalize_steps(rule):
+        """Converts old single-step format to steps array.
+
+        Old format: conditions + actions at root level.
+        New format: steps array with conditions + match + actions per step.
+
+        Args:
+            rule (dict): Rule dictionary (may be old or new format)
+
+        Returns:
+            dict: Rule with 'steps' array guaranteed
+        """
+        if "steps" not in rule:
+            rule["steps"] = [{
+                "conditions": rule.get("conditions", []),
+                "match": rule.get("match", "ALL"),
+                "actions": rule.get("actions", []),
+            }]
+        return rule
+
     def __init__(self, rules_config):
         """Initializes the RuleEngine with priority-sorted rules.
 
@@ -606,6 +644,10 @@ class RuleEngine:
 
         # Normalize: add default priority to rules without it
         self.rules = self._normalize_priorities(rules_config)
+
+        # Normalize: convert old single-step format to steps array
+        for rule in self.rules:
+            self._normalize_steps(rule)
 
         # Sort by priority (lower number = higher priority = executes first)
         self.rules = sorted(self.rules, key=lambda r: r.get("priority", 1000))
@@ -674,29 +716,46 @@ class RuleEngine:
 
         logger.info(f"[RULE ENGINE] {len(article_rules)} article-level rules, {len(order_rules)} order-level rules")
 
-        # Apply article-level rules (existing logic)
+        # Apply article-level rules with multi-step support
         for idx, rule in enumerate(article_rules):
             rule_name = rule.get("name", f"Rule #{idx+1}")
             priority = rule.get("priority", 1000)
-            logger.info(f"[RULE ENGINE] Applying article rule #{idx+1}: {rule_name} (Priority: {priority})")
-            logger.info(f"[RULE ENGINE] Conditions: {rule.get('conditions', [])}")
+            steps = rule.get("steps", [])
+            logger.info(f"[RULE ENGINE] Applying article rule #{idx+1}: {rule_name} (Priority: {priority}, Steps: {len(steps)})")
 
-            # Get a boolean Series indicating which rows match the conditions
-            matches = self._get_matching_rows(df, rule)
+            # Start with all rows eligible
+            current_matches = pd.Series(True, index=df.index)
 
-            matched_count = matches.sum()
-            logger.info(f"[RULE ENGINE] {matched_count} rows matched conditions")
+            for step_idx, step in enumerate(steps):
+                logger.info(f"[RULE ENGINE] Step {step_idx+1}/{len(steps)}: Conditions: {step.get('conditions', [])}")
 
-            # Apply actions to the matching rows
-            if matches.any():
-                actions = rule.get("actions", [])
-                logger.info(f"[RULE ENGINE] Executing {len(actions)} actions: {actions}")
-                new_rows = self._execute_actions(df, matches, actions)
-                all_new_rows.extend(new_rows)
-            else:
-                logger.info(f"[RULE ENGINE] No matches, skipping actions")
+                # Evaluate conditions only on currently matching rows
+                eligible_df = df[current_matches]
+                if eligible_df.empty:
+                    logger.info(f"[RULE ENGINE] Step {step_idx+1}: No eligible rows, stopping")
+                    break
 
-        # Apply order-level rules (NEW)
+                step_matches = self._get_matching_rows(eligible_df, step)
+
+                # Map back to full DataFrame index
+                full_step_matches = pd.Series(False, index=df.index)
+                full_step_matches[step_matches[step_matches].index] = True
+                current_matches = current_matches & full_step_matches
+
+                matched_count = current_matches.sum()
+                logger.info(f"[RULE ENGINE] Step {step_idx+1}: {matched_count} rows matched (narrowed)")
+
+                # Execute step actions on narrowed rows
+                if current_matches.any():
+                    actions = step.get("actions", [])
+                    logger.info(f"[RULE ENGINE] Step {step_idx+1}: Executing {len(actions)} actions")
+                    new_rows = self._execute_actions(df, current_matches, actions)
+                    all_new_rows.extend(new_rows)
+                else:
+                    logger.info(f"[RULE ENGINE] Step {step_idx+1}: No matches, stopping")
+                    break
+
+        # Apply order-level rules with multi-step support
         if order_rules and "Order_Number" in df.columns:
             for order_number in df["Order_Number"].unique():
                 order_mask = df["Order_Number"] == order_number
@@ -705,45 +764,48 @@ class RuleEngine:
                 for rule in order_rules:
                     rule_name = rule.get("name", "Unnamed")
                     priority = rule.get("priority", 1000)
-                    logger.info(f"[RULE ENGINE] Applying order rule: {rule_name} (Priority: {priority})")
+                    steps = rule.get("steps", [])
+                    logger.info(f"[RULE ENGINE] Applying order rule: {rule_name} (Priority: {priority}, Steps: {len(steps)})")
 
-                    # Evaluate conditions on entire order
-                    matches = self._evaluate_order_conditions(
-                        order_df,
-                        rule.get("conditions", []),
-                        rule.get("match", "ALL")
-                    )
+                    # Track which rows in order are still eligible (for narrowing)
+                    order_eligible_mask = order_mask.copy()
 
-                    if matches:
-                        # Separate actions by scope:
-                        # - ADD_TAG applies to ALL rows (for packing list filtering - don't lose unmarked items)
-                        # - ADD_ORDER_TAG applies to FIRST row only (for counting)
-                        actions = rule.get("actions", [])
+                    for step_idx, step in enumerate(steps):
+                        # Evaluate conditions on eligible order rows
+                        eligible_df = df[order_eligible_mask]
+                        if eligible_df.empty:
+                            break
 
-                        # Actions that apply to ALL rows in order (for filtering)
+                        matches = self._evaluate_order_conditions(
+                            eligible_df,
+                            step.get("conditions", []),
+                            step.get("match", "ALL")
+                        )
+
+                        if not matches:
+                            logger.info(f"[RULE ENGINE] Order {order_number} step {step_idx+1}: No match, stopping")
+                            break
+
+                        # Separate actions by scope
+                        actions = step.get("actions", [])
                         apply_to_all_actions = []
-                        # Actions that apply to FIRST row only (for counting)
                         apply_to_first_actions = []
 
                         for action in actions:
                             action_type = action.get("type", "").upper()
                             if action_type == "ADD_TAG":
-                                # ADD_TAG applies to all rows for packing list filtering
-                                # This ensures all items in order are tagged, not just first row
                                 apply_to_all_actions.append(action)
                             else:
-                                # ADD_ORDER_TAG, SET_PACKAGING_TAG, etc. apply to first row only
-                                # This ensures proper counting (one tag = one order/package)
                                 apply_to_first_actions.append(action)
 
                         # Apply to all rows of order
                         if apply_to_all_actions:
-                            new_rows = self._execute_actions(df, order_mask, apply_to_all_actions)
+                            new_rows = self._execute_actions(df, order_eligible_mask, apply_to_all_actions)
                             all_new_rows.extend(new_rows)
 
                         # Apply to first row only
                         if apply_to_first_actions:
-                            first_row_index = order_df.index[0]
+                            first_row_index = eligible_df.index[0]
                             first_row_mask = pd.Series(False, index=df.index)
                             first_row_mask[first_row_index] = True
                             new_rows = self._execute_actions(df, first_row_mask, apply_to_first_actions)
@@ -769,24 +831,25 @@ class RuleEngine:
         Args:
             df (pd.DataFrame): The DataFrame to prepare.
         """
-        # Determine which columns are needed by scanning the actions in all rules
+        # Determine which columns are needed by scanning actions in all rule steps
         needed_columns = set()
         for rule in self.rules:
-            for action in rule.get("actions", []):
-                action_type = action.get("type", "").upper()
-                if action_type in ["ADD_TAG", "ADD_ORDER_TAG"]:
-                    needed_columns.add("Status_Note")
-                elif action_type == "ADD_INTERNAL_TAG":
-                    needed_columns.add("Internal_Tags")
-                elif action_type == "COPY_FIELD":
-                    target = action.get("target")
-                    if target:
-                        needed_columns.add(target)
-                elif action_type == "CALCULATE":
-                    target = action.get("target")
-                    if target:
-                        needed_columns.add(target)
-                # SET_STATUS uses existing Order_Fulfillment_Status column
+            for step in rule.get("steps", []):
+                for action in step.get("actions", []):
+                    action_type = action.get("type", "").upper()
+                    if action_type in ["ADD_TAG", "ADD_ORDER_TAG"]:
+                        needed_columns.add("Status_Note")
+                    elif action_type == "ADD_INTERNAL_TAG":
+                        needed_columns.add("Internal_Tags")
+                    elif action_type == "COPY_FIELD":
+                        target = action.get("target")
+                        if target:
+                            needed_columns.add(target)
+                    elif action_type == "CALCULATE":
+                        target = action.get("target")
+                        if target:
+                            needed_columns.add(target)
+                    # SET_STATUS uses existing Order_Fulfillment_Status column
 
         # Add only the necessary columns if they don't already exist
         if "Status_Note" in needed_columns and "Status_Note" not in df.columns:
@@ -1164,30 +1227,19 @@ class RuleEngine:
                 calc_method_name = self.ORDER_LEVEL_FIELDS[field]
                 calc_method = getattr(self, calc_method_name)
 
-                # Pass operator for has_sku
-                if field == "has_sku":
+                # For has_sku/has_product: method applies operator internally
+                if field in ("has_sku", "has_product"):
                     field_value = calc_method(order_df, value, operator)
-                else:
-                    field_value = calc_method(order_df, None)
-
-                # Apply operator (convert to scalar comparison)
-                if field == "has_sku":
-                    # For has_sku, the method already applies the operator and returns True/False
                     result = field_value
-                elif operator == "equals":
-                    result = (field_value == value)
-                elif operator == "does not equal":
-                    result = (field_value != value)
-                elif operator == "is greater than":
-                    result = field_value > float(value)
-                elif operator == "is less than":
-                    result = field_value < float(value)
-                elif operator == "is greater than or equal":
-                    result = field_value >= float(value)
-                elif operator == "is less than or equal":
-                    result = field_value <= float(value)
                 else:
-                    result = False
+                    # For numeric fields: wrap in Series, use global operator
+                    field_value = calc_method(order_df, None)
+                    if operator not in OPERATOR_MAP:
+                        result = False
+                    else:
+                        scalar_series = pd.Series([field_value])
+                        op_func = globals()[OPERATOR_MAP[operator]]
+                        result = bool(op_func(scalar_series, value).iloc[0])
 
             else:
                 # Regular article-level field - check if ANY row matches
@@ -1219,49 +1271,90 @@ class RuleEngine:
             return order_df["Quantity"].sum()
         return 0
 
+    def _calculate_unique_sku_count(self, order_df, sku_value=None):
+        """Count unique SKUs in order."""
+        if "SKU" in order_df.columns:
+            return len(order_df["SKU"].unique())
+        return 0
+
+    def _calculate_max_quantity(self, order_df, sku_value=None):
+        """Max quantity of any single line item in order."""
+        if "Quantity" in order_df.columns:
+            return order_df["Quantity"].max()
+        return 0
+
     def _check_has_sku(self, order_df, sku_value, operator="equals"):
         """Check if order contains SKU matching the condition.
+
+        Uses all operators from the global OPERATOR_MAP.
 
         Args:
             order_df: DataFrame rows for single order
             sku_value: Value to match against
-            operator: String operator (equals, starts with, contains, etc.)
+            operator: String operator (any from OPERATOR_MAP)
 
         Returns:
             bool: True if condition matches
-                  - For positive operators (equals, contains, starts with): True if ANY SKU matches
-                  - For negative operators (does not equal, does not contain): True if ALL SKUs match (i.e., NONE have the value)
+                  - For positive operators: True if ANY SKU matches
+                  - For negative operators: True if ALL SKUs match (i.e., NONE have the value)
         """
         if "SKU" not in order_df.columns or not sku_value:
             return False
 
         sku_series = order_df["SKU"]
 
-        # Map operator to function
-        operator_map = {
-            "equals": _op_equals,
-            "does not equal": _op_not_equals,
-            "contains": _op_contains,
-            "does not contain": _op_not_contains,
-            "starts with": _op_starts_with,
-            "ends with": _op_ends_with,
-            "is empty": _op_is_empty,
-            "is not empty": _op_is_not_empty,
-        }
-
-        if operator not in operator_map:
+        if operator not in OPERATOR_MAP:
             import logging
             logger = logging.getLogger(__name__)
             logger.warning(f"[RULE ENGINE] Unknown operator '{operator}' for has_sku, using 'equals'")
             operator = "equals"
 
-        op_func = operator_map[operator]
+        op_func = globals()[OPERATOR_MAP[operator]]
         result_series = op_func(sku_series, sku_value)
 
         # For negative operators, ALL SKUs must match (i.e., NONE have the unwanted value)
         # For positive operators, ANY SKU can match
-        negative_operators = ["does not equal", "does not contain"]
+        negative_operators = [
+            "does not equal", "does not contain", "not in list",
+            "not between", "does not match regex",
+        ]
         if operator in negative_operators:
-            return result_series.all()  # True if ALL SKUs don't have the value (i.e., NONE have it)
+            return result_series.all()
         else:
-            return result_series.any()  # True if ANY SKU matches
+            return result_series.any()
+
+    def _check_has_product(self, order_df, product_value, operator="equals"):
+        """Check if order contains Product_Name matching the condition.
+
+        Same logic as _check_has_sku but operates on Product_Name column.
+
+        Args:
+            order_df: DataFrame rows for single order
+            product_value: Value to match against
+            operator: String operator (any from OPERATOR_MAP)
+
+        Returns:
+            bool: True if condition matches
+        """
+        if "Product_Name" not in order_df.columns or not product_value:
+            return False
+
+        product_series = order_df["Product_Name"]
+
+        if operator not in OPERATOR_MAP:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"[RULE ENGINE] Unknown operator '{operator}' for has_product, using 'equals'")
+            operator = "equals"
+
+        op_func = globals()[OPERATOR_MAP[operator]]
+        result_series = op_func(product_series, product_value)
+
+        negative_operators = [
+            "does not equal", "does not contain", "not in list",
+            "not between", "does not match regex",
+        ]
+        if operator in negative_operators:
+            return result_series.all()
+        else:
+            return result_series.any()

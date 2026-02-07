@@ -1748,3 +1748,531 @@ def test_mixed_priority_config(sample_df):
     # Rule without priority should get default 1000
     assert engine.rules[1]["priority"] == 1000
     assert engine.rules[1]["name"] == "No Priority"
+
+
+# --- "does not match regex" Operator Tests ---
+
+
+@pytest.mark.parametrize(
+    "pattern,expected_matches",
+    [
+        (r"^SKU-\d{4}$", 3),   # SKU-ABCD, OTHER-001, MISC-999 don't match
+        (r"SKU-", 2),           # OTHER-001 and MISC-999 don't contain SKU-
+        (r"^OTHER", 4),         # Only OTHER-001 starts with OTHER
+        (r".*", 0),             # Everything matches .*, so 0 "does not match"
+    ],
+)
+def test_does_not_match_regex(date_sample_df, pattern, expected_matches):
+    """Tests 'does not match regex' operator at article level."""
+    df = date_sample_df.copy()
+    rules = [
+        {
+            "name": "Exclude regex matches",
+            "conditions": [{"field": "SKU", "operator": "does not match regex", "value": pattern}],
+            "actions": [{"type": "ADD_TAG", "value": "NO_MATCH"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+    result = engine.apply(df)
+    tagged = result[result["Status_Note"].str.contains("NO_MATCH", na=False)]
+    assert len(tagged) == expected_matches
+
+
+def test_does_not_match_regex_invalid_pattern(date_sample_df):
+    """Tests 'does not match regex' with invalid pattern returns no matches."""
+    df = date_sample_df.copy()
+    rules = [
+        {
+            "name": "Invalid regex",
+            "conditions": [{"field": "SKU", "operator": "does not match regex", "value": "[invalid"}],
+            "actions": [{"type": "ADD_TAG", "value": "NO_MATCH"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+    result = engine.apply(df)
+    # Invalid regex in "matches regex" returns all False → negation returns all True
+    # But _compile_regex_safe returns None → _op_matches_regex returns all False
+    # → _op_does_not_match_regex returns all True
+    tagged = result[result["Status_Note"].str.contains("NO_MATCH", na=False)]
+    assert len(tagged) == len(df)
+
+
+# --- has_sku Extended Operator Tests ---
+
+
+def test_has_sku_matches_regex(order_level_sample_df):
+    """Tests has_sku with 'matches regex' operator."""
+    df = order_level_sample_df.copy()
+    rules = [
+        {
+            "name": "Order has hat SKU pattern",
+            "level": "order",
+            "match": "ALL",
+            "conditions": [{"field": "has_sku", "operator": "matches regex", "value": r"^HAT-\d{3}$"}],
+            "actions": [{"type": "ADD_TAG", "value": "HAS_HAT"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+    result = engine.apply(df)
+    # Order #1001 has HAT-001, #1002 has HAT-002, #1003 has HAT-003
+    for order_num in ["#1001", "#1002", "#1003"]:
+        order_rows = result[result["Order_Number"] == order_num]
+        assert "HAS_HAT" in order_rows.iloc[0]["Status_Note"]
+
+
+def test_has_sku_does_not_match_regex(order_level_sample_df):
+    """Tests has_sku with 'does not match regex' operator."""
+    df = order_level_sample_df.copy()
+    rules = [
+        {
+            "name": "No oversized SKUs",
+            "level": "order",
+            "match": "ALL",
+            "conditions": [{"field": "has_sku", "operator": "does not match regex", "value": r"^OVERSIZED"}],
+            "actions": [{"type": "ADD_TAG", "value": "NO_OVERSIZED"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+    result = engine.apply(df)
+    # #1001 and #1003 have no OVERSIZED SKUs
+    for order_num in ["#1001", "#1003"]:
+        order_rows = result[result["Order_Number"] == order_num]
+        assert "NO_OVERSIZED" in order_rows.iloc[0]["Status_Note"]
+    # #1002 has OVERSIZED_001 — should NOT be tagged
+    order_1002 = result[result["Order_Number"] == "#1002"]
+    assert "NO_OVERSIZED" not in order_1002.iloc[0]["Status_Note"]
+
+
+def test_has_sku_in_list(order_level_sample_df):
+    """Tests has_sku with 'in list' operator."""
+    df = order_level_sample_df.copy()
+    rules = [
+        {
+            "name": "Has specific SKUs",
+            "level": "order",
+            "match": "ALL",
+            "conditions": [{"field": "has_sku", "operator": "in list", "value": "HAT-001, GLOVES-001"}],
+            "actions": [{"type": "ADD_TAG", "value": "HAS_LISTED"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+    result = engine.apply(df)
+    # Only #1001 has HAT-001 and GLOVES-001
+    order_1001 = result[result["Order_Number"] == "#1001"]
+    assert "HAS_LISTED" in order_1001.iloc[0]["Status_Note"]
+
+
+# --- Order-Level Extended Operators Tests ---
+
+
+def test_order_level_item_count_in_list(order_level_sample_df):
+    """Tests order-level item_count with 'in list' operator."""
+    df = order_level_sample_df.copy()
+    rules = [
+        {
+            "name": "Order has 2 or 3 items",
+            "level": "order",
+            "match": "ALL",
+            "conditions": [{"field": "item_count", "operator": "in list", "value": "2, 3"}],
+            "actions": [{"type": "ADD_TAG", "value": "MEDIUM_ORDER"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+    result = engine.apply(df)
+    # #1001 has 3 items, #1002 has 2 items → both tagged
+    for order_num in ["#1001", "#1002"]:
+        order_rows = result[result["Order_Number"] == order_num]
+        assert "MEDIUM_ORDER" in order_rows.iloc[0]["Status_Note"]
+    # #1003 has 1 item → not tagged
+    order_1003 = result[result["Order_Number"] == "#1003"]
+    assert "MEDIUM_ORDER" not in order_1003.iloc[0]["Status_Note"]
+
+
+def test_order_level_total_quantity_between(order_level_sample_df):
+    """Tests order-level total_quantity with 'between' operator."""
+    df = order_level_sample_df.copy()
+    rules = [
+        {
+            "name": "Medium quantity orders",
+            "level": "order",
+            "match": "ALL",
+            "conditions": [{"field": "total_quantity", "operator": "between", "value": "2-4"}],
+            "actions": [{"type": "ADD_TAG", "value": "MEDIUM_QTY"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+    result = engine.apply(df)
+    # #1001: total_quantity = 1+1+1 = 3 (in range)
+    # #1002: total_quantity = 1+2 = 3 (in range)
+    # #1003: total_quantity = 5 (out of range)
+    for order_num in ["#1001", "#1002"]:
+        order_rows = result[result["Order_Number"] == order_num]
+        assert "MEDIUM_QTY" in order_rows.iloc[0]["Status_Note"]
+    order_1003 = result[result["Order_Number"] == "#1003"]
+    assert "MEDIUM_QTY" not in order_1003.iloc[0]["Status_Note"]
+
+
+# --- New Order-Level Fields Tests (Phase B) ---
+
+
+def test_unique_sku_count(order_level_sample_df):
+    """Tests unique_sku_count order-level field."""
+    df = order_level_sample_df.copy()
+    rules = [
+        {
+            "name": "Multi-SKU orders",
+            "level": "order",
+            "match": "ALL",
+            "conditions": [{"field": "unique_sku_count", "operator": "is greater than", "value": "1"}],
+            "actions": [{"type": "ADD_TAG", "value": "MULTI_SKU"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+    result = engine.apply(df)
+    # #1001 has 3 unique SKUs, #1002 has 2 → both tagged
+    for order_num in ["#1001", "#1002"]:
+        order_rows = result[result["Order_Number"] == order_num]
+        assert "MULTI_SKU" in order_rows.iloc[0]["Status_Note"]
+    # #1003 has 1 unique SKU → not tagged
+    order_1003 = result[result["Order_Number"] == "#1003"]
+    assert "MULTI_SKU" not in order_1003.iloc[0]["Status_Note"]
+
+
+def test_unique_sku_count_equals(order_level_sample_df):
+    """Tests unique_sku_count with equals operator."""
+    df = order_level_sample_df.copy()
+    rules = [
+        {
+            "name": "Single SKU order",
+            "level": "order",
+            "match": "ALL",
+            "conditions": [{"field": "unique_sku_count", "operator": "equals", "value": "1"}],
+            "actions": [{"type": "ADD_TAG", "value": "SINGLE_SKU"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+    result = engine.apply(df)
+    # Only #1003 has exactly 1 unique SKU
+    order_1003 = result[result["Order_Number"] == "#1003"]
+    assert "SINGLE_SKU" in order_1003.iloc[0]["Status_Note"]
+    order_1001 = result[result["Order_Number"] == "#1001"]
+    assert "SINGLE_SKU" not in order_1001.iloc[0]["Status_Note"]
+
+
+def test_has_product_equals(order_level_sample_df):
+    """Tests has_product with equals operator."""
+    df = order_level_sample_df.copy()
+    rules = [
+        {
+            "name": "Has Gloves",
+            "level": "order",
+            "match": "ALL",
+            "conditions": [{"field": "has_product", "operator": "equals", "value": "Gloves"}],
+            "actions": [{"type": "ADD_TAG", "value": "HAS_GLOVES"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+    result = engine.apply(df)
+    # Only #1001 has "Gloves" product
+    order_1001 = result[result["Order_Number"] == "#1001"]
+    assert "HAS_GLOVES" in order_1001.iloc[0]["Status_Note"]
+    order_1002 = result[result["Order_Number"] == "#1002"]
+    assert "HAS_GLOVES" not in order_1002.iloc[0]["Status_Note"]
+
+
+def test_has_product_contains(order_level_sample_df):
+    """Tests has_product with contains operator."""
+    df = order_level_sample_df.copy()
+    rules = [
+        {
+            "name": "Has Hat product",
+            "level": "order",
+            "match": "ALL",
+            "conditions": [{"field": "has_product", "operator": "contains", "value": "Hat"}],
+            "actions": [{"type": "ADD_TAG", "value": "HAS_HAT_PRODUCT"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+    result = engine.apply(df)
+    # #1001 has "Hat", #1002 has "Hat 2", #1003 has "Hat 3"
+    for order_num in ["#1001", "#1002", "#1003"]:
+        order_rows = result[result["Order_Number"] == order_num]
+        assert "HAS_HAT_PRODUCT" in order_rows.iloc[0]["Status_Note"]
+
+
+def test_max_quantity(order_level_sample_df):
+    """Tests max_quantity order-level field."""
+    df = order_level_sample_df.copy()
+    rules = [
+        {
+            "name": "Has bulk item",
+            "level": "order",
+            "match": "ALL",
+            "conditions": [{"field": "max_quantity", "operator": "is greater than", "value": "3"}],
+            "actions": [{"type": "ADD_TAG", "value": "BULK_ITEM"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+    result = engine.apply(df)
+    # #1001: max qty = 1, #1002: max qty = 2, #1003: max qty = 5
+    order_1003 = result[result["Order_Number"] == "#1003"]
+    assert "BULK_ITEM" in order_1003.iloc[0]["Status_Note"]
+    order_1001 = result[result["Order_Number"] == "#1001"]
+    assert "BULK_ITEM" not in order_1001.iloc[0]["Status_Note"]
+    order_1002 = result[result["Order_Number"] == "#1002"]
+    assert "BULK_ITEM" not in order_1002.iloc[0]["Status_Note"]
+
+
+# --- Multi-Step Rules Tests (Phase C) ---
+
+
+def test_multi_step_narrowing(sample_df):
+    """Tests that step 2 only sees rows matched by step 1 (narrowing)."""
+    df = sample_df.copy()
+    rules = [
+        {
+            "name": "DHL high-price",
+            "level": "article",
+            "steps": [
+                {
+                    "conditions": [{"field": "Shipping_Provider", "operator": "equals", "value": "DHL"}],
+                    "match": "ALL",
+                    "actions": [{"type": "ADD_TAG", "value": "STEP1_DHL"}],
+                },
+                {
+                    "conditions": [{"field": "Total_Price", "operator": "is greater than or equal", "value": "80"}],
+                    "match": "ALL",
+                    "actions": [{"type": "ADD_TAG", "value": "STEP2_EXPENSIVE"}],
+                },
+            ],
+        }
+    ]
+    engine = RuleEngine(rules)
+    result = engine.apply(df)
+    # DHL rows: #1001 SKU-A (50), #1001 SKU-B (50), #1004 SKU-E (80)
+    # Step 1 matches 3 DHL rows, all get STEP1_DHL
+    dhl_rows = result[result["Status_Note"].str.contains("STEP1_DHL", na=False)]
+    assert len(dhl_rows) == 3
+    # Step 2 narrows to DHL rows with price >= 80 → only #1004 (80)
+    expensive_rows = result[result["Status_Note"].str.contains("STEP2_EXPENSIVE", na=False)]
+    assert len(expensive_rows) == 1
+    assert expensive_rows.iloc[0]["SKU"] == "SKU-E"
+
+
+def test_multi_step_calculate_then_check():
+    """Tests the user's scenario: CALCULATE in step 1, check result in step 2."""
+    data = {
+        "Order_Number": ["#1", "#2", "#3"],
+        "SKU": ["A", "B", "C"],
+        "Subtotal": [90.0, 40.0, 110.0],
+        "Discount": [15.0, 5.0, 10.0],
+        "Status_Note": ["", "", ""],
+    }
+    df = pd.DataFrame(data)
+    rules = [
+        {
+            "name": "Calculate real subtotal and tag high-value",
+            "level": "article",
+            "steps": [
+                {
+                    "conditions": [{"field": "SKU", "operator": "is not empty", "value": ""}],
+                    "match": "ALL",
+                    "actions": [
+                        {"type": "CALCULATE", "operation": "add", "field1": "Subtotal", "field2": "Discount", "target": "Real_Subtotal"}
+                    ],
+                },
+                {
+                    "conditions": [{"field": "Real_Subtotal", "operator": "is greater than", "value": "100"}],
+                    "match": "ALL",
+                    "actions": [{"type": "ADD_TAG", "value": "HIGH_VALUE"}],
+                },
+            ],
+        }
+    ]
+    engine = RuleEngine(rules)
+    result = engine.apply(df)
+    # Real_Subtotal: #1=105, #2=45, #3=120
+    assert result.loc[0, "Real_Subtotal"] == 105.0
+    assert result.loc[1, "Real_Subtotal"] == 45.0
+    assert result.loc[2, "Real_Subtotal"] == 120.0
+    # Only #1 and #3 should be tagged HIGH_VALUE
+    assert "HIGH_VALUE" in result.loc[0, "Status_Note"]
+    assert "HIGH_VALUE" not in result.loc[1, "Status_Note"]
+    assert "HIGH_VALUE" in result.loc[2, "Status_Note"]
+
+
+def test_multi_step_three_steps():
+    """Tests a 3-step chain with progressive narrowing."""
+    data = {
+        "Order_Number": ["#1", "#2", "#3", "#4", "#5"],
+        "SKU": ["A", "B", "C", "D", "E"],
+        "Shipping_Provider": ["DHL", "DHL", "DHL", "PostOne", "DHL"],
+        "Total_Price": [100, 200, 50, 300, 150],
+        "Quantity": [1, 5, 2, 3, 10],
+        "Status_Note": ["", "", "", "", ""],
+    }
+    df = pd.DataFrame(data)
+    rules = [
+        {
+            "name": "DHL expensive bulk",
+            "level": "article",
+            "steps": [
+                {
+                    "conditions": [{"field": "Shipping_Provider", "operator": "equals", "value": "DHL"}],
+                    "match": "ALL",
+                    "actions": [{"type": "ADD_TAG", "value": "IS_DHL"}],
+                },
+                {
+                    "conditions": [{"field": "Total_Price", "operator": "is greater than", "value": "100"}],
+                    "match": "ALL",
+                    "actions": [{"type": "ADD_TAG", "value": "EXPENSIVE"}],
+                },
+                {
+                    "conditions": [{"field": "Quantity", "operator": "is greater than", "value": "3"}],
+                    "match": "ALL",
+                    "actions": [{"type": "ADD_TAG", "value": "BULK"}],
+                },
+            ],
+        }
+    ]
+    engine = RuleEngine(rules)
+    result = engine.apply(df)
+    # Step 1: DHL = #1,#2,#3,#5 (4 rows) → all get IS_DHL
+    assert result.loc[0, "Status_Note"].count("IS_DHL") == 1
+    assert "IS_DHL" not in result.loc[3, "Status_Note"]
+    # Step 2: DHL + price>100 = #2(200),#5(150) → get EXPENSIVE
+    assert "EXPENSIVE" in result.loc[1, "Status_Note"]
+    assert "EXPENSIVE" in result.loc[4, "Status_Note"]
+    assert "EXPENSIVE" not in result.loc[0, "Status_Note"]
+    # Step 3: DHL + price>100 + qty>3 = #2(5),#5(10) → get BULK
+    assert "BULK" in result.loc[1, "Status_Note"]
+    assert "BULK" in result.loc[4, "Status_Note"]
+
+
+def test_backward_compat_single_step(sample_df):
+    """Tests that old format (root-level conditions/actions) still works."""
+    df = sample_df.copy()
+    rules = [
+        {
+            "name": "Old format rule",
+            "conditions": [{"field": "SKU", "operator": "equals", "value": "SKU-A"}],
+            "actions": [{"type": "ADD_TAG", "value": "OLD_FORMAT"}],
+        }
+    ]
+    engine = RuleEngine(rules)
+    # Verify normalization happened
+    assert "steps" in engine.rules[0]
+    assert len(engine.rules[0]["steps"]) == 1
+    result = engine.apply(df)
+    tagged = result[result["Status_Note"].str.contains("OLD_FORMAT", na=False)]
+    assert len(tagged) == 1
+
+
+def test_multi_step_stops_on_no_match():
+    """Tests that step chain stops when a step finds no matches."""
+    data = {
+        "Order_Number": ["#1", "#2"],
+        "SKU": ["A", "B"],
+        "Total_Price": [10, 20],
+        "Status_Note": ["", ""],
+    }
+    df = pd.DataFrame(data)
+    rules = [
+        {
+            "name": "No match in step 2",
+            "level": "article",
+            "steps": [
+                {
+                    "conditions": [{"field": "SKU", "operator": "equals", "value": "A"}],
+                    "match": "ALL",
+                    "actions": [{"type": "ADD_TAG", "value": "STEP1"}],
+                },
+                {
+                    # Impossible condition on narrowed set
+                    "conditions": [{"field": "Total_Price", "operator": "is greater than", "value": "999"}],
+                    "match": "ALL",
+                    "actions": [{"type": "ADD_TAG", "value": "STEP2"}],
+                },
+                {
+                    # Should never execute
+                    "conditions": [{"field": "SKU", "operator": "is not empty", "value": ""}],
+                    "match": "ALL",
+                    "actions": [{"type": "ADD_TAG", "value": "STEP3"}],
+                },
+            ],
+        }
+    ]
+    engine = RuleEngine(rules)
+    result = engine.apply(df)
+    # Step 1 matched SKU=A → STEP1
+    assert "STEP1" in result.loc[0, "Status_Note"]
+    # Step 2 found no matches → stopped
+    assert "STEP2" not in result.loc[0, "Status_Note"]
+    # Step 3 never executed
+    assert "STEP3" not in result.loc[0, "Status_Note"]
+
+
+def test_multi_step_order_level(order_level_sample_df):
+    """Tests multi-step at order level."""
+    df = order_level_sample_df.copy()
+    rules = [
+        {
+            "name": "Multi-item order with hats",
+            "level": "order",
+            "steps": [
+                {
+                    "conditions": [{"field": "item_count", "operator": "is greater than", "value": "1"}],
+                    "match": "ALL",
+                    "actions": [{"type": "ADD_TAG", "value": "MULTI_ITEM"}],
+                },
+                {
+                    "conditions": [{"field": "has_sku", "operator": "starts with", "value": "HAT"}],
+                    "match": "ALL",
+                    "actions": [{"type": "ADD_TAG", "value": "HAS_HAT"}],
+                },
+            ],
+        }
+    ]
+    engine = RuleEngine(rules)
+    result = engine.apply(df)
+    # #1001 (3 items, has HAT-001) → MULTI_ITEM + HAS_HAT
+    order_1001 = result[result["Order_Number"] == "#1001"]
+    assert "MULTI_ITEM" in order_1001.iloc[0]["Status_Note"]
+    assert "HAS_HAT" in order_1001.iloc[0]["Status_Note"]
+    # #1002 (2 items, has HAT-002) → MULTI_ITEM + HAS_HAT
+    order_1002 = result[result["Order_Number"] == "#1002"]
+    assert "MULTI_ITEM" in order_1002.iloc[0]["Status_Note"]
+    assert "HAS_HAT" in order_1002.iloc[0]["Status_Note"]
+    # #1003 (1 item) → no MULTI_ITEM, no step 2
+    order_1003 = result[result["Order_Number"] == "#1003"]
+    assert "MULTI_ITEM" not in order_1003.iloc[0]["Status_Note"]
+    assert "HAS_HAT" not in order_1003.iloc[0]["Status_Note"]
+
+
+def test_normalize_steps_static():
+    """Tests _normalize_steps converts old format correctly."""
+    old_rule = {
+        "name": "Old",
+        "conditions": [{"field": "SKU", "operator": "equals", "value": "A"}],
+        "match": "ANY",
+        "actions": [{"type": "ADD_TAG", "value": "X"}],
+    }
+    result = RuleEngine._normalize_steps(old_rule)
+    assert "steps" in result
+    assert len(result["steps"]) == 1
+    assert result["steps"][0]["conditions"] == old_rule["conditions"]
+    assert result["steps"][0]["match"] == "ANY"
+    assert result["steps"][0]["actions"] == old_rule["actions"]
+
+
+def test_normalize_steps_already_has_steps():
+    """Tests that _normalize_steps doesn't overwrite existing steps."""
+    new_rule = {
+        "name": "New",
+        "steps": [
+            {"conditions": [{"field": "SKU", "operator": "equals", "value": "A"}], "match": "ALL", "actions": []},
+            {"conditions": [{"field": "SKU", "operator": "equals", "value": "B"}], "match": "ALL", "actions": []},
+        ],
+    }
+    result = RuleEngine._normalize_steps(new_rule)
+    assert len(result["steps"]) == 2
