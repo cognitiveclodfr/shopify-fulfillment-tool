@@ -188,20 +188,10 @@ class RuleTestDialog(QDialog):
             # Apply rule (modifies test_df in-place)
             self.df_after = engine.apply(self.test_df)
 
-            # Get matches based on rule level
-            rule_level = self.rule_config.get("level", "article")
-
-            if rule_level == "order":
-                # For order-level rules, find which orders were matched
-                # by checking which rows have changes or tags applied
-                self.matches = self._get_order_level_matches(engine)
-                self.matched_count = self.matches.sum()
-                logger.info(f"[RULE TEST] Order-level rule matched {self.matched_count} rows")
-            else:
-                # For article-level rules, use standard matching
-                self.matches = engine._get_matching_rows(self.df_after, self.rule_config)
-                self.matched_count = self.matches.sum()
-                logger.info(f"[RULE TEST] Article-level rule matched {self.matched_count} rows")
+            # Detect matched rows by comparing before/after (works for all rule types)
+            self.matches = self._detect_changed_rows()
+            self.matched_count = self.matches.sum()
+            logger.info(f"[RULE TEST] Rule affected {self.matched_count} rows")
 
             # Populate UI sections
             self._populate_conditions_table()
@@ -217,76 +207,62 @@ class RuleTestDialog(QDialog):
                 f"Failed to test rule:\n\n{str(e)}\n\nCheck logs for details."
             )
 
-    def _get_order_level_matches(self, engine):
-        """
-        Get matches for order-level rules.
+    def _detect_changed_rows(self):
+        """Detect which rows were modified by comparing before/after DataFrames."""
+        # Find common columns
+        common_cols = [c for c in self.df_before.columns if c in self.df_after.columns]
+        # Also check new columns added by CALCULATE
+        new_cols = [c for c in self.df_after.columns if c not in self.df_before.columns]
 
-        For order-level rules, we need to evaluate each order as a whole.
-        Returns a boolean Series indicating which rows belong to matched orders.
+        # Compare common columns
+        changed = pd.Series(False, index=self.df_before.index)
+        for col in common_cols:
+            before_vals = self.df_before[col].fillna("").astype(str)
+            # df_after may have extra rows from ADD_PRODUCT, limit to original index
+            after_vals = self.df_after.loc[self.df_before.index, col].fillna("").astype(str)
+            changed = changed | (before_vals != after_vals)
 
-        Args:
-            engine: RuleEngine instance
+        # New columns with non-default values indicate changes
+        for col in new_cols:
+            if col in self.df_after.columns:
+                after_vals = self.df_after.loc[self.df_before.index, col]
+                has_value = after_vals.notna() & (after_vals != 0) & (after_vals != "") & (after_vals != 0.0)
+                changed = changed | has_value
 
-        Returns:
-            pd.Series: Boolean series of matched rows
-        """
-        import pandas as pd
-
-        if "Order_Number" not in self.df_after.columns:
-            logger.warning("[RULE TEST] Order_Number column not found, cannot evaluate order-level rule")
-            return pd.Series([False] * len(self.df_after), index=self.df_after.index)
-
-        # Evaluate each order
-        matched_orders = set()
-        for order_number in self.df_after["Order_Number"].unique():
-            order_df = self.df_after[self.df_after["Order_Number"] == order_number]
-
-            # Evaluate order conditions
-            is_matched = engine._evaluate_order_conditions(
-                order_df,
-                self.rule_config.get("conditions", []),
-                self.rule_config.get("match", "ALL")
-            )
-
-            if is_matched:
-                matched_orders.add(order_number)
-
-        # Return boolean series for all rows in matched orders
-        matches = self.df_after["Order_Number"].isin(matched_orders)
-        return matches
+        return changed
 
     def _populate_conditions_table(self):
-        """Populate conditions table with evaluation results."""
-        conditions = self.rule_config.get("conditions", [])
-        self.conditions_table.setRowCount(len(conditions))
+        """Populate conditions table with evaluation results (supports steps)."""
+        steps = self.rule_config.get("steps", [])
 
-        for row_idx, condition in enumerate(conditions):
-            # Field
-            field_item = QTableWidgetItem(condition.get("field", ""))
-            self.conditions_table.setItem(row_idx, 0, field_item)
+        # Collect all conditions across all steps
+        all_conditions = []
+        for step_idx, step in enumerate(steps):
+            for condition in step.get("conditions", []):
+                all_conditions.append((step_idx + 1, step.get("match", "ALL"), condition))
 
-            # Operator
-            op_item = QTableWidgetItem(condition.get("operator", ""))
-            self.conditions_table.setItem(row_idx, 1, op_item)
+        self.conditions_table.setColumnCount(5)
+        self.conditions_table.setHorizontalHeaderLabels([
+            "Step", "Field", "Operator", "Value", "Match Logic"
+        ])
+        self.conditions_table.setRowCount(len(all_conditions))
 
-            # Value
-            value_item = QTableWidgetItem(str(condition.get("value", "")))
-            self.conditions_table.setItem(row_idx, 2, value_item)
-
-            # Matched rows (placeholder - showing "N/A" as we don't evaluate per-condition)
-            matched_item = QTableWidgetItem("N/A")
-            matched_item.setToolTip("Per-condition match count not available")
-            self.conditions_table.setItem(row_idx, 3, matched_item)
+        for row_idx, (step_num, match_type, condition) in enumerate(all_conditions):
+            self.conditions_table.setItem(row_idx, 0, QTableWidgetItem(f"Step {step_num}"))
+            self.conditions_table.setItem(row_idx, 1, QTableWidgetItem(condition.get("field", "")))
+            self.conditions_table.setItem(row_idx, 2, QTableWidgetItem(condition.get("operator", "")))
+            self.conditions_table.setItem(row_idx, 3, QTableWidgetItem(str(condition.get("value", ""))))
+            self.conditions_table.setItem(row_idx, 4, QTableWidgetItem(match_type))
 
         self.conditions_table.resizeColumnsToContents()
 
         # Update summary label
-        match_type = self.rule_config.get("match", "ALL")
         total_rows = len(self.test_df)
         percentage = (self.matched_count / total_rows * 100) if total_rows > 0 else 0
+        step_info = f"{len(steps)} step(s)" if len(steps) > 1 else "1 step"
 
-        summary = f"📊 Final Result ({match_type} conditions): "
-        summary += f"<span style='color: #4CAF50; font-size: 14pt;'>{self.matched_count}</span> rows matched "
+        summary = f"📊 Final Result ({step_info}, narrowing): "
+        summary += f"<span style='color: #4CAF50; font-size: 14pt;'>{self.matched_count}</span> rows affected "
         summary += f"({percentage:.1f}% of {total_rows} total rows)"
 
         self.match_summary_label.setText(summary)
@@ -326,25 +302,30 @@ class RuleTestDialog(QDialog):
             logger.info(f"[RULE TEST] Showing 5 of {self.matched_count} matched rows ({remaining} more)")
 
     def _populate_actions_list(self):
-        """Populate actions list with actions to be applied."""
-        actions = self.rule_config.get("actions", [])
+        """Populate actions list with actions from all steps."""
+        steps = self.rule_config.get("steps", [])
 
-        if not actions:
-            self.actions_label.setText("⚠️ No actions configured for this rule")
+        all_actions = []
+        for step_idx, step in enumerate(steps):
+            for action in step.get("actions", []):
+                all_actions.append((step_idx + 1, action))
+
+        if not all_actions:
+            self.actions_label.setText("No actions configured for this rule")
             return
 
-        actions_text = f"<b>{len(actions)} action(s) will be applied to {self.matched_count} matched rows:</b><br><br>"
+        actions_text = f"<b>{len(all_actions)} action(s) across {len(steps)} step(s):</b><br><br>"
 
-        for idx, action in enumerate(actions, 1):
+        for idx, (step_num, action) in enumerate(all_actions, 1):
             action_type = action.get("type", "")
             action_value = action.get("value", "")
 
-            actions_text += f"{idx}. <b>{action_type}</b>"
+            step_prefix = f"[Step {step_num}] " if len(steps) > 1 else ""
+            actions_text += f"{idx}. {step_prefix}<b>{action_type}</b>"
 
             if action_value:
                 actions_text += f": <code>{action_value}</code>"
 
-            # Add description based on action type
             if action_type == "ADD_TAG":
                 actions_text += f" → Appends to Status_Note column"
             elif action_type == "SET_STATUS":
@@ -357,10 +338,10 @@ class RuleTestDialog(QDialog):
                 actions_text += f" → Copies '{source}' to '{target}'"
             elif action_type == "CALCULATE":
                 operation = action.get("operation", "")
-                source = action.get("source", "")
+                field1 = action.get("field1", "")
+                field2 = action.get("field2", "")
                 target = action.get("target", "")
-                calc_value = action.get("value", "")
-                actions_text += f" → {operation.upper()} {source} by {calc_value}, store in {target}"
+                actions_text += f" → {operation.upper()} {field1} and {field2}, store in {target}"
 
             actions_text += "<br>"
 
