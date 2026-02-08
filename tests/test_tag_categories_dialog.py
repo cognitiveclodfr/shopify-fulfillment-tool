@@ -1,9 +1,10 @@
 """Tests for Tag Categories Dialog."""
 
 import pytest
-from PySide6.QtWidgets import QApplication, QMessageBox, QInputDialog
+from PySide6.QtWidgets import QApplication, QMessageBox, QInputDialog, QLineEdit
 from PySide6.QtCore import Qt
-from unittest.mock import Mock, patch
+from PySide6.QtGui import QColor
+from unittest.mock import Mock, patch, MagicMock
 
 from gui.tag_categories_dialog import TagCategoriesDialog
 
@@ -169,18 +170,18 @@ def test_edit_category_color(dialog, qtbot):
 # ============================================================================
 
 
-def test_add_tag_to_category(dialog):
+def test_add_tag_to_category(dialog, monkeypatch):
     """Test adding tag to category."""
     dialog.categories_list.setCurrentRow(0)
 
     initial_count = dialog.tags_list.count()
 
     # Mock input dialog
-    with patch('PySide6.QtWidgets.QInputDialog.getText') as mock_input:
-        mock_input.return_value = ("NEW_TAG", True)
+    mock_getText = MagicMock(return_value=("NEW_TAG", True))
+    monkeypatch.setattr('PySide6.QtWidgets.QInputDialog.getText', mock_getText)
 
-        # Click add tag button
-        dialog.add_tag_btn.click()
+    # Click add tag button
+    dialog._on_add_tag()
 
     assert dialog.tags_list.count() == initial_count + 1
     assert dialog.modified is True
@@ -190,36 +191,42 @@ def test_add_tag_to_category(dialog):
     assert "NEW_TAG" in categories["packaging"]["tags"]
 
 
-def test_add_duplicate_tag_warning(dialog):
+def test_add_duplicate_tag_warning(dialog, monkeypatch):
     """Test warning when adding duplicate tag in same category."""
     dialog.categories_list.setCurrentRow(0)
 
+    # Mock dialogs
+    mock_getText = MagicMock(return_value=("BOX", True))  # Already exists
+    mock_warning = MagicMock()
+
+    monkeypatch.setattr('PySide6.QtWidgets.QInputDialog.getText', mock_getText)
+    monkeypatch.setattr('PySide6.QtWidgets.QMessageBox.warning', mock_warning)
+
     # Try to add existing tag
-    with patch('PySide6.QtWidgets.QInputDialog.getText') as mock_input:
-        mock_input.return_value = ("BOX", True)  # Already exists
+    dialog._on_add_tag()
 
-        with patch.object(QMessageBox, 'warning') as mock_warning:
-            dialog.add_tag_btn.click()
-
-            # Should show warning
-            mock_warning.assert_called_once()
-            assert "already exists" in mock_warning.call_args[0][2].lower()
+    # Should show warning
+    mock_warning.assert_called_once()
+    assert "already exists" in str(mock_warning.call_args).lower()
 
 
-def test_add_tag_duplicate_across_categories_warning(dialog):
+def test_add_tag_duplicate_across_categories_warning(dialog, monkeypatch):
     """Test warning when adding tag that exists in another category."""
     dialog.categories_list.setCurrentRow(1)  # Select priority
 
+    # Mock dialogs
+    mock_getText = MagicMock(return_value=("BOX", True))  # Exists in packaging
+    mock_warning = MagicMock()
+
+    monkeypatch.setattr('PySide6.QtWidgets.QInputDialog.getText', mock_getText)
+    monkeypatch.setattr('PySide6.QtWidgets.QMessageBox.warning', mock_warning)
+
     # Try to add tag from packaging category
-    with patch('PySide6.QtWidgets.QInputDialog.getText') as mock_input:
-        mock_input.return_value = ("BOX", True)  # Exists in packaging
+    dialog._on_add_tag()
 
-        with patch.object(QMessageBox, 'warning') as mock_warning:
-            dialog.add_tag_btn.click()
-
-            # Should show warning
-            mock_warning.assert_called_once()
-            assert "another category" in mock_warning.call_args[0][2].lower()
+    # Should show warning
+    mock_warning.assert_called_once()
+    assert "another category" in str(mock_warning.call_args).lower()
 
 
 def test_remove_tag_from_category(dialog, qtbot):
@@ -255,16 +262,16 @@ def test_remove_tag_button_disabled_when_no_selection(dialog):
 # ============================================================================
 
 
-def test_create_new_category(dialog):
+def test_create_new_category(dialog, monkeypatch):
     """Test creating new category."""
     initial_count = dialog.categories_list.count()
 
     # Mock input dialog
-    with patch('PySide6.QtWidgets.QInputDialog.getText') as mock_input:
-        mock_input.return_value = ("test_category", True)
+    mock_getText = MagicMock(return_value=("test_category", True))
+    monkeypatch.setattr('PySide6.QtWidgets.QInputDialog.getText', mock_getText)
 
-        # Click new category button
-        dialog.new_category_btn.click()
+    # Create new category
+    dialog._on_new_category()
 
     assert dialog.categories_list.count() == initial_count + 1
     assert dialog.modified is True
@@ -275,32 +282,38 @@ def test_create_new_category(dialog):
     assert categories["test_category"]["label"] == "Test Category"
 
 
-def test_create_new_category_invalid_id(dialog):
+def test_create_new_category_invalid_id(dialog, monkeypatch):
     """Test creating category with invalid ID shows warning."""
+    # Mock dialogs
+    mock_getText = MagicMock(return_value=("Invalid-ID!", True))  # Invalid characters
+    mock_warning = MagicMock()
+
+    monkeypatch.setattr('PySide6.QtWidgets.QInputDialog.getText', mock_getText)
+    monkeypatch.setattr('PySide6.QtWidgets.QMessageBox.warning', mock_warning)
+
     # Try to create with invalid ID
-    with patch('PySide6.QtWidgets.QInputDialog.getText') as mock_input:
-        mock_input.return_value = ("Invalid-ID!", True)  # Invalid characters
+    dialog._on_new_category()
 
-        with patch.object(QMessageBox, 'warning') as mock_warning:
-            dialog.new_category_btn.click()
-
-            # Should show warning
-            mock_warning.assert_called_once()
-            assert "lowercase letters" in mock_warning.call_args[0][2].lower()
+    # Should show warning
+    mock_warning.assert_called_once()
+    assert "lowercase letters" in str(mock_warning.call_args).lower()
 
 
-def test_create_duplicate_category_warning(dialog):
+def test_create_duplicate_category_warning(dialog, monkeypatch):
     """Test warning when creating category with existing ID."""
+    # Mock dialogs
+    mock_getText = MagicMock(return_value=("packaging", True))  # Already exists
+    mock_warning = MagicMock()
+
+    monkeypatch.setattr('PySide6.QtWidgets.QInputDialog.getText', mock_getText)
+    monkeypatch.setattr('PySide6.QtWidgets.QMessageBox.warning', mock_warning)
+
     # Try to create with existing ID
-    with patch('PySide6.QtWidgets.QInputDialog.getText') as mock_input:
-        mock_input.return_value = ("packaging", True)  # Already exists
+    dialog._on_new_category()
 
-        with patch.object(QMessageBox, 'warning') as mock_warning:
-            dialog.new_category_btn.click()
-
-            # Should show warning
-            mock_warning.assert_called_once()
-            assert "already exists" in mock_warning.call_args[0][2].lower()
+    # Should show warning
+    mock_warning.assert_called_once()
+    assert "already exists" in str(mock_warning.call_args).lower()
 
 
 # ============================================================================
@@ -308,18 +321,18 @@ def test_create_duplicate_category_warning(dialog):
 # ============================================================================
 
 
-def test_delete_category(dialog):
+def test_delete_category(dialog, monkeypatch):
     """Test deleting category."""
     initial_count = dialog.categories_list.count()
 
     dialog.categories_list.setCurrentRow(0)
 
     # Mock confirmation dialog
-    with patch.object(QMessageBox, 'question') as mock_question:
-        mock_question.return_value = QMessageBox.Yes
+    mock_question = MagicMock(return_value=QMessageBox.Yes)
+    monkeypatch.setattr('PySide6.QtWidgets.QMessageBox.question', mock_question)
 
-        # Click delete button
-        dialog.delete_category_btn.click()
+    # Delete category
+    dialog._on_delete_category()
 
     assert dialog.categories_list.count() == initial_count - 1
     assert dialog.modified is True
@@ -329,18 +342,18 @@ def test_delete_category(dialog):
     assert "packaging" not in categories
 
 
-def test_delete_category_cancelled(dialog):
+def test_delete_category_cancelled(dialog, monkeypatch):
     """Test cancelling category deletion."""
     initial_count = dialog.categories_list.count()
 
     dialog.categories_list.setCurrentRow(0)
 
     # Mock confirmation dialog - user clicks No
-    with patch.object(QMessageBox, 'question') as mock_question:
-        mock_question.return_value = QMessageBox.No
+    mock_question = MagicMock(return_value=QMessageBox.No)
+    monkeypatch.setattr('PySide6.QtWidgets.QMessageBox.question', mock_question)
 
-        # Click delete button
-        dialog.delete_category_btn.click()
+    # Try to delete category
+    dialog._on_delete_category()
 
     # Category should not be deleted
     assert dialog.categories_list.count() == initial_count
@@ -393,18 +406,21 @@ def test_save_emits_signal(dialog, qtbot):
     assert emitted_categories["categories"]["packaging"]["label"] == "Modified"
 
 
-def test_apply_button_saves_without_closing(dialog):
+def test_apply_button_saves_without_closing(dialog, monkeypatch):
     """Test apply button saves but doesn't close dialog."""
     signal_spy = Mock()
     dialog.categories_updated.connect(signal_spy)
+
+    # Mock information dialog
+    mock_info = MagicMock()
+    monkeypatch.setattr('PySide6.QtWidgets.QMessageBox.information', mock_info)
 
     # Make a change
     dialog.categories_list.setCurrentRow(0)
     dialog.label_input.setText("Modified")
 
     # Apply
-    with patch.object(QMessageBox, 'information'):  # Mock success message
-        dialog._on_apply()
+    dialog._on_apply()
 
     # Check signal emitted
     signal_spy.assert_called_once()
@@ -413,7 +429,7 @@ def test_apply_button_saves_without_closing(dialog):
     assert dialog.modified is False  # Reset after successful save
 
 
-def test_cancel_with_unsaved_changes_shows_warning(dialog):
+def test_cancel_with_unsaved_changes_shows_warning(dialog, monkeypatch):
     """Test cancel with unsaved changes shows warning."""
     # Make a change
     dialog.categories_list.setCurrentRow(0)
@@ -421,15 +437,16 @@ def test_cancel_with_unsaved_changes_shows_warning(dialog):
 
     assert dialog.modified is True
 
+    # Mock question dialog
+    mock_question = MagicMock(return_value=QMessageBox.No)  # Don't cancel
+    monkeypatch.setattr('PySide6.QtWidgets.QMessageBox.question', mock_question)
+
     # Try to cancel
-    with patch.object(QMessageBox, 'question') as mock_question:
-        mock_question.return_value = QMessageBox.No  # Don't cancel
+    dialog._on_cancel()
 
-        dialog._on_cancel()
-
-        # Should show warning
-        mock_question.assert_called_once()
-        assert "unsaved changes" in mock_question.call_args[0][2].lower()
+    # Should show warning
+    mock_question.assert_called_once()
+    assert "unsaved changes" in str(mock_question.call_args).lower()
 
 
 def test_cancel_without_changes_closes_immediately(dialog):
@@ -448,28 +465,30 @@ def test_cancel_without_changes_closes_immediately(dialog):
 # ============================================================================
 
 
-def test_full_workflow_create_edit_save(dialog):
+def test_full_workflow_create_edit_save(dialog, monkeypatch):
     """Test full workflow: create category, edit it, save."""
     signal_spy = Mock()
     dialog.categories_updated.connect(signal_spy)
 
+    # Mock getText for all steps
+    getText_returns = [
+        ("test_cat", True),  # Step 1: category name
+        ("TAG1", True),       # Step 3a: first tag
+        ("TAG2", True)        # Step 3b: second tag
+    ]
+    mock_getText = MagicMock(side_effect=getText_returns)
+    monkeypatch.setattr('PySide6.QtWidgets.QInputDialog.getText', mock_getText)
+
     # 1. Create new category
-    with patch('PySide6.QtWidgets.QInputDialog.getText') as mock_input:
-        mock_input.return_value = ("test_cat", True)
-        dialog.new_category_btn.click()
+    dialog._on_new_category()
 
     # 2. Edit the new category
     # (Should be auto-selected after creation)
     dialog.label_input.setText("Test Category")
 
     # 3. Add tags
-    with patch('PySide6.QtWidgets.QInputDialog.getText') as mock_input:
-        mock_input.return_value = ("TAG1", True)
-        dialog.add_tag_btn.click()
-
-    with patch('PySide6.QtWidgets.QInputDialog.getText') as mock_input:
-        mock_input.return_value = ("TAG2", True)
-        dialog.add_tag_btn.click()
+    dialog._on_add_tag()
+    dialog._on_add_tag()
 
     # 4. Save
     with patch.object(dialog, 'accept'):
