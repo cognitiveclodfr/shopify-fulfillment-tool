@@ -365,14 +365,20 @@ def test_delete_category_cancelled(dialog, monkeypatch):
 # ============================================================================
 
 
-def test_validation_fails_with_invalid_config(dialog):
+def test_validation_fails_with_invalid_config(dialog, monkeypatch):
     """Test validation fails when config is invalid."""
+    # Mock critical dialog
+    mock_critical = MagicMock()
+    monkeypatch.setattr('PySide6.QtWidgets.QMessageBox.critical', mock_critical)
+
     # Break the config
     dialog.working_categories["categories"]["packaging"]["color"] = "invalid"  # Invalid color
 
     result = dialog._validate_categories()
 
     assert result is False
+    # Should show error message
+    mock_critical.assert_called_once()
 
 
 def test_validation_passes_with_valid_config(dialog):
@@ -387,10 +393,14 @@ def test_validation_passes_with_valid_config(dialog):
 # ============================================================================
 
 
-def test_save_emits_signal(dialog, qtbot):
+def test_save_emits_signal(dialog, qtbot, monkeypatch):
     """Test save button emits categories_updated signal."""
     signal_spy = Mock()
     dialog.categories_updated.connect(signal_spy)
+
+    # Mock any potential dialogs
+    mock_critical = MagicMock()
+    monkeypatch.setattr('PySide6.QtWidgets.QMessageBox.critical', mock_critical)
 
     # Make a change
     dialog.categories_list.setCurrentRow(0)
