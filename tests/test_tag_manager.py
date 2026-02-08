@@ -555,3 +555,29 @@ def test_cache_invalidation_on_config_change():
 
     assert result1 == "cat1"
     assert result2 == "cat1"
+
+
+def test_get_tag_category_handles_v2_format_directly(tag_categories_v2):
+    """Test that get_tag_category works directly with v2 format (regression test for AttributeError)."""
+    # This should not raise AttributeError when iterating over v2 format
+    category = get_tag_category("BOX", tag_categories_v2)
+    assert category == "packaging"
+
+    category = get_tag_category("URGENT", tag_categories_v2)
+    assert category == "priority"
+
+    category = get_tag_category("UNKNOWN_TAG", tag_categories_v2)
+    assert category == "custom"
+
+
+def test_get_tag_color_handles_v2_format_directly(tag_categories_v2):
+    """Test that get_tag_color works directly with v2 format (regression test for AttributeError)."""
+    # This should not raise AttributeError when looking up color in v2 format
+    color = get_tag_color("BOX", tag_categories_v2)
+    assert color == "#4CAF50"
+
+    color = get_tag_color("URGENT", tag_categories_v2)
+    assert color == "#FF9800"
+
+    color = get_tag_color("UNKNOWN_TAG", tag_categories_v2)
+    assert color == "#9E9E9E"  # Default color for custom category

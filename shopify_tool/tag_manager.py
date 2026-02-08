@@ -108,12 +108,15 @@ def get_tag_category(tag: str, tag_categories: Dict) -> Optional[str]:
 
     Args:
         tag: Tag string
-        tag_categories: Config dict with tag categories
+        tag_categories: Config dict with tag categories (v1 or v2 format)
 
     Returns:
         Category name or "custom" if not found
     """
-    for category, config in tag_categories.items():
+    # Normalize to handle both v1 and v2 formats
+    categories = _normalize_tag_categories(tag_categories)
+
+    for category, config in categories.items():
         if tag in config.get("tags", []):
             return category
 
@@ -126,13 +129,16 @@ def get_tag_color(tag: str, tag_categories: Dict) -> str:
 
     Args:
         tag: Tag string
-        tag_categories: Config dict with tag categories
+        tag_categories: Config dict with tag categories (v1 or v2 format)
 
     Returns:
         Hex color code
     """
+    # Normalize to handle both v1 and v2 formats
+    categories = _normalize_tag_categories(tag_categories)
+
     category = get_tag_category(tag, tag_categories)
-    return tag_categories.get(category, {}).get("color", "#9E9E9E")
+    return categories.get(category, {}).get("color", "#9E9E9E")
 
 
 # ============================================================================
