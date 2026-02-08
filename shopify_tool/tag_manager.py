@@ -1,7 +1,9 @@
 """Tag management utilities for Internal_Tags column."""
 
 import json
-from typing import List, Optional, Dict
+import hashlib
+from functools import lru_cache
+from typing import List, Optional, Dict, Tuple
 import pandas as pd
 
 
@@ -15,11 +17,12 @@ def parse_tags(tags_value) -> List[str]:
     Returns:
         List of tag strings
     """
-    if pd.isna(tags_value) or tags_value == "":
-        return []
-
+    # Check list first (before pd.isna which fails on lists)
     if isinstance(tags_value, list):
         return tags_value
+
+    if pd.isna(tags_value) or tags_value == "":
+        return []
 
     if isinstance(tags_value, str):
         try:
@@ -130,3 +133,215 @@ def get_tag_color(tag: str, tag_categories: Dict) -> str:
     """
     category = get_tag_category(tag, tag_categories)
     return tag_categories.get(category, {}).get("color", "#9E9E9E")
+
+
+# ============================================================================
+# V2 Format Support & Performance Optimization
+# ============================================================================
+
+
+def get_config_hash(tag_categories: Dict) -> str:
+    """
+    Generate stable hash of tag_categories config for cache invalidation.
+
+    Args:
+        tag_categories: Config dict with tag categories
+
+    Returns:
+        MD5 hash of sorted config JSON
+    """
+    # Sort keys for stable hash
+    config_str = json.dumps(tag_categories, sort_keys=True)
+    return hashlib.md5(config_str.encode()).hexdigest()
+
+
+def _normalize_tag_categories(tag_categories: Dict) -> Dict:
+    """
+    Normalize tag_categories to always return v2 format.
+
+    Handles both v1 and v2 formats:
+    - v1: {"category": {"label": ..., "tags": []}}
+    - v2: {"version": 2, "categories": {"category": {"label": ..., "tags": []}}}
+
+    Args:
+        tag_categories: Config dict (v1 or v2)
+
+    Returns:
+        Dict in v2 format (categories only)
+    """
+    if not tag_categories:
+        return {}
+
+    # Check if v2 format
+    if "version" in tag_categories and "categories" in tag_categories:
+        return tag_categories["categories"]
+
+    # v1 format - return as is (it's already the categories dict)
+    return tag_categories
+
+
+@lru_cache(maxsize=512)
+def get_tag_category_cached(tag: str, config_hash: str, config_json: str) -> Optional[str]:
+    """
+    Cached version of get_tag_category for performance.
+
+    Args:
+        tag: Tag string
+        config_hash: Hash from get_config_hash() for cache invalidation
+        config_json: JSON string of tag_categories config
+
+    Returns:
+        Category name or "custom" if not found
+    """
+    # Parse config from JSON (needed because dicts aren't hashable)
+    tag_categories = json.loads(config_json)
+    categories = _normalize_tag_categories(tag_categories)
+
+    for category_id, config in categories.items():
+        if tag in config.get("tags", []):
+            return category_id
+
+    return "custom"
+
+
+def get_category_tags(category_id: str, tag_categories: Dict) -> List[str]:
+    """
+    Get list of tags for a specific category.
+
+    Args:
+        category_id: Category identifier
+        tag_categories: Config dict with tag categories (v1 or v2)
+
+    Returns:
+        List of tag strings in the category
+    """
+    categories = _normalize_tag_categories(tag_categories)
+    return categories.get(category_id, {}).get("tags", [])
+
+
+def validate_tag_categories_v2(config: Dict) -> Tuple[bool, List[str]]:
+    """
+    Validate tag_categories v2 structure.
+
+    Checks:
+    - Has "version" and "categories" keys
+    - No duplicate tags across categories
+    - Each category has required fields (label, color, tags, order)
+    - Colors are valid hex codes
+
+    Args:
+        config: tag_categories dict to validate
+
+    Returns:
+        Tuple of (is_valid, list_of_error_messages)
+    """
+    errors = []
+
+    # Check v2 structure
+    if "version" not in config:
+        errors.append("Missing 'version' field in tag_categories")
+
+    if "categories" not in config:
+        errors.append("Missing 'categories' field in tag_categories")
+        return False, errors
+
+    categories = config["categories"]
+
+    if not isinstance(categories, dict):
+        errors.append("'categories' must be a dictionary")
+        return False, errors
+
+    # Track tags to check for duplicates
+    tag_to_category = {}
+
+    # Validate each category
+    for category_id, category_config in categories.items():
+        if not isinstance(category_config, dict):
+            errors.append(f"Category '{category_id}' config must be a dictionary")
+            continue
+
+        # Check required fields
+        required_fields = ["label", "color", "tags", "order"]
+        for field in required_fields:
+            if field not in category_config:
+                errors.append(f"Category '{category_id}' missing required field '{field}'")
+
+        # Validate color format (basic check)
+        color = category_config.get("color", "")
+        if color and not (color.startswith("#") and len(color) == 7):
+            errors.append(f"Category '{category_id}' has invalid color format: {color}")
+
+        # Validate tags
+        tags = category_config.get("tags", [])
+        if not isinstance(tags, list):
+            errors.append(f"Category '{category_id}' tags must be a list")
+            continue
+
+        # Check for duplicate tags
+        for tag in tags:
+            if tag in tag_to_category:
+                errors.append(
+                    f"Duplicate tag '{tag}' found in categories "
+                    f"'{tag_to_category[tag]}' and '{category_id}'"
+                )
+            else:
+                tag_to_category[tag] = category_id
+
+        # Validate order is int
+        order = category_config.get("order")
+        if order is not None and not isinstance(order, int):
+            errors.append(f"Category '{category_id}' order must be an integer")
+
+        # Validate sku_writeoff structure if present
+        sku_writeoff = category_config.get("sku_writeoff", {})
+        if sku_writeoff:
+            if not isinstance(sku_writeoff, dict):
+                errors.append(f"Category '{category_id}' sku_writeoff must be a dictionary")
+            else:
+                if "enabled" not in sku_writeoff:
+                    errors.append(f"Category '{category_id}' sku_writeoff missing 'enabled' field")
+
+                mappings = sku_writeoff.get("mappings", {})
+                if not isinstance(mappings, dict):
+                    errors.append(f"Category '{category_id}' sku_writeoff mappings must be a dictionary")
+                else:
+                    # Validate each mapping
+                    for tag, sku_list in mappings.items():
+                        if not isinstance(sku_list, list):
+                            errors.append(
+                                f"Category '{category_id}' sku_writeoff mapping for tag '{tag}' "
+                                f"must be a list"
+                            )
+                            continue
+
+                        for sku_item in sku_list:
+                            if not isinstance(sku_item, dict):
+                                errors.append(
+                                    f"Category '{category_id}' sku_writeoff item for tag '{tag}' "
+                                    f"must be a dictionary"
+                                )
+                                continue
+
+                            if "sku" not in sku_item:
+                                errors.append(
+                                    f"Category '{category_id}' sku_writeoff item for tag '{tag}' "
+                                    f"missing 'sku' field"
+                                )
+
+                            if "quantity" not in sku_item:
+                                errors.append(
+                                    f"Category '{category_id}' sku_writeoff item for tag '{tag}' "
+                                    f"missing 'quantity' field"
+                                )
+                            elif not isinstance(sku_item["quantity"], (int, float)):
+                                errors.append(
+                                    f"Category '{category_id}' sku_writeoff item for tag '{tag}' "
+                                    f"quantity must be a number"
+                                )
+                            elif sku_item["quantity"] <= 0:
+                                errors.append(
+                                    f"Category '{category_id}' sku_writeoff item for tag '{tag}' "
+                                    f"quantity must be positive"
+                                )
+
+    return len(errors) == 0, errors
