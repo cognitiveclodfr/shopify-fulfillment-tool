@@ -12,6 +12,14 @@ from shopify_tool.profile_manager import ProfileManager
 # ============================================================================
 
 
+@pytest.fixture(autouse=True)
+def clear_profile_manager_cache():
+    """Clear class-level cache before each test to prevent cross-test contamination."""
+    ProfileManager._config_cache.clear()
+    yield
+    ProfileManager._config_cache.clear()
+
+
 @pytest.fixture
 def temp_profile_dir(tmp_path):
     """Create temporary profile directory structure."""

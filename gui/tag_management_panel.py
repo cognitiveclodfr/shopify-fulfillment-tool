@@ -118,12 +118,17 @@ class TagManagementPanel(QWidget):
         """Load predefined tags from config.
 
         Args:
-            tag_categories: Dict of tag category configs
+            tag_categories: Dict of tag category configs (v1 or v2 format)
         """
+        from shopify_tool.tag_manager import _normalize_tag_categories
+
         self.predefined_combo.clear()
         self.predefined_combo.addItem("-- Select Predefined Tag --")
 
-        for category, config in tag_categories.items():
+        # Normalize to handle both v1 and v2 formats
+        categories = _normalize_tag_categories(tag_categories)
+
+        for category, config in categories.items():
             label = config.get("label", category)
             for tag in config.get("tags", []):
                 # Display as "Category: Tag", store just tag as data

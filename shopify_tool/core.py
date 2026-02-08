@@ -1212,7 +1212,8 @@ def create_stock_export_report(
     analysis_df,
     report_config,
     session_manager: Optional[Any] = None,
-    session_path: Optional[str] = None
+    session_path: Optional[str] = None,
+    tag_categories: Optional[Dict] = None
 ):
     """Generates a single stock export report based on a configuration.
 
@@ -1222,8 +1223,11 @@ def create_stock_export_report(
     Args:
         analysis_df (pd.DataFrame): The main analysis DataFrame.
         report_config (dict): The configuration for the specific stock export.
+            Can include 'apply_writeoff' key (bool) to enable writeoff deduction.
         session_manager (SessionManager, optional): Session manager for session-based workflow.
         session_path (str, optional): Path to current session directory.
+        tag_categories (dict, optional): Tag categories config with writeoff mappings.
+            Required if apply_writeoff is enabled in report_config.
 
     Returns:
         tuple[bool, str]: A tuple containing a success flag and a status message.
@@ -1247,12 +1251,15 @@ def create_stock_export_report(
                 os.makedirs(output_dir)
 
         filters = report_config.get("filters")
+        apply_writeoff = report_config.get("apply_writeoff", False)
 
         stock_export.create_stock_export(
             analysis_df,
             output_filename,
             report_name=report_name,
             filters=filters,
+            apply_writeoff=apply_writeoff,
+            tag_categories=tag_categories
         )
 
         # Verify file was actually created before updating session info
@@ -1288,4 +1295,86 @@ def create_stock_export_report(
     except Exception as e:
         error_message = f"Failed to create stock export '{report_name}'. See logs for details."
         logger.error(f"Error creating stock export '{report_name}': {e}", exc_info=True)
+        return False, error_message
+
+
+def create_writeoff_report(
+    analysis_df: pd.DataFrame,
+    report_config: Dict,
+    tag_categories: Dict,
+    session_manager: Optional[Any] = None,
+    session_path: Optional[str] = None
+) -> Tuple[bool, str]:
+    """Generate standalone SKU writeoff report.
+
+    Session Mode: When session_manager and session_path are provided, the report
+    is saved to the session's writeoff_reports/ directory and session_info is updated.
+
+    Args:
+        analysis_df: The main analysis DataFrame with Internal_Tags.
+        report_config: Configuration for the writeoff report.
+            Should include 'name' and 'output_filename' keys.
+        tag_categories: Tag categories config with writeoff mappings.
+        session_manager: Session manager for session-based workflow (optional).
+        session_path: Path to current session directory (optional).
+
+    Returns:
+        tuple[bool, str]: Success flag and status message.
+    """
+    report_name = report_config.get("name", "Writeoff Report")
+
+    try:
+        # Determine output path based on mode
+        if session_manager and session_path:
+            # Session mode: save to session/writeoff_reports/
+            writeoff_dir = Path(session_path) / "writeoff_reports"
+            writeoff_dir.mkdir(exist_ok=True)
+            original_filename = os.path.basename(report_config["output_filename"])
+            output_filename = str(writeoff_dir / original_filename)
+            logger.info(f"Session mode: saving writeoff report to {output_filename}")
+        else:
+            # Legacy mode: use configured path
+            output_filename = report_config["output_filename"]
+            output_dir = os.path.dirname(output_filename)
+            if output_dir and not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+
+        # Generate report using sku_writeoff module
+        from shopify_tool.sku_writeoff import generate_writeoff_report
+        generate_writeoff_report(analysis_df, tag_categories, output_filename)
+
+        # Verify file was created
+        if not os.path.exists(output_filename):
+            error_message = f"Writeoff report file was not created: {output_filename}"
+            logger.error(error_message)
+            return False, error_message
+
+        # Update session info if in session mode
+        if session_manager and session_path:
+            try:
+                session_info = session_manager.get_session_info(session_path)
+                generated_reports = session_info.get("writeoff_reports_generated", [])
+                if original_filename not in generated_reports:
+                    generated_reports.append(original_filename)
+                    session_manager.update_session_info(session_path, {
+                        "writeoff_reports_generated": generated_reports
+                    })
+                    logger.info(f"Session info updated: added writeoff report {original_filename}")
+            except Exception as e:
+                logger.warning(f"Failed to update session info: {e}")
+
+        success_message = f"Writeoff report '{report_name}' created successfully at '{output_filename}'."
+        return True, success_message
+
+    except KeyError as e:
+        error_message = f"Configuration error for writeoff report '{report_name}': Missing key {e}."
+        logger.error(f"Config error for writeoff report '{report_name}': {e}", exc_info=True)
+        return False, error_message
+    except PermissionError:
+        error_message = "Permission denied. Could not write writeoff report."
+        logger.error(f"Permission error creating writeoff report '{report_name}'", exc_info=True)
+        return False, error_message
+    except Exception as e:
+        error_message = f"Failed to create writeoff report '{report_name}'. See logs for details."
+        logger.error(f"Error creating writeoff report '{report_name}': {e}", exc_info=True)
         return False, error_message

@@ -10,7 +10,8 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QListWidget, QListWidgetItem, QWidget, QFormLayout, QSpinBox,
     QDialogButtonBox, QMessageBox, QColorDialog, QSplitter, QGroupBox,
-    QCheckBox, QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView
+    QCheckBox, QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
+    QDoubleSpinBox, QComboBox
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
@@ -214,8 +215,50 @@ class TagCategoriesDialog(QDialog):
 
         layout.addWidget(tags_group)
 
-        # Placeholder for SKU Writeoff (Phase 3)
-        # Will be implemented in Phase 3
+        # SKU Writeoff section
+        writeoff_group = QGroupBox("SKU Writeoff")
+        writeoff_layout = QVBoxLayout(writeoff_group)
+
+        # Enable checkbox
+        self.writeoff_enabled_checkbox = QCheckBox("Enable writeoff for this category")
+        self.writeoff_enabled_checkbox.setToolTip(
+            "When enabled, tags in this category can trigger automatic SKU writeoffs\n"
+            "in stock exports (e.g., deduct packaging materials)"
+        )
+        self.writeoff_enabled_checkbox.stateChanged.connect(self._on_writeoff_enabled_changed)
+        writeoff_layout.addWidget(self.writeoff_enabled_checkbox)
+
+        # Mappings table
+        mappings_label = QLabel("Writeoff Mappings:")
+        mappings_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
+        writeoff_layout.addWidget(mappings_label)
+
+        self.writeoff_mappings_table = QTableWidget()
+        self.writeoff_mappings_table.setColumnCount(3)
+        self.writeoff_mappings_table.setHorizontalHeaderLabels(["Tag", "SKU", "Quantity"])
+        self.writeoff_mappings_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.writeoff_mappings_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.writeoff_mappings_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.writeoff_mappings_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.writeoff_mappings_table.setMaximumHeight(200)
+        self.writeoff_mappings_table.setEnabled(False)  # Disabled until checkbox is checked
+        writeoff_layout.addWidget(self.writeoff_mappings_table)
+
+        # Buttons
+        mappings_buttons = QHBoxLayout()
+        self.add_mapping_btn = QPushButton("+ Add Mapping")
+        self.add_mapping_btn.clicked.connect(self._on_add_mapping)
+        self.add_mapping_btn.setEnabled(False)
+        mappings_buttons.addWidget(self.add_mapping_btn)
+
+        self.remove_mapping_btn = QPushButton("Remove Mapping")
+        self.remove_mapping_btn.clicked.connect(self._on_remove_mapping)
+        self.remove_mapping_btn.setEnabled(False)
+        mappings_buttons.addWidget(self.remove_mapping_btn)
+        mappings_buttons.addStretch()
+
+        writeoff_layout.addLayout(mappings_buttons)
+        layout.addWidget(writeoff_group)
 
         layout.addStretch()
 
@@ -290,6 +333,40 @@ class TagCategoriesDialog(QDialog):
         self.label_input.blockSignals(False)
         self.order_spin.blockSignals(False)
 
+        # Load writeoff configuration
+        sku_writeoff = category.get("sku_writeoff", {"enabled": False, "mappings": {}})
+
+        self.writeoff_enabled_checkbox.blockSignals(True)
+
+        # Load enabled state
+        enabled = sku_writeoff.get("enabled", False)
+        self.writeoff_enabled_checkbox.setChecked(enabled)
+        self.writeoff_mappings_table.setEnabled(enabled)
+        self.add_mapping_btn.setEnabled(enabled)
+        self.remove_mapping_btn.setEnabled(False)
+
+        # Load mappings
+        self.writeoff_mappings_table.setRowCount(0)
+        mappings = sku_writeoff.get("mappings", {})
+
+        for tag, sku_list in mappings.items():
+            if not isinstance(sku_list, list):
+                continue
+            for item in sku_list:
+                if not isinstance(item, dict):
+                    continue
+                if "sku" not in item or "quantity" not in item:
+                    continue
+
+                row_position = self.writeoff_mappings_table.rowCount()
+                self.writeoff_mappings_table.insertRow(row_position)
+
+                self.writeoff_mappings_table.setItem(row_position, 0, QTableWidgetItem(tag))
+                self.writeoff_mappings_table.setItem(row_position, 1, QTableWidgetItem(item["sku"]))
+                self.writeoff_mappings_table.setItem(row_position, 2, QTableWidgetItem(f"{item['quantity']:.2f}"))
+
+        self.writeoff_enabled_checkbox.blockSignals(False)
+
         # Update header
         self.editor_header_label.setText(f"Editing: {category.get('label', category_id)}")
 
@@ -302,11 +379,23 @@ class TagCategoriesDialog(QDialog):
         self.tags_list.setEnabled(enabled)
         self.add_tag_btn.setEnabled(enabled)
 
+        # Enable writeoff controls based on overall enabled state AND checkbox state
+        self.writeoff_enabled_checkbox.setEnabled(enabled)
+        if enabled and self.writeoff_enabled_checkbox.isChecked():
+            self.writeoff_mappings_table.setEnabled(True)
+            self.add_mapping_btn.setEnabled(True)
+        else:
+            self.writeoff_mappings_table.setEnabled(False)
+            self.add_mapping_btn.setEnabled(False)
+            self.remove_mapping_btn.setEnabled(False)
+
         if not enabled:
             self.editor_header_label.setText("Category Editor")
             self.category_id_input.clear()
             self.label_input.clear()
             self.tags_list.clear()
+            self.writeoff_mappings_table.setRowCount(0)
+            self.writeoff_enabled_checkbox.setChecked(False)
 
     def _on_editor_changed(self):
         """Handle editor field changes."""
@@ -338,12 +427,41 @@ class TagCategoriesDialog(QDialog):
             tags.append(self.tags_list.item(i).text())
         category["tags"] = tags
 
-        # Ensure sku_writeoff structure exists
-        if "sku_writeoff" not in category:
-            category["sku_writeoff"] = {
-                "enabled": False,
-                "mappings": {}
-            }
+        # Save writeoff configuration
+        enabled = self.writeoff_enabled_checkbox.isChecked()
+
+        # Extract mappings from table
+        mappings = {}
+        for row in range(self.writeoff_mappings_table.rowCount()):
+            tag_item = self.writeoff_mappings_table.item(row, 0)
+            sku_item = self.writeoff_mappings_table.item(row, 1)
+            quantity_item = self.writeoff_mappings_table.item(row, 2)
+
+            if not tag_item or not sku_item or not quantity_item:
+                continue
+
+            tag = tag_item.text()
+            sku = sku_item.text()
+            quantity_str = quantity_item.text()
+
+            try:
+                quantity = float(quantity_str)
+            except ValueError:
+                logger.warning(f"Invalid quantity for writeoff mapping: {quantity_str}")
+                quantity = 1.0
+
+            if tag not in mappings:
+                mappings[tag] = []
+
+            mappings[tag].append({
+                "sku": sku,
+                "quantity": quantity
+            })
+
+        category["sku_writeoff"] = {
+            "enabled": enabled,
+            "mappings": mappings
+        }
 
         # Update list item
         current_item = self.categories_list.currentItem()
@@ -428,6 +546,99 @@ class TagCategoriesDialog(QDialog):
                 return True
 
         return False
+
+    def _on_writeoff_enabled_changed(self, state):
+        """Handle writeoff enabled checkbox state change."""
+        enabled = (state == Qt.Checked)
+
+        self.writeoff_mappings_table.setEnabled(enabled)
+        self.add_mapping_btn.setEnabled(enabled)
+
+        # Enable remove button only if rows selected
+        has_selection = len(self.writeoff_mappings_table.selectedItems()) > 0
+        self.remove_mapping_btn.setEnabled(enabled and has_selection)
+
+        # Mark as modified
+        self._on_editor_changed()
+
+    def _on_add_mapping(self):
+        """Add a new writeoff mapping row."""
+        if not self.current_category_id:
+            return
+
+        # Get current category tags
+        categories = self.working_categories.get("categories", {})
+        category = categories.get(self.current_category_id, {})
+        available_tags = category.get("tags", [])
+
+        if not available_tags:
+            QMessageBox.warning(
+                self,
+                "No Tags",
+                "Please add tags to this category before creating writeoff mappings."
+            )
+            return
+
+        # Custom dialog for mapping input
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Add Writeoff Mapping")
+        dialog_layout = QFormLayout(dialog)
+
+        # Tag selector
+        tag_combo = QComboBox()
+        tag_combo.addItems(available_tags)
+        dialog_layout.addRow("Tag:", tag_combo)
+
+        # SKU input
+        sku_input = QLineEdit()
+        sku_input.setPlaceholderText("e.g., PKG-BOX-SMALL")
+        dialog_layout.addRow("SKU:", sku_input)
+
+        # Quantity spinner
+        quantity_spin = QDoubleSpinBox()
+        quantity_spin.setMinimum(0.01)
+        quantity_spin.setMaximum(999.99)
+        quantity_spin.setDecimals(2)
+        quantity_spin.setValue(1.0)
+        dialog_layout.addRow("Quantity:", quantity_spin)
+
+        # Buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(dialog.accept)
+        button_box.rejected.connect(dialog.reject)
+        dialog_layout.addRow(button_box)
+
+        if dialog.exec() == QDialog.Accepted:
+            tag = tag_combo.currentText()
+            sku = sku_input.text().strip()
+            quantity = quantity_spin.value()
+
+            if not sku:
+                QMessageBox.warning(self, "Invalid Input", "SKU cannot be empty.")
+                return
+
+            # Add row to table
+            row_position = self.writeoff_mappings_table.rowCount()
+            self.writeoff_mappings_table.insertRow(row_position)
+
+            self.writeoff_mappings_table.setItem(row_position, 0, QTableWidgetItem(tag))
+            self.writeoff_mappings_table.setItem(row_position, 1, QTableWidgetItem(sku))
+            self.writeoff_mappings_table.setItem(row_position, 2, QTableWidgetItem(f"{quantity:.2f}"))
+
+            self._on_editor_changed()
+
+    def _on_remove_mapping(self):
+        """Remove selected writeoff mapping."""
+        selected_rows = set(index.row() for index in self.writeoff_mappings_table.selectedIndexes())
+
+        if not selected_rows:
+            return
+
+        # Remove in reverse order to avoid index shifting
+        for row in sorted(selected_rows, reverse=True):
+            self.writeoff_mappings_table.removeRow(row)
+
+        self._on_editor_changed()
 
     def _on_new_category(self):
         """Handle new category button click."""

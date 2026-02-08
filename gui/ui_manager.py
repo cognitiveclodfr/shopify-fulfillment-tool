@@ -573,12 +573,16 @@ class UIManager:
         self.mw.packing_list_button.setToolTip("Generate packing lists based on pre-defined filters.")
         self.mw.stock_export_button = QPushButton("📊 Create Stock Export")
         self.mw.stock_export_button.setToolTip("Generate stock export files for couriers.")
+        self.mw.writeoff_report_button = QPushButton("📦 Create Writeoff Report")
+        self.mw.writeoff_report_button.setToolTip("Generate SKU writeoff report based on Internal Tags.")
 
         self.mw.packing_list_button.setEnabled(False)
         self.mw.stock_export_button.setEnabled(False)
+        self.mw.writeoff_report_button.setEnabled(False)
 
         layout.addWidget(self.mw.packing_list_button)
         layout.addWidget(self.mw.stock_export_button)
+        layout.addWidget(self.mw.writeoff_report_button)
 
         # Add "Open Session Folder" button
         self.mw.open_session_folder_button = QPushButton("📁 Open Session Folder")
@@ -872,20 +876,98 @@ class UIManager:
         self.update_hidden_columns_indicator()
 
     def _populate_tag_filter(self):
-        """Populate the tag filter combo box with available tags from categories."""
+        """Populate the tag filter combo box with tags from current DataFrame.
+
+        Dynamic approach: Only shows tags that actually exist in the current
+        analysis_results_df, grouped by category. If DataFrame is empty,
+        falls back to showing placeholder message.
+        """
         if not hasattr(self.mw, 'tag_filter_combo'):
             return
 
-        # Clear existing items (except "All Tags")
+        # Clear existing items
         self.mw.tag_filter_combo.clear()
         self.mw.tag_filter_combo.addItem("All Tags", None)
 
-        # Populate with all possible tags from categories
+        # Check if we have data
+        if self.mw.analysis_results_df is None or self.mw.analysis_results_df.empty:
+            self.mw.tag_filter_combo.addItem("(No data loaded)", None)
+            self.mw.tag_filter_combo.setEnabled(False)
+            return
+
+        # Check if Internal_Tags column exists
+        if "Internal_Tags" not in self.mw.analysis_results_df.columns:
+            self.mw.tag_filter_combo.addItem("(No tags in data)", None)
+            self.mw.tag_filter_combo.setEnabled(False)
+            return
+
+        # Extract unique tags from DataFrame
+        unique_tags = self._extract_unique_tags_from_dataframe()
+
+        if not unique_tags:
+            self.mw.tag_filter_combo.addItem("(No tags applied)", None)
+            self.mw.tag_filter_combo.setEnabled(False)
+            return
+
+        # Group tags by category
         tag_categories = self.mw.active_profile_config.get("tag_categories", {})
-        for category, config in tag_categories.items():
-            category_label = config.get("label", category)
-            for tag in config.get("tags", []):
+        grouped_tags = self._group_tags_by_category(unique_tags, tag_categories)
+
+        # Populate combo in sorted order
+        for category_label, tags in sorted(grouped_tags.items()):
+            for tag in sorted(tags):
                 self.mw.tag_filter_combo.addItem(f"{category_label}: {tag}", tag)
+
+        self.mw.tag_filter_combo.setEnabled(True)
+        self.log.info(f"Tag filter populated with {len(unique_tags)} unique tags from DataFrame")
+
+    def _extract_unique_tags_from_dataframe(self) -> set:
+        """Extract all unique tags from analysis_results_df Internal_Tags column.
+
+        Returns:
+            set: Set of unique tag strings found in the DataFrame
+        """
+        from shopify_tool.tag_manager import parse_tags
+
+        unique_tags = set()
+
+        for tags_value in self.mw.analysis_results_df["Internal_Tags"]:
+            tags = parse_tags(tags_value)
+            unique_tags.update(tags)
+
+        return unique_tags
+
+    def _group_tags_by_category(self, tags: set, tag_categories: dict) -> dict:
+        """Group tags by their category.
+
+        Args:
+            tags: Set of tag strings to categorize
+            tag_categories: Tag categories config
+
+        Returns:
+            Dict mapping category_label -> list of tags
+            Example: {"Packaging": ["BOX", "BAG"], "Priority": ["URGENT"]}
+        """
+        from shopify_tool.tag_manager import get_tag_category, _normalize_tag_categories
+
+        categories = _normalize_tag_categories(tag_categories)
+        grouped = {}
+
+        for tag in tags:
+            category_id = get_tag_category(tag, tag_categories)
+
+            # Get category label
+            if category_id in categories:
+                category_label = categories[category_id].get("label", category_id)
+            else:
+                category_label = "Інші"  # Custom/unknown tags
+
+            if category_label not in grouped:
+                grouped[category_label] = []
+
+            grouped[category_label].append(tag)
+
+        return grouped
 
     # ========== NEW TAB-SPECIFIC METHODS ==========
 
