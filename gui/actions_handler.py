@@ -14,6 +14,7 @@ from shopify_tool import stock_export
 from shopify_tool.session_manager import SessionManagerError
 from gui.settings_window_pyside import SettingsWindow
 from gui.report_selection_dialog import ReportSelectionDialog
+from gui.tag_categories_dialog import TagCategoriesDialog
 
 
 class ActionsHandler(QObject):
@@ -335,6 +336,56 @@ class ActionsHandler(QObject):
                     f"Settings were saved, but failed to reload configuration:\n{str(e)}\n\n"
                     "Please restart the application."
                 )
+
+    def open_tag_categories_dialog(self):
+        """Opens the tag categories management dialog."""
+        if not self.mw.current_client_id:
+            QMessageBox.warning(
+                self.mw,
+                "No Client Selected",
+                "Please select a client before managing tag categories."
+            )
+            return
+
+        if not self.mw.active_profile_config:
+            QMessageBox.warning(
+                self.mw,
+                "No Configuration Loaded",
+                "Please load a client configuration first."
+            )
+            return
+
+        # Get current tag_categories
+        tag_categories = self.mw.active_profile_config.get("tag_categories", {})
+
+        # Open dialog
+        dialog = TagCategoriesDialog(tag_categories, parent=self.mw)
+
+        # Connect signal to save changes
+        def on_categories_updated(updated_categories):
+            """Handle categories update."""
+            try:
+                # Update config
+                self.mw.active_profile_config["tag_categories"] = updated_categories
+
+                # Save to file
+                self.mw.profile_manager.save_shopify_config(
+                    self.mw.current_client_id,
+                    self.mw.active_profile_config
+                )
+
+                self.log.info(f"Tag categories updated for CLIENT_{self.mw.current_client_id}")
+
+            except Exception as e:
+                self.log.error(f"Error saving tag categories: {e}")
+                QMessageBox.critical(
+                    self.mw,
+                    "Save Error",
+                    f"Failed to save tag categories:\n{str(e)}"
+                )
+
+        dialog.categories_updated.connect(on_categories_updated)
+        dialog.exec()
 
     def open_report_selection_dialog(self, report_type):
         """Opens dialog for selecting which reports to generate.

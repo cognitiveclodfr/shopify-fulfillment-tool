@@ -641,12 +641,17 @@ class UIManager:
         self.mw.settings_button.setToolTip("Open the settings window for the active client.")
         self.mw.settings_button.setEnabled(False)  # Enabled when client is selected
 
+        self.mw.tag_categories_button = QPushButton("🏷️ Tag Categories")
+        self.mw.tag_categories_button.setToolTip("Manage Internal Tags categories and configuration")
+        self.mw.tag_categories_button.setEnabled(False)  # Enabled when client is selected
+
         self.mw.configure_columns_button = QPushButton("📊 Configure Columns")
         self.mw.configure_columns_button.setToolTip("Customize table column visibility and order")
         self.mw.configure_columns_button.setEnabled(False)  # Enabled after analysis
 
         actions_layout.addWidget(self.mw.run_analysis_button, 1)
         actions_layout.addWidget(self.mw.settings_button)
+        actions_layout.addWidget(self.mw.tag_categories_button)
         actions_layout.addWidget(self.mw.configure_columns_button)
         main_layout.addLayout(actions_layout)
 

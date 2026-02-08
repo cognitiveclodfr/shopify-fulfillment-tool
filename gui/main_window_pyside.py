@@ -254,6 +254,7 @@ class MainWindow(QMainWindow):
         # Main actions
         self.run_analysis_button.clicked.connect(self.actions_handler.run_analysis)
         self.settings_button.clicked.connect(self.actions_handler.open_settings_window)
+        self.tag_categories_button.clicked.connect(self.actions_handler.open_tag_categories_dialog)
         self.configure_columns_button.clicked.connect(self.open_column_config_dialog)
         self.add_product_button.clicked.connect(self.actions_handler.show_add_product_dialog)
 
@@ -619,6 +620,10 @@ class MainWindow(QMainWindow):
         # Settings button (Tab 2 version)
         if hasattr(self, 'settings_button_tab2'):
             self.settings_button_tab2.setEnabled(has_client)
+
+        # Tag Categories button
+        if hasattr(self, 'tag_categories_button'):
+            self.tag_categories_button.setEnabled(has_client)
 
         # File loading
         self.load_orders_btn.setEnabled(has_session)
