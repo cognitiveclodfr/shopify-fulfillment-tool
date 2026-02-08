@@ -14,6 +14,7 @@ from shopify_tool import stock_export
 from shopify_tool.session_manager import SessionManagerError
 from gui.settings_window_pyside import SettingsWindow
 from gui.report_selection_dialog import ReportSelectionDialog
+from gui.tag_categories_dialog import TagCategoriesDialog
 
 
 class ActionsHandler(QObject):
@@ -336,6 +337,56 @@ class ActionsHandler(QObject):
                     "Please restart the application."
                 )
 
+    def open_tag_categories_dialog(self):
+        """Opens the tag categories management dialog."""
+        if not self.mw.current_client_id:
+            QMessageBox.warning(
+                self.mw,
+                "No Client Selected",
+                "Please select a client before managing tag categories."
+            )
+            return
+
+        if not self.mw.active_profile_config:
+            QMessageBox.warning(
+                self.mw,
+                "No Configuration Loaded",
+                "Please load a client configuration first."
+            )
+            return
+
+        # Get current tag_categories
+        tag_categories = self.mw.active_profile_config.get("tag_categories", {})
+
+        # Open dialog
+        dialog = TagCategoriesDialog(tag_categories, parent=self.mw)
+
+        # Connect signal to save changes
+        def on_categories_updated(updated_categories):
+            """Handle categories update."""
+            try:
+                # Update config
+                self.mw.active_profile_config["tag_categories"] = updated_categories
+
+                # Save to file
+                self.mw.profile_manager.save_shopify_config(
+                    self.mw.current_client_id,
+                    self.mw.active_profile_config
+                )
+
+                self.log.info(f"Tag categories updated for CLIENT_{self.mw.current_client_id}")
+
+            except Exception as e:
+                self.log.error(f"Error saving tag categories: {e}")
+                QMessageBox.critical(
+                    self.mw,
+                    "Save Error",
+                    f"Failed to save tag categories:\n{str(e)}"
+                )
+
+        dialog.categories_updated.connect(on_categories_updated)
+        dialog.exec()
+
     def open_report_selection_dialog(self, report_type):
         """Opens dialog for selecting which reports to generate.
 
@@ -395,8 +446,10 @@ class ActionsHandler(QObject):
         # ✅ FIX: Use correct config keys
         if report_type == "packing_lists":
             config_key = "packing_list_configs"  # Correct key
-        else:  # stock_exports
+        elif report_type == "stock_exports":
             config_key = "stock_export_configs"  # Correct key
+        else:
+            raise ValueError(f"Unknown report type: {report_type}")
 
         report_configs = fresh_config.get(config_key, [])
 
@@ -537,8 +590,10 @@ class ActionsHandler(QObject):
             # Create output directory
             if report_type == "packing_lists":
                 output_dir = Path(session_path) / "packing_lists"
-            else:  # stock_exports
+            elif report_type == "stock_exports":
                 output_dir = Path(session_path) / "stock_exports"
+            else:
+                raise ValueError(f"Unknown report type: {report_type}")
 
             output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -557,7 +612,7 @@ class ActionsHandler(QObject):
                 if report_type == "packing_lists":
                     base_filename = f"{report_name}.xlsx"
                 else:
-                    # Add timestamp for stock exports
+                    # Add timestamp for stock exports and writeoff reports
                     datestamp = datetime.now().strftime("%Y-%m-%d")
                     base_filename = f"{report_name}_{datestamp}.xls"
 
@@ -565,7 +620,7 @@ class ActionsHandler(QObject):
             if report_type == "packing_lists":
                 if not base_filename.endswith('.xlsx'):
                     base_filename = base_filename.replace('.xls', '.xlsx')
-            else:
+            else:  # stock_exports or writeoff_reports
                 if not base_filename.endswith('.xls'):
                     base_filename = base_filename + '.xls'
 
@@ -643,8 +698,12 @@ class ActionsHandler(QObject):
                     self.log.error(f"Failed to create JSON: {e}", exc_info=True)
                     # Don't fail the whole report if JSON fails
 
-            else:  # stock_exports
+            elif report_type == "stock_exports":
                 self.log.info(f"Creating stock export using stock_export module")
+
+                # Get writeoff setting from report_config
+                apply_writeoff = report_config.get("apply_writeoff", False)
+                tag_categories = self.mw.active_profile_config.get("tag_categories", {})
 
                 # Use the proper stock_export module
                 # Pass UNFILTERED DataFrame - the module will apply filters itself
@@ -652,7 +711,9 @@ class ActionsHandler(QObject):
                     analysis_df=self.mw.analysis_results_df,
                     output_file=output_file,
                     report_name=report_name,
-                    filters=filters
+                    filters=filters,
+                    apply_writeoff=apply_writeoff,
+                    tag_categories=tag_categories
                 )
 
                 self.log.info(f"Stock export created: {output_file}")
@@ -706,6 +767,67 @@ class ActionsHandler(QObject):
                 f"Failed to generate report '{report_name}':\n\n{str(e)}"
             )
 
+
+    def generate_writeoff_report(self):
+        """Generate writeoff report directly (single button, no dialog)."""
+        from pathlib import Path
+        from datetime import datetime
+
+        self.log.info("Generating writeoff report")
+
+        # Validate that analysis has been run
+        if self.mw.analysis_results_df is None or self.mw.analysis_results_df.empty:
+            QMessageBox.warning(
+                self.mw,
+                "No Analysis Data",
+                "Please run analysis first before generating writeoff report."
+            )
+            return
+
+        # Validate session
+        if not self.mw.session_path:
+            QMessageBox.warning(
+                self.mw,
+                "No Active Session",
+                "No active session. Please create a new session first."
+            )
+            return
+
+        try:
+            # Create writeoff_report directory in session
+            writeoff_dir = Path(self.mw.session_path) / "writeoff_report"
+            writeoff_dir.mkdir(parents=True, exist_ok=True)
+
+            # Generate filename with timestamp
+            timestamp = datetime.now().strftime("%Y-%m-%d")
+            output_file = writeoff_dir / f"writeoff_{timestamp}.xls"
+
+            # Get tag categories
+            tag_categories = self.mw.active_profile_config.get("tag_categories", {})
+
+            # Generate report using sku_writeoff module
+            from shopify_tool.sku_writeoff import generate_writeoff_report
+            generate_writeoff_report(
+                self.mw.analysis_results_df,
+                tag_categories,
+                str(output_file)
+            )
+
+            # Show success message in status bar
+            self.mw.statusBar().showMessage(
+                f"✅ Writeoff report saved: {output_file.name}",
+                5000  # 5 seconds
+            )
+            self.log.info(f"Writeoff report created: {output_file}")
+            self.mw.log_activity("Report", "Generated writeoff report")
+
+        except Exception as e:
+            self.log.error(f"Failed to generate writeoff report: {e}", exc_info=True)
+            QMessageBox.critical(
+                self.mw,
+                "Generation Failed",
+                f"Failed to generate writeoff report:\n\n{str(e)}"
+            )
 
     def toggle_fulfillment_status_for_order(self, order_number):
         """Toggles the fulfillment status of all items in a given order.
@@ -1283,11 +1405,14 @@ class ActionsHandler(QObject):
             return
 
         # Get tag categories from config
+        from shopify_tool.tag_manager import _normalize_tag_categories
         tag_categories = self.mw.active_profile_config.get("tag_categories", {})
 
         # Build tag selection dialog
         all_tags = []
-        for category, config in tag_categories.items():
+        # Normalize to handle both v1 and v2 formats
+        categories = _normalize_tag_categories(tag_categories)
+        for category, config in categories.items():
             category_label = config.get("label", category)
             for tag in config.get("tags", []):
                 all_tags.append(f"{category_label}: {tag}")
@@ -1366,6 +1491,11 @@ class ActionsHandler(QObject):
         # Update UI
         self.mw.save_session_state()
         self.mw._update_all_views()
+
+        # Refresh tag filter with new tags
+        if hasattr(self.mw, 'ui_manager'):
+            self.mw.ui_manager._populate_tag_filter()
+
         self.mw.log_activity(
             "Bulk Operation",
             f"Added tag '{tag_value}' to {orders_count} orders ({items_count} items)"
@@ -1456,6 +1586,11 @@ class ActionsHandler(QObject):
         # Update UI
         self.mw.save_session_state()
         self.mw._update_all_views()
+
+        # Refresh tag filter after removing tags
+        if hasattr(self.mw, 'ui_manager'):
+            self.mw.ui_manager._populate_tag_filter()
+
         self.mw.log_activity(
             "Bulk Operation",
             f"Removed tag '{tag}' from {orders_count} orders ({items_count} items)"

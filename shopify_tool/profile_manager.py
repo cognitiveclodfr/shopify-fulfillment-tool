@@ -403,7 +403,7 @@ class ProfileManager:
         return True
 
     def _migrate_add_tag_categories(self, client_id: str, config: Dict) -> bool:
-        """Add tag_categories to config if missing.
+        """Add tag_categories to config if missing (creates v2 format).
 
         Args:
             client_id (str): Client ID (for logging)
@@ -416,33 +416,206 @@ class ProfileManager:
             logger.debug(f"tag_categories already exists for CLIENT_{client_id}")
             return False
 
-        logger.info(f"Adding tag_categories to config for CLIENT_{client_id}")
+        logger.info(f"Adding tag_categories (v2 format) to config for CLIENT_{client_id}")
 
-        # Add default tag categories
+        # Add default tag categories in v2 format
         config["tag_categories"] = {
-            "packaging": {
-                "label": "Packaging",
-                "color": "#4CAF50",
-                "tags": ["SMALL_BAG", "LARGE_BAG", "BOX", "NO_BOX", "BOX+ANY"]
-            },
-            "priority": {
-                "label": "Priority",
-                "color": "#FF9800",
-                "tags": ["URGENT", "HIGH_VALUE", "DOUBLE_TRACK"]
-            },
-            "status": {
-                "label": "Status",
-                "color": "#2196F3",
-                "tags": ["CHECKED", "PROBLEM", "VERIFIED"]
-            },
-            "custom": {
-                "label": "Custom",
-                "color": "#9E9E9E",
-                "tags": []
+            "version": 2,
+            "categories": {
+                "packaging": {
+                    "label": "Пакетаж",
+                    "color": "#4CAF50",
+                    "order": 1,
+                    "tags": ["SMALL_BAG", "LARGE_BAG", "BOX", "NO_BOX", "BOX+ANY"],
+                    "sku_writeoff": {
+                        "enabled": False,
+                        "mappings": {}
+                    }
+                },
+                "priority": {
+                    "label": "Пріоритет",
+                    "color": "#FF9800",
+                    "order": 2,
+                    "tags": ["URGENT", "HIGH_VALUE", "DOUBLE_TRACK"],
+                    "sku_writeoff": {
+                        "enabled": False,
+                        "mappings": {}
+                    }
+                },
+                "status": {
+                    "label": "Статус",
+                    "color": "#2196F3",
+                    "order": 3,
+                    "tags": ["CHECKED", "PROBLEM", "VERIFIED"],
+                    "sku_writeoff": {
+                        "enabled": False,
+                        "mappings": {}
+                    }
+                },
+                "order_type": {
+                    "label": "Тип замовлення",
+                    "color": "#9C27B0",
+                    "order": 4,
+                    "tags": ["RETAIL", "WHOLESALE", "RETURN", "EXCHANGE"],
+                    "sku_writeoff": {
+                        "enabled": False,
+                        "mappings": {}
+                    }
+                },
+                "accessories": {
+                    "label": "Додатки",
+                    "color": "#E91E63",
+                    "order": 5,
+                    "tags": ["STICKER", "BUSINESS_CARD", "GIFT_BOX"],
+                    "sku_writeoff": {
+                        "enabled": False,
+                        "mappings": {}
+                    }
+                },
+                "delivery": {
+                    "label": "Кур'єр/Доставка",
+                    "color": "#FF5722",
+                    "order": 6,
+                    "tags": ["NOVA_POSHTA", "UKRPOSHTA", "SELF_PICKUP"],
+                    "sku_writeoff": {
+                        "enabled": False,
+                        "mappings": {}
+                    }
+                },
+                "custom": {
+                    "label": "Інші",
+                    "color": "#9E9E9E",
+                    "order": 999,
+                    "tags": [],
+                    "sku_writeoff": {
+                        "enabled": False,
+                        "mappings": {}
+                    }
+                }
             }
         }
 
-        logger.info(f"Tag categories added for CLIENT_{client_id}")
+        logger.info(f"Tag categories (v2) added for CLIENT_{client_id}")
+        return True
+
+    def _migrate_tag_categories_v1_to_v2(self, client_id: str, config: Dict) -> bool:
+        """Migrate tag_categories from v1 to v2 format.
+
+        V1 format (old):
+            "tag_categories": {
+                "packaging": {"label": "...", "color": "...", "tags": []}
+            }
+
+        V2 format (new):
+            "tag_categories": {
+                "version": 2,
+                "categories": {
+                    "packaging": {"label": "...", "color": "...", "tags": [], "order": 1, "sku_writeoff": {...}}
+                }
+            }
+
+        Args:
+            client_id (str): Client ID (for logging)
+            config (Dict): Configuration dictionary to migrate (modified in-place)
+
+        Returns:
+            bool: True if migration was performed, False if already v2
+        """
+        tag_categories = config.get("tag_categories", {})
+
+        # Check if already v2 format
+        if "version" in tag_categories and tag_categories.get("version") == 2:
+            logger.debug(f"tag_categories already in v2 format for CLIENT_{client_id}")
+            return False
+
+        if not tag_categories:
+            logger.debug(f"No tag_categories to migrate for CLIENT_{client_id}")
+            return False
+
+        logger.info(f"Migrating tag_categories from v1 to v2 for CLIENT_{client_id}")
+
+        # Migrate existing categories
+        migrated_categories = {}
+        order_counter = 1
+
+        # Known categories with predefined order
+        known_order = ["packaging", "priority", "status", "order_type", "accessories", "delivery", "custom"]
+
+        for category_id in known_order:
+            if category_id in tag_categories:
+                old_category = tag_categories[category_id]
+                migrated_categories[category_id] = {
+                    "label": old_category.get("label", category_id.title()),
+                    "color": old_category.get("color", "#9E9E9E"),
+                    "order": order_counter,
+                    "tags": old_category.get("tags", []),
+                    "sku_writeoff": {
+                        "enabled": False,
+                        "mappings": {}
+                    }
+                }
+                order_counter += 1
+
+        # Handle any custom categories not in known_order
+        for category_id, category_config in tag_categories.items():
+            if category_id not in migrated_categories and isinstance(category_config, dict):
+                migrated_categories[category_id] = {
+                    "label": category_config.get("label", category_id.title()),
+                    "color": category_config.get("color", "#9E9E9E"),
+                    "order": order_counter,
+                    "tags": category_config.get("tags", []),
+                    "sku_writeoff": {
+                        "enabled": False,
+                        "mappings": {}
+                    }
+                }
+                order_counter += 1
+                logger.info(f"Migrated custom category '{category_id}' for CLIENT_{client_id}")
+
+        # Add new default categories if missing
+        if "order_type" not in migrated_categories:
+            migrated_categories["order_type"] = {
+                "label": "Тип замовлення",
+                "color": "#9C27B0",
+                "order": order_counter,
+                "tags": ["RETAIL", "WHOLESALE", "RETURN", "EXCHANGE"],
+                "sku_writeoff": {"enabled": False, "mappings": {}}
+            }
+            order_counter += 1
+            logger.info(f"Added 'order_type' category for CLIENT_{client_id}")
+
+        if "accessories" not in migrated_categories:
+            migrated_categories["accessories"] = {
+                "label": "Додатки",
+                "color": "#E91E63",
+                "order": order_counter,
+                "tags": ["STICKER", "BUSINESS_CARD", "GIFT_BOX"],
+                "sku_writeoff": {"enabled": False, "mappings": {}}
+            }
+            order_counter += 1
+            logger.info(f"Added 'accessories' category for CLIENT_{client_id}")
+
+        if "delivery" not in migrated_categories:
+            migrated_categories["delivery"] = {
+                "label": "Кур'єр/Доставка",
+                "color": "#FF5722",
+                "order": order_counter,
+                "tags": ["NOVA_POSHTA", "UKRPOSHTA", "SELF_PICKUP"],
+                "sku_writeoff": {"enabled": False, "mappings": {}}
+            }
+            order_counter += 1
+            logger.info(f"Added 'delivery' category for CLIENT_{client_id}")
+
+        # Wrap in v2 structure
+        config["tag_categories"] = {
+            "version": 2,
+            "categories": migrated_categories
+        }
+
+        logger.info(
+            f"Tag categories migration to v2 successful for CLIENT_{client_id}: "
+            f"{len(migrated_categories)} categories"
+        )
         return True
 
     def _migrate_delimiter_config_v1_to_v2(self, client_id: str, config: Dict) -> bool:
@@ -566,25 +739,78 @@ class ProfileManager:
             "packaging_rules": [],
 
             "tag_categories": {
-                "packaging": {
-                    "label": "Packaging",
-                    "color": "#4CAF50",
-                    "tags": ["SMALL_BAG", "LARGE_BAG", "BOX", "NO_BOX", "BOX+ANY"]
-                },
-                "priority": {
-                    "label": "Priority",
-                    "color": "#FF9800",
-                    "tags": ["URGENT", "HIGH_VALUE", "DOUBLE_TRACK"]
-                },
-                "status": {
-                    "label": "Status",
-                    "color": "#2196F3",
-                    "tags": ["CHECKED", "PROBLEM", "VERIFIED"]
-                },
-                "custom": {
-                    "label": "Custom",
-                    "color": "#9E9E9E",
-                    "tags": []
+                "version": 2,
+                "categories": {
+                    "packaging": {
+                        "label": "Пакетаж",
+                        "color": "#4CAF50",
+                        "order": 1,
+                        "tags": ["SMALL_BAG", "LARGE_BAG", "BOX", "NO_BOX", "BOX+ANY"],
+                        "sku_writeoff": {
+                            "enabled": False,
+                            "mappings": {}
+                        }
+                    },
+                    "priority": {
+                        "label": "Пріоритет",
+                        "color": "#FF9800",
+                        "order": 2,
+                        "tags": ["URGENT", "HIGH_VALUE", "DOUBLE_TRACK"],
+                        "sku_writeoff": {
+                            "enabled": False,
+                            "mappings": {}
+                        }
+                    },
+                    "status": {
+                        "label": "Статус",
+                        "color": "#2196F3",
+                        "order": 3,
+                        "tags": ["CHECKED", "PROBLEM", "VERIFIED"],
+                        "sku_writeoff": {
+                            "enabled": False,
+                            "mappings": {}
+                        }
+                    },
+                    "order_type": {
+                        "label": "Тип замовлення",
+                        "color": "#9C27B0",
+                        "order": 4,
+                        "tags": ["RETAIL", "WHOLESALE", "RETURN", "EXCHANGE"],
+                        "sku_writeoff": {
+                            "enabled": False,
+                            "mappings": {}
+                        }
+                    },
+                    "accessories": {
+                        "label": "Додатки",
+                        "color": "#E91E63",
+                        "order": 5,
+                        "tags": ["STICKER", "BUSINESS_CARD", "GIFT_BOX"],
+                        "sku_writeoff": {
+                            "enabled": False,
+                            "mappings": {}
+                        }
+                    },
+                    "delivery": {
+                        "label": "Кур'єр/Доставка",
+                        "color": "#FF5722",
+                        "order": 6,
+                        "tags": ["NOVA_POSHTA", "UKRPOSHTA", "SELF_PICKUP"],
+                        "sku_writeoff": {
+                            "enabled": False,
+                            "mappings": {}
+                        }
+                    },
+                    "custom": {
+                        "label": "Інші",
+                        "color": "#9E9E9E",
+                        "order": 999,
+                        "tags": [],
+                        "sku_writeoff": {
+                            "enabled": False,
+                            "mappings": {}
+                        }
+                    }
                 }
             }
         }
@@ -670,8 +896,9 @@ class ProfileManager:
             migrated_mappings = self._migrate_column_mappings_v1_to_v2(client_id, config)
             migrated_delimiters = self._migrate_delimiter_config_v1_to_v2(client_id, config)
             migrated_tag_categories = self._migrate_add_tag_categories(client_id, config)
+            migrated_tag_categories_v2 = self._migrate_tag_categories_v1_to_v2(client_id, config)
 
-            if migrated_mappings or migrated_delimiters or migrated_tag_categories:
+            if migrated_mappings or migrated_delimiters or migrated_tag_categories or migrated_tag_categories_v2:
                 # If config was migrated, save it immediately
                 self.save_shopify_config(client_id, config)
                 logger.info(f"Config migrations completed for CLIENT_{client_id}")

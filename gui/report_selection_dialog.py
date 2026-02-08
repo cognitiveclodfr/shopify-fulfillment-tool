@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QPushButton, QLabel
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QPushButton, QLabel, QCheckBox, QFrame
 from PySide6.QtCore import Signal, Slot
 
 
@@ -36,7 +36,25 @@ class ReportSelectionDialog(QDialog):
         self.setMinimumWidth(400)
         self.setMinimumHeight(300)
 
+        self.report_type = report_type  # Store report type
         layout = QVBoxLayout(self)
+
+        # Add writeoff checkbox for stock_exports
+        if report_type == "stock_exports":
+            self.writeoff_checkbox = QCheckBox("Include Packaging Materials (SKU Writeoff)")
+            self.writeoff_checkbox.setToolTip(
+                "When enabled, packaging materials (based on Internal Tags) will be\n"
+                "automatically added to the stock export as separate SKU lines.\n"
+                "Example: Orders with 'BOX' tag will add PKG-BOX-SMALL to the export."
+            )
+            self.writeoff_checkbox.setChecked(False)
+            layout.addWidget(self.writeoff_checkbox)
+
+            # Add separator line
+            line = QFrame()
+            line.setFrameShape(QFrame.HLine)
+            line.setFrameShadow(QFrame.Sunken)
+            layout.addWidget(line)
 
         if not reports_config:
             no_reports_label = QLabel("No reports configured for this type.")
@@ -159,5 +177,9 @@ class ReportSelectionDialog(QDialog):
             report_config (dict): The configuration dictionary associated
                 with the button that was clicked.
         """
+        # Inject writeoff setting into report_config if checkbox exists
+        if hasattr(self, 'writeoff_checkbox'):
+            report_config["apply_writeoff"] = self.writeoff_checkbox.isChecked()
+
         self.reportSelected.emit(report_config)
         self.accept()
