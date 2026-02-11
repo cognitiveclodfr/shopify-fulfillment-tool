@@ -1356,13 +1356,18 @@ class UIManager:
 
         df = self.mw.analysis_results_df
 
+        # Get unique order counts
         total_orders = df['Order_Number'].nunique()
-        total_items = len(df)
-        fulfillable = (df['Order_Fulfillment_Status'] == 'Fulfillable').sum()
+        fulfillable_orders = df[df['Order_Fulfillment_Status'] == 'Fulfillable']['Order_Number'].nunique()
 
+        # Get item quantity sums (not row counts)
+        total_items = int(df['Quantity'].sum()) if 'Quantity' in df.columns else len(df)
+        fulfillable_items = int(df[df['Order_Fulfillment_Status'] == 'Fulfillable']['Quantity'].sum()) if 'Quantity' in df.columns else 0
+
+        # Display format: total (fulfillable)
         self.mw.summary_label.setText(
-            f"📊 {total_orders} orders │ {total_items} items │ "
-            f"{fulfillable} fulfillable"
+            f"📊 {total_orders} orders ({fulfillable_orders} fulfillable) │ "
+            f"{total_items} items ({fulfillable_items} fulfillable)"
         )
 
     def update_hidden_columns_indicator(self):

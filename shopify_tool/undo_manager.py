@@ -71,6 +71,10 @@ class UndoManager:
             if hasattr(self.main_window, 'analysis_stats') and self.main_window.analysis_stats:
                 stats_before = self.main_window.analysis_stats.copy()
 
+            # Capture context (client_id and session_path)
+            current_client_id = getattr(self.main_window, 'current_client_id', None)
+            current_session_path = str(self.main_window.session_path) if self.main_window.session_path else None
+
             # Create operation record
             operation_id = len(self.operations) + 1
             operation = {
@@ -80,7 +84,10 @@ class UndoManager:
                 "description": description,
                 "params": params,
                 "affected_rows_before": affected_rows_serialized,
-                "stats_before": stats_before
+                "stats_before": stats_before,
+                # Context tracking
+                "client_id": current_client_id,
+                "session_path": current_session_path
             }
 
             # Add to history
@@ -131,6 +138,28 @@ class UndoManager:
         try:
             # Get operation to undo
             operation = self.operations[self.current_position - 1]
+
+            # Validate context before undoing
+            operation_client_id = operation.get("client_id")
+            operation_session_path = operation.get("session_path")
+            current_client_id = getattr(self.main_window, 'current_client_id', None)
+            current_session_path = str(self.main_window.session_path) if self.main_window.session_path else None
+
+            # Check if operation belongs to current context
+            if operation_client_id and operation_client_id != current_client_id:
+                self.log.warning(
+                    f"Undo blocked: operation from CLIENT_{operation_client_id}, "
+                    f"current client is CLIENT_{current_client_id}"
+                )
+                return False, "Cannot undo: operation from different client"
+
+            if operation_session_path and operation_session_path != current_session_path:
+                self.log.warning(
+                    f"Undo blocked: operation from session {operation_session_path}, "
+                    f"current session is {current_session_path}"
+                )
+                return False, "Cannot undo: operation from different session"
+
             operation_type = operation["type"]
             params = operation["params"]
             affected_rows_serialized = operation["affected_rows_before"]
@@ -425,6 +454,35 @@ class UndoManager:
         self._save_history()
         self.log.info("Cleared undo history")
 
+    def reset_for_session(self):
+        """Reset undo history when switching sessions or clients.
+
+        Called when:
+        - Switching clients (load_client_config, on_client_changed)
+        - Loading a different session
+        - Creating a new session
+
+        This prevents cross-session/cross-client undo operations.
+        """
+        self.operations = []
+        self.current_position = 0
+        # Don't save - let new session create fresh history file
+        self.log.info("Reset undo history for new session/client")
+
+    def reload_session_history(self):
+        """Reload undo history for the current session.
+
+        Called when:
+        - Loading an existing session
+        - Returning to a previous session
+
+        This restores undo operations from the session's history file.
+        """
+        self.operations = []
+        self.current_position = 0
+        self._load_history()
+        self.log.info(f"Reloaded undo history: {len(self.operations)} operations")
+
     # ============================================================================
     # BULK OPERATION UNDO HANDLERS
     # ============================================================================
@@ -468,7 +526,7 @@ class UndoManager:
 
         Args:
             params: Operation parameters
-            affected_rows_before: Rows before tag addition
+            affected_rows_before: Rows before tag addition (representative rows only)
 
         Returns:
             True if successful
@@ -478,13 +536,13 @@ class UndoManager:
                 self.log.warning("No affected rows to restore")
                 return False
 
-            # Restore Internal_Tags from before state
+            # Restore Internal_Tags from before state (representative rows only)
             for idx, row in affected_rows_before.iterrows():
                 original_tags = row.get("Internal_Tags", "[]")
                 if idx in self.main_window.analysis_results_df.index:
                     self.main_window.analysis_results_df.loc[idx, "Internal_Tags"] = original_tags
 
-            self.log.info(f"Undid bulk add tag for {len(affected_rows_before)} rows")
+            self.log.info(f"Undid bulk add tag for {len(affected_rows_before)} orders")
             return True
 
         except Exception as e:
@@ -492,11 +550,11 @@ class UndoManager:
             return False
 
     def _undo_bulk_remove_tag(self, params: Dict, affected_rows_before: pd.DataFrame) -> bool:
-        """Undo bulk tag removal.
+        """Undo bulk tag removal with order-level forward-fill.
 
         Args:
-            params: Operation parameters
-            affected_rows_before: Rows before tag removal
+            params: Operation parameters (includes order_numbers for forward-fill)
+            affected_rows_before: Rows before tag removal (representative rows only)
 
         Returns:
             True if successful
@@ -506,13 +564,13 @@ class UndoManager:
                 self.log.warning("No affected rows to restore")
                 return False
 
-            # Restore Internal_Tags from before state
+            # Restore Internal_Tags from before state (representative rows only)
             for idx, row in affected_rows_before.iterrows():
                 original_tags = row.get("Internal_Tags", "[]")
                 if idx in self.main_window.analysis_results_df.index:
                     self.main_window.analysis_results_df.loc[idx, "Internal_Tags"] = original_tags
 
-            self.log.info(f"Undid bulk remove tag for {len(affected_rows_before)} rows")
+            self.log.info(f"Undid bulk remove tag for {len(affected_rows_before)} orders")
             return True
 
         except Exception as e:

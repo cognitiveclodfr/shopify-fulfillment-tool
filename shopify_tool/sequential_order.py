@@ -20,6 +20,7 @@ Usage:
 
 import logging
 import json
+import re
 from pathlib import Path
 from typing import Dict, Optional
 from datetime import datetime
@@ -71,13 +72,21 @@ def generate_sequential_order_map(
         analysis_results_df['Order_Fulfillment_Status'] == 'Fulfillable'
     ].copy()
 
-    # Get unique order numbers (maintain analysis sort order)
+    # Get unique order numbers
     unique_orders = fulfillable_df['Order_Number'].unique()
+
+    # Sort with numeric awareness (ORDER-1, ORDER-2, ORDER-10)
+    def natural_sort_key(s):
+        """Convert string to list of strings and numbers for natural sorting."""
+        return [int(text) if text.isdigit() else text.lower()
+                for text in re.split(r'(\d+)', str(s))]
+
+    unique_orders_sorted = sorted(unique_orders, key=natural_sort_key)
 
     # Assign sequential numbers (1-indexed)
     order_map = {
         order_num: idx + 1
-        for idx, order_num in enumerate(unique_orders)
+        for idx, order_num in enumerate(unique_orders_sorted)
     }
 
     # Save to JSON

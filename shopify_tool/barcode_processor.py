@@ -31,6 +31,7 @@ import json
 
 import pandas as pd
 import barcode
+from barcode.codex import Code128
 from barcode.writer import ImageWriter
 from PIL import Image, ImageDraw, ImageFont
 from reportlab.pdfgen import canvas
@@ -249,7 +250,8 @@ def generate_barcode_label(
         label_height_px = int((label_height_mm / 25.4) * dpi)
 
         # === STEP 2: Generate Code-128 barcode ===
-        barcode_class = barcode.get_barcode_class('code128')
+        # Use Code128 class directly (new python-barcode API)
+        barcode_class = Code128
 
         writer = ImageWriter()
         writer.set_options({
