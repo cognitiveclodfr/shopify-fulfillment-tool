@@ -14,6 +14,7 @@ from PySide6.QtCore import Signal, Qt
 
 from shopify_tool.session_manager import SessionManager
 from gui.wheel_ignore_combobox import WheelIgnoreComboBox
+from gui.theme_manager import get_theme_manager
 
 
 logger = logging.getLogger(__name__)
@@ -206,7 +207,8 @@ class SessionBrowserWidget(QWidget):
             elif status == "abandoned":
                 status_combo.setStyleSheet("QComboBox { color: red; }")
             elif status == "archived":
-                status_combo.setStyleSheet("QComboBox { color: gray; }")
+                theme = get_theme_manager().get_current_theme()
+                status_combo.setStyleSheet(f"QComboBox { color: {theme.text_secondary}; }")
             status_combo.currentTextChanged.connect(
                 lambda new_status, path=session_path: self._on_status_changed(path, new_status)
             )

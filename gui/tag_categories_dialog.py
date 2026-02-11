@@ -17,6 +17,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
 
 from shopify_tool.tag_manager import validate_tag_categories_v2
+from gui.theme_manager import get_theme_manager
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +163,8 @@ class TagCategoriesDialog(QDialog):
         color_layout = QHBoxLayout()
         self.color_display = QLabel()
         self.color_display.setFixedSize(40, 30)
-        self.color_display.setStyleSheet("border: 1px solid #ccc; background-color: #9E9E9E;")
+        theme = get_theme_manager().get_current_theme()
+        self.color_display.setStyleSheet(f"border: 1px solid {theme.border}; background-color: {theme.border};")
         color_layout.addWidget(self.color_display)
 
         self.color_button = QPushButton("Choose Color")
@@ -320,7 +322,7 @@ class TagCategoriesDialog(QDialog):
 
         self.label_input.setText(category.get("label", ""))
         self.current_color = category.get("color", "#9E9E9E")
-        self.color_display.setStyleSheet(f"border: 1px solid #ccc; background-color: {self.current_color};")
+        self.color_display.setStyleSheet(f"border: 1px solid {theme.border}; background-color: {self.current_color};")
         self.order_spin.setValue(category.get("order", 1))
 
         # Load tags

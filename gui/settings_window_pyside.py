@@ -435,7 +435,9 @@ class SettingsWindow(QDialog):
             "All reports are now generated in session-specific folders automatically."
         )
         info_label.setWordWrap(True)
-        info_label.setStyleSheet("color: gray; font-style: italic;")
+        from gui.theme_manager import get_theme_manager
+        theme = get_theme_manager().get_current_theme()
+        info_label.setStyleSheet(f"color: {theme.text_secondary}; font-style: italic;")
         info_layout.addWidget(info_label)
         main_layout.addWidget(info_box)
 
@@ -498,19 +500,21 @@ class SettingsWindow(QDialog):
         test_btn = QPushButton("🧪 Test")
         test_btn.setMaximumWidth(70)
         test_btn.setToolTip("Test this rule against current analysis data")
-        test_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4CAF50;
+        from gui.theme_manager import get_theme_manager
+        theme = get_theme_manager().get_current_theme()
+        test_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {theme.accent_green};
                 color: white;
                 font-weight: bold;
-            }
-            QPushButton:hover {
+            }}
+            QPushButton:hover {{
                 background-color: #45a049;
-            }
-            QPushButton:disabled {
-                background-color: #cccccc;
-                color: #666666;
-            }
+            }}
+            QPushButton:disabled {{
+                background-color: {theme.border_subtle};
+                color: {theme.text_secondary};
+            }}
         """)
         header_layout.addWidget(test_btn)
 
@@ -627,9 +631,11 @@ class SettingsWindow(QDialog):
 
         # Step wrapper
         step_box = QGroupBox(f"Step {step_number}")
+        from gui.theme_manager import get_theme_manager
+        theme = get_theme_manager().get_current_theme()
         step_box.setStyleSheet(
-            "QGroupBox { font-weight: bold; border: 1px solid #ccc; "
-            "border-radius: 4px; margin-top: 6px; padding-top: 10px; }"
+            f"QGroupBox {{ font-weight: bold; border: 1px solid {theme.border}; "
+            f"border-radius: 4px; margin-top: 6px; padding-top: 10px; }}"
         )
         step_layout = QVBoxLayout(step_box)
 
@@ -1681,7 +1687,9 @@ class SettingsWindow(QDialog):
             "You can specify multiple patterns (comma-separated) for each courier."
         )
         instructions2.setWordWrap(True)
-        instructions2.setStyleSheet("color: gray; font-style: italic; font-size: 10pt;")
+        from gui.theme_manager import get_theme_manager
+        theme = get_theme_manager().get_current_theme()
+        instructions2.setStyleSheet(f"color: {theme.text_secondary}; font-style: italic; font-size: 10pt;")
         courier_main_layout.addWidget(instructions2)
 
         # Container for courier mapping rows
@@ -1788,7 +1796,9 @@ class SettingsWindow(QDialog):
             "Example: SET-WINTER-KIT → HAT(1x), GLOVES(1x), SCARF(1x)"
         )
         help_text.setWordWrap(True)
-        help_text.setStyleSheet("color: gray; font-style: italic; margin-bottom: 10px;")
+        from gui.theme_manager import get_theme_manager
+        theme = get_theme_manager().get_current_theme()
+        help_text.setStyleSheet(f"color: {theme.text_secondary}; font-style: italic; margin-bottom: 10px;")
         main_layout.addWidget(help_text)
 
         # Sets table
@@ -1834,7 +1844,9 @@ class SettingsWindow(QDialog):
             "• Sets are expanded before fulfillment simulation\n"
             "• Components must exist in your stock file"
         )
-        tips_label.setStyleSheet("color: #666; font-size: 9pt; margin-top: 10px;")
+        from gui.theme_manager import get_theme_manager
+        theme = get_theme_manager().get_current_theme()
+        tips_label.setStyleSheet(f"color: {theme.text_secondary}; font-size: 9pt; margin-top: 10px;")
         tips_label.setWordWrap(True)
         main_layout.addWidget(tips_label)
 
@@ -2361,7 +2373,9 @@ class SetEditorDialog(QDialog):
             "💡 Tip: Components are SKUs that exist in your stock file.\n"
             "Quantity indicates how many of each component are in one set."
         )
-        tips_label.setStyleSheet("color: gray; font-style: italic; font-size: 9pt; margin-top: 10px;")
+        from gui.theme_manager import get_theme_manager
+        theme = get_theme_manager().get_current_theme()
+        tips_label.setStyleSheet(f"color: {theme.text_secondary}; font-style: italic; font-size: 9pt; margin-top: 10px;")
         tips_label.setWordWrap(True)
         layout.addWidget(tips_label)
 

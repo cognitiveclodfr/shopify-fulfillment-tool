@@ -8,6 +8,7 @@ from PySide6.QtCore import Signal
 
 from shopify_tool.tag_manager import parse_tags
 
+from gui.theme_manager import get_theme_manager
 
 class TagManagementPanel(QWidget):
     """
@@ -40,7 +41,8 @@ class TagManagementPanel(QWidget):
 
         # Selected order display
         self.order_label = QLabel("No order selected")
-        self.order_label.setStyleSheet("color: #666; font-style: italic;")
+        theme = get_theme_manager().get_current_theme()
+        self.order_label.setStyleSheet(f"color: {theme.text_secondary}; font-style: italic;")
         layout.addWidget(self.order_label)
 
         layout.addSpacing(10)
@@ -106,7 +108,8 @@ class TagManagementPanel(QWidget):
             self.order_label.setStyleSheet("color: #000; font-weight: bold;")
         else:
             self.order_label.setText("No order selected")
-            self.order_label.setStyleSheet("color: #666; font-style: italic;")
+            theme = get_theme_manager().get_current_theme()
+            self.order_label.setStyleSheet(f"color: {theme.text_secondary}; font-style: italic;")
 
         # Parse and display current tags
         tags = parse_tags(current_tags_json)

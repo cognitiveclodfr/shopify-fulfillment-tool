@@ -27,6 +27,7 @@ from PySide6.QtGui import QPixmap, QDesktopServices
 from PySide6.QtCore import QUrl
 
 from gui.worker import Worker
+from gui.theme_manager import get_theme_manager
 
 
 class BarcodeGeneratorWidget(QWidget):
@@ -97,7 +98,8 @@ class BarcodeGeneratorWidget(QWidget):
 
         # Order count preview
         self.order_count_label = QLabel("No packing list selected")
-        self.order_count_label.setStyleSheet("color: #666; font-style: italic; padding: 5px;")
+        theme = get_theme_manager().get_current_theme()
+        self.order_count_label.setStyleSheet(f"color: {theme.text_secondary}; font-style: italic; padding: 5px;")
         layout.addWidget(self.order_count_label)
 
         # Info label
@@ -105,7 +107,7 @@ class BarcodeGeneratorWidget(QWidget):
             "Barcodes will be generated for all Fulfillable orders in the selected packing list.\n"
             "Each packing list has its own barcode folder for organization."
         )
-        info_label.setStyleSheet("color: #444; font-size: 9pt; padding: 5px;")
+        info_label.setStyleSheet(f"color: {theme.text_secondary}; font-size: 9pt; padding: 5px;")
         info_label.setWordWrap(True)
         layout.addWidget(info_label)
 
@@ -140,7 +142,8 @@ class BarcodeGeneratorWidget(QWidget):
         output_row = QHBoxLayout()
         output_row.addWidget(QLabel("Output:"))
         self.output_dir_label = QLabel("No packing list selected")
-        self.output_dir_label.setStyleSheet("font-weight: bold; color: #666;")
+        theme = get_theme_manager().get_current_theme()
+        self.output_dir_label.setStyleSheet(f"font-weight: bold; color: {theme.text_secondary};")
         self.output_dir_label.setWordWrap(True)
         output_row.addWidget(self.output_dir_label, 1)
         layout.addLayout(output_row)
@@ -167,8 +170,8 @@ class BarcodeGeneratorWidget(QWidget):
                 background-color: #45a049;
             }
             QPushButton:disabled {
-                background-color: #cccccc;
-                color: #666666;
+                background-color: {theme.border};
+                color: {theme.text_secondary};
             }
         """)
         self.generate_btn.setEnabled(False)

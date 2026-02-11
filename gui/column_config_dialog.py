@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QIcon
+from gui.theme_manager import get_theme_manager
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +150,8 @@ class ColumnConfigDialog(QDialog):
             "These columns are not in the standard mapping but can be preserved if needed."
         )
         info_label.setWordWrap(True)
-        info_label.setStyleSheet("color: #666; font-style: italic;")
+        theme = get_theme_manager().get_current_theme()
+        info_label.setStyleSheet(f"color: {theme.text_secondary}; font-style: italic;")
         additional_layout.addWidget(info_label)
 
         # Scan button
@@ -853,7 +855,8 @@ class ColumnConfigDialog(QDialog):
             # Visual indicator if column doesn't exist in current CSV
             if not col_config["exists_in_df"]:
                 not_found_label = QLabel("(not in current CSV)")
-                not_found_label.setStyleSheet("color: #999; font-style: italic;")
+                theme = get_theme_manager().get_current_theme()
+                not_found_label.setStyleSheet(f"color: {theme.text_secondary}; font-style: italic;")
                 layout.addWidget(not_found_label)
                 checkbox.setEnabled(False)
 

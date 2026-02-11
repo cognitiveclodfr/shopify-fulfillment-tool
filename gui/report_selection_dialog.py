@@ -1,5 +1,6 @@
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QPushButton, QLabel, QCheckBox, QFrame
 from PySide6.QtCore import Signal, Slot
+from gui.theme_manager import get_theme_manager
 
 
 class ReportSelectionDialog(QDialog):
@@ -58,7 +59,8 @@ class ReportSelectionDialog(QDialog):
 
         if not reports_config:
             no_reports_label = QLabel("No reports configured for this type.")
-            no_reports_label.setStyleSheet("color: gray; font-style: italic; padding: 20px;")
+            theme = get_theme_manager().get_current_theme()
+            no_reports_label.setStyleSheet(f"color: {theme.text_secondary}; font-style: italic; padding: 20px;")
             layout.addWidget(no_reports_label)
         else:
             for report_config in reports_config:

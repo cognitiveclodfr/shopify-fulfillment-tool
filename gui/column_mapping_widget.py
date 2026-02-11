@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QPushButton, QScrollArea, QMessageBox, QGridLayout
 )
 from PySide6.QtCore import Qt, Signal
+from gui.theme_manager import get_theme_manager
 
 logger = logging.getLogger("ShopifyToolLogger")
 
@@ -57,7 +58,8 @@ class ColumnMappingWidget(QWidget):
             f"Fields marked with * are required."
         )
         instructions.setWordWrap(True)
-        instructions.setStyleSheet("color: gray; font-style: italic; padding: 5px;")
+        theme = get_theme_manager().get_current_theme()
+        instructions.setStyleSheet(f"color: {theme.text_secondary}; font-style: italic; padding: 5px;")
         layout.addWidget(instructions)
 
         # Scroll area for mappings
