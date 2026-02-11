@@ -19,6 +19,7 @@ from shopify_tool.profile_manager import ProfileManager, NetworkError
 from shopify_tool.session_manager import SessionManager
 from shopify_tool.groups_manager import GroupsManager
 from shopify_tool.undo_manager import UndoManager
+from shopify_tool.tag_manager import _normalize_tag_categories
 from gui.log_handler import QtLogHandler
 from gui.ui_manager import UIManager
 from gui.file_handler import FileHandler
@@ -180,6 +181,9 @@ class MainWindow(QMainWindow):
                 self.analysis_results_df = None
                 self.analysis_stats = None
                 self.session_path = None
+                # Clear undo history when switching clients
+                if hasattr(self, 'undo_manager'):
+                    self.undo_manager.reset_for_session()
                 self._update_all_views()
 
                 # Disable file loading buttons until a session is created/selected
@@ -315,10 +319,15 @@ class MainWindow(QMainWindow):
             self.bulk_toolbar.export_selection_clicked.connect(self.actions_handler.bulk_export_selection)
 
     def clear_filter(self):
-        """Clears the filter input text box and tag filter."""
+        """Clears the filter input text box, tag filter, and resets proxy model."""
         self.filter_input.clear()
         if hasattr(self, 'tag_filter_combo'):
             self.tag_filter_combo.setCurrentIndex(0)  # Reset to "All Tags"
+
+        # Reset proxy model filter state
+        self.proxy_model.setFilterRegularExpression("")
+        self.proxy_model.setFilterKeyColumn(-1)
+        self.proxy_model.invalidateFilter()
 
     def undo_last_operation(self):
         """Undo the last DataFrame modification."""
@@ -734,6 +743,9 @@ class MainWindow(QMainWindow):
 
             # Clear session
             self.session_path = None
+            # Clear undo history when switching clients
+            if hasattr(self, 'undo_manager'):
+                self.undo_manager.reset_for_session()
             self.update_session_info_label()
 
             # Update session browser to show this client's sessions
@@ -948,6 +960,10 @@ class MainWindow(QMainWindow):
             # Set as current session
             self.session_path = session_path
             session_name = os.path.basename(session_path)
+
+            # Reload undo history for this session
+            if hasattr(self, 'undo_manager'):
+                self.undo_manager.reload_session_history()
 
             # Update session info labels
             self.update_session_info_label()
@@ -1297,6 +1313,8 @@ class MainWindow(QMainWindow):
 
             # Get tag categories from config
             tag_categories = self.active_profile_config.get("tag_categories", {})
+            # Normalize to handle both v1 and v2 formats
+            tag_categories = _normalize_tag_categories(tag_categories)
 
             for category, config in tag_categories.items():
                 category_label = config.get("label", category)

@@ -40,10 +40,14 @@ def detect_csv_delimiter(file_path: str, encoding: str = 'utf-8-sig') -> Tuple[s
             sniffer = csv.Sniffer()
             delimiter = sniffer.sniff(sample).delimiter
 
-            # Validate: delimiter should appear multiple times
-            if sample.count(delimiter) > 0:
+            # Validate: delimiter should be a common CSV delimiter
+            # Reject unusual delimiters that might be false positives (like ':' from timestamps)
+            common_delimiters = [',', ';', '\t', '|']
+            if delimiter in common_delimiters and sample.count(delimiter) > 0:
                 logger.info(f"Delimiter detected using csv.Sniffer: '{delimiter}'")
                 return delimiter, 'sniffer'
+            else:
+                logger.debug(f"csv.Sniffer detected unusual delimiter '{delimiter}', trying manual detection")
     except Exception as e:
         logger.debug(f"csv.Sniffer failed: {e}")
 

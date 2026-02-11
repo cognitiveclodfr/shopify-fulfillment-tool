@@ -78,7 +78,8 @@ class SelectionHelper:
             return (0, 0)
 
         unique_orders = selected_df['Order_Number'].nunique()
-        total_items = len(selected_df)
+        # Sum quantities instead of counting rows
+        total_items = int(selected_df['Quantity'].sum()) if 'Quantity' in selected_df.columns else len(selected_df)
 
         return (unique_orders, total_items)
 
