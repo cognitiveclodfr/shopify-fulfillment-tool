@@ -19,6 +19,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 
 logger = logging.getLogger(__name__)
+from gui.theme_manager import get_theme_manager
 
 
 class RuleTestDialog(QDialog):
@@ -121,7 +122,8 @@ class RuleTestDialog(QDialog):
 
         # Info label
         info_label = QLabel("Showing first 5 matched rows (limited to 100 for performance)")
-        info_label.setStyleSheet("color: gray; font-style: italic; font-size: 9pt;")
+        theme = get_theme_manager().get_current_theme()
+        info_label.setStyleSheet(f"color: {theme.text_secondary}; font-style: italic; font-size: 9pt;")
         layout.addWidget(info_label)
 
         # Preview table
@@ -161,7 +163,8 @@ class RuleTestDialog(QDialog):
 
         # Legend for highlights
         legend = QLabel("🟡 Yellow highlight = Modified by rule actions")
-        legend.setStyleSheet("color: #666; font-size: 9pt; margin-top: 5px;")
+        theme = get_theme_manager().get_current_theme()
+        legend.setStyleSheet(f"color: {theme.text_secondary}; font-size: 9pt; margin-top: 5px;")
         layout.addWidget(legend)
 
         return group

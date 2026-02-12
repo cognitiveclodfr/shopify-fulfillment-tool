@@ -9,6 +9,7 @@ from typing import Dict, Any, Optional
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QMessageBox
 from PySide6.QtCore import Signal, Qt, QPoint
 from PySide6.QtGui import QMouseEvent
+from gui.theme_manager import get_theme_manager
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,12 @@ class ClientCard(QWidget):
 
         # Create layout
         self._setup_ui()
+
+        # Connect to theme changes
+        theme_manager = get_theme_manager()
+        theme_manager.theme_changed.connect(self._update_style)
+
+        # Apply initial style
         self._update_style()
 
     def _setup_ui(self):
@@ -81,14 +88,14 @@ class ClientCard(QWidget):
 
         # Row 1: Client name
         self.name_label = QLabel(f"CLIENT_{self.client_id}")
-        self.name_label.setStyleSheet("font-size: 12pt;")
+        # Font size set here, color will be set in _update_style()
         content_layout.addWidget(self.name_label)
 
         # Row 2: Last session date
         last_session = self.metadata.get("last_session_date")
         last_session_text = f"Last: {last_session}" if last_session else "Last: Never"
         self.last_session_label = QLabel(last_session_text)
-        self.last_session_label.setStyleSheet("font-size: 9pt; color: #666;")
+        # Style will be set in _update_style()
         content_layout.addWidget(self.last_session_label)
 
         # Row 3: Sessions count + badges
@@ -97,7 +104,7 @@ class ClientCard(QWidget):
 
         total_sessions = self.metadata.get("total_sessions", 0)
         self.sessions_label = QLabel(f"Sessions: {total_sessions}")
-        self.sessions_label.setStyleSheet("font-size: 9pt; color: #666;")
+        # Style will be set in _update_style()
         stats_layout.addWidget(self.sessions_label)
 
         # Add badges
@@ -105,7 +112,7 @@ class ClientCard(QWidget):
         if custom_badges:
             badges_text = " ".join(custom_badges)
             self.badges_label = QLabel(badges_text)
-            self.badges_label.setStyleSheet("font-size: 9pt; color: #FF9800; font-weight: bold;")
+            # Style will be set in _update_style()
             stats_layout.addWidget(self.badges_label)
         else:
             self.badges_label = None
@@ -116,31 +123,42 @@ class ClientCard(QWidget):
         main_layout.addLayout(content_layout, 1)
 
     def _update_style(self):
-        """Update widget styling based on active/hover state."""
-        # Base style
-        base_style = """
-            ClientCard {
-                background-color: white;
-                border-radius: 4px;
-            }
-            ClientCard:hover {
-                background-color: #F5F5F5;
-            }
+        """Update widget styling based on active/hover state and current theme."""
+        theme = get_theme_manager().get_current_theme()
+
+        # Base style with theme colors
+        base_style = f"""
+            ClientCard {{
+                background-color: {theme.background_elevated};
+                border-radius: 8px;
+                color: {theme.text};
+            }}
+            ClientCard:hover {{
+                background-color: {theme.hover};
+            }}
         """
 
         # Add active state border
         if self._is_active:
-            active_style = """
-                ClientCard {
-                    border-left: 4px solid #4CAF50;
-                    background-color: #F0F8F0;
-                }
+            active_style = f"""
+                ClientCard {{
+                    border-left: 4px solid {theme.active_border};
+                    background-color: {theme.active_background};
+                }}
             """
             self.setStyleSheet(base_style + active_style)
-            self.name_label.setStyleSheet("font-size: 12pt; font-weight: bold;")
+            self.name_label.setStyleSheet(f"font-size: 12pt; font-weight: bold; color: {theme.text};")
         else:
             self.setStyleSheet(base_style)
-            self.name_label.setStyleSheet("font-size: 12pt;")
+            self.name_label.setStyleSheet(f"font-size: 12pt; color: {theme.text};")
+
+        # Update secondary text colors
+        self.last_session_label.setStyleSheet(f"font-size: 9pt; color: {theme.text_secondary};")
+        self.sessions_label.setStyleSheet(f"font-size: 9pt; color: {theme.text_secondary};")
+
+        # Update badge color (always orange accent)
+        if self.badges_label:
+            self.badges_label.setStyleSheet(f"font-size: 9pt; color: {theme.accent_orange}; font-weight: bold;")
 
     def set_active(self, is_active: bool):
         """Set active state.
@@ -220,8 +238,9 @@ class ClientCard(QWidget):
                 self.badges_label.setText(badges_text)
             else:
                 # Create badges label if it didn't exist
+                theme = get_theme_manager().get_current_theme()
                 self.badges_label = QLabel(badges_text)
-                self.badges_label.setStyleSheet("font-size: 9pt; color: #FF9800; font-weight: bold;")
+                self.badges_label.setStyleSheet(f"font-size: 9pt; color: {theme.accent_orange}; font-weight: bold;")
                 # Add to stats layout (last child of content layout)
                 content_layout = self.layout().itemAt(0).layout()
                 stats_layout = content_layout.itemAt(2).layout()

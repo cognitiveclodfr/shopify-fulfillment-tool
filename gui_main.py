@@ -14,6 +14,7 @@ __version__ = "1.8.6.0"
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from gui.main_window_pyside import MainWindow
+from gui.theme_manager import get_theme_manager
 
 
 def main():
@@ -30,6 +31,11 @@ def main():
         print("Running in offscreen mode.")
 
     app = QApplication(sys.argv)
+
+    # Initialize and apply theme
+    theme_manager = get_theme_manager()
+    theme_manager.apply_theme()
+
     window = MainWindow()
 
     if QApplication.platformName() != "offscreen":

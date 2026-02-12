@@ -17,6 +17,7 @@ from PySide6.QtGui import QColor
 from shopify_tool.profile_manager import ProfileManager, ValidationError, ProfileManagerError
 from shopify_tool.groups_manager import GroupsManager
 from gui.wheel_ignore_combobox import WheelIgnoreComboBox
+from gui.theme_manager import get_theme_manager
 
 
 logger = logging.getLogger(__name__)
@@ -68,7 +69,8 @@ class ClientCreationDialog(QDialog):
         color_layout = QHBoxLayout()
         self.color_display = QLabel()
         self.color_display.setFixedSize(40, 30)
-        self.color_display.setStyleSheet("border: 1px solid #ccc; background-color: #4CAF50;")
+        theme = get_theme_manager().get_current_theme()
+        self.color_display.setStyleSheet(f"border: 1px solid {theme.border}; background-color: #4CAF50;")
         color_layout.addWidget(self.color_display)
 
         self.color_button = QPushButton("Choose Color")
@@ -94,7 +96,7 @@ class ClientCreationDialog(QDialog):
             "You can customize it later in Profile Settings."
         )
         info_label.setWordWrap(True)
-        info_label.setStyleSheet("color: #666; font-size: 10pt; padding: 10px;")
+        info_label.setStyleSheet(f"color: {theme.text_secondary}; font-size: 10pt; padding: 10px;")
         layout.addWidget(info_label)
 
         # Button box
@@ -420,7 +422,8 @@ class ClientSettingsDialog(QDialog):
             "Shopify configuration is managed in the Advanced tab."
         )
         info_label.setWordWrap(True)
-        info_label.setStyleSheet("color: #666; font-size: 9pt; padding: 10px;")
+        theme = get_theme_manager().get_current_theme()
+        info_label.setStyleSheet(f"color: {theme.text_secondary}; font-size: 9pt; padding: 10px;")
         layout.addRow(info_label)
 
         return widget
@@ -443,7 +446,7 @@ class ClientSettingsDialog(QDialog):
         color_layout = QHBoxLayout()
         self.color_display = QLabel()
         self.color_display.setFixedSize(40, 30)
-        self.color_display.setStyleSheet("border: 1px solid #ccc;")
+        self.color_display.setStyleSheet(f"border: 1px solid {theme.border};")
         color_layout.addWidget(self.color_display)
 
         self.color_button = QPushButton("Choose Color")
@@ -464,7 +467,8 @@ class ClientSettingsDialog(QDialog):
             "Badges are displayed next to the client name."
         )
         info_label.setWordWrap(True)
-        info_label.setStyleSheet("color: #666; font-size: 9pt; padding: 10px;")
+        theme = get_theme_manager().get_current_theme()
+        info_label.setStyleSheet(f"color: {theme.text_secondary}; font-size: 9pt; padding: 10px;")
         layout.addRow(info_label)
 
         return widget
@@ -492,7 +496,7 @@ class ClientSettingsDialog(QDialog):
             "These values are read-only and update automatically."
         )
         info_label.setWordWrap(True)
-        info_label.setStyleSheet("color: #666; font-size: 9pt; padding: 10px;")
+        info_label.setStyleSheet(f"color: {theme.text_secondary}; font-size: 9pt; padding: 10px;")
         layout.addRow(info_label)
 
         return widget
@@ -507,7 +511,8 @@ class ClientSettingsDialog(QDialog):
             "For now, use the main Settings window to configure these options."
         )
         info_label.setWordWrap(True)
-        info_label.setStyleSheet("color: #666; font-size: 10pt; padding: 20px;")
+        theme = get_theme_manager().get_current_theme()
+        info_label.setStyleSheet(f"color: {theme.text_secondary}; font-size: 10pt; padding: 20px;")
         layout.addWidget(info_label)
         layout.addStretch()
 

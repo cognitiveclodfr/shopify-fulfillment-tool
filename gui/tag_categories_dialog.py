@@ -17,6 +17,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
 
 from shopify_tool.tag_manager import validate_tag_categories_v2
+from gui.theme_manager import get_theme_manager
 
 logger = logging.getLogger(__name__)
 
@@ -54,8 +55,15 @@ class TagCategoriesDialog(QDialog):
         self.current_category_id: Optional[str] = None
         self.modified = False
 
+        # Store theme for use across methods
+        self.theme = get_theme_manager().get_current_theme()
+
         self._init_ui()
         self._load_categories()
+
+        # Listen for theme changes
+        theme_manager = get_theme_manager()
+        theme_manager.theme_changed.connect(self._on_theme_changed)
 
     def _init_ui(self):
         """Initialize the user interface."""
@@ -162,7 +170,7 @@ class TagCategoriesDialog(QDialog):
         color_layout = QHBoxLayout()
         self.color_display = QLabel()
         self.color_display.setFixedSize(40, 30)
-        self.color_display.setStyleSheet("border: 1px solid #ccc; background-color: #9E9E9E;")
+        self.color_display.setStyleSheet(f"border: 1px solid {self.theme.border}; background-color: {self.theme.border};")
         color_layout.addWidget(self.color_display)
 
         self.color_button = QPushButton("Choose Color")
@@ -320,7 +328,7 @@ class TagCategoriesDialog(QDialog):
 
         self.label_input.setText(category.get("label", ""))
         self.current_color = category.get("color", "#9E9E9E")
-        self.color_display.setStyleSheet(f"border: 1px solid #ccc; background-color: {self.current_color};")
+        self.color_display.setStyleSheet(f"border: 1px solid {self.theme.border}; background-color: {self.current_color};")
         self.order_spin.setValue(category.get("order", 1))
 
         # Load tags
@@ -369,6 +377,15 @@ class TagCategoriesDialog(QDialog):
 
         # Update header
         self.editor_header_label.setText(f"Editing: {category.get('label', category_id)}")
+
+    def _on_theme_changed(self):
+        """Handle theme changes."""
+        self.theme = get_theme_manager().get_current_theme()
+        # Update color display if editor is active
+        if self.current_category_id:
+            self.color_display.setStyleSheet(
+                f"border: 1px solid {self.theme.border}; background-color: {self.current_color};"
+            )
 
     def _set_editor_enabled(self, enabled: bool):
         """Enable/disable editor fields."""
@@ -480,7 +497,7 @@ class TagCategoriesDialog(QDialog):
         if color.isValid():
             self.current_color = color.name()
             self.color_display.setStyleSheet(
-                f"border: 1px solid #ccc; background-color: {self.current_color};"
+                f"border: 1px solid {self.theme.border}; background-color: {self.current_color};"
             )
             self._on_editor_changed()
 

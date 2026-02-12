@@ -1172,8 +1172,10 @@ class MainWindow(QMainWindow):
 
             # Add note if more than 20 SKUs
             if len(sku_summary) > 20:
+                from gui.theme_manager import get_theme_manager
+                theme = get_theme_manager().get_current_theme()
                 note = QLabel(f"Showing top 20 of {len(sku_summary)} SKUs")
-                note.setStyleSheet("font-style: italic; color: gray;")
+                note.setStyleSheet(f"font-style: italic; color: {theme.text_secondary};")
                 self.sku_stats_layout.addWidget(note, 21, 0, 1, 5)
         else:
             self.sku_stats_layout.addWidget(QLabel("No SKU data available."), 0, 0)
@@ -1192,8 +1194,10 @@ class MainWindow(QMainWindow):
                 if child.widget():
                     child.widget().deleteLater()
             # Add placeholder text
+            from gui.theme_manager import get_theme_manager
+            theme = get_theme_manager().get_current_theme()
             placeholder = QLabel("No analysis data available.")
-            placeholder.setStyleSheet("color: gray; font-style: italic;")
+            placeholder.setStyleSheet(f"color: {theme.text_secondary}; font-style: italic;")
             self.courier_stats_layout.addWidget(placeholder, 0, 0)
 
         # === NEW: Clear tags stats layout ===
@@ -1202,8 +1206,10 @@ class MainWindow(QMainWindow):
                 child = self.tags_stats_layout.takeAt(0)
                 if child.widget():
                     child.widget().deleteLater()
+            from gui.theme_manager import get_theme_manager
+            theme = get_theme_manager().get_current_theme()
             placeholder = QLabel("No tags data available.")
-            placeholder.setStyleSheet("color: gray; font-style: italic;")
+            placeholder.setStyleSheet(f"color: {theme.text_secondary}; font-style: italic;")
             self.tags_stats_layout.addWidget(placeholder, 0, 0)
 
         # === NEW: Clear SKU stats layout ===
@@ -1212,8 +1218,10 @@ class MainWindow(QMainWindow):
                 child = self.sku_stats_layout.takeAt(0)
                 if child.widget():
                     child.widget().deleteLater()
+            from gui.theme_manager import get_theme_manager
+            theme = get_theme_manager().get_current_theme()
             placeholder = QLabel("No SKU data available.")
-            placeholder.setStyleSheet("color: gray; font-style: italic;")
+            placeholder.setStyleSheet(f"color: {theme.text_secondary}; font-style: italic;")
             self.sku_stats_layout.addWidget(placeholder, 0, 0)
 
     def log_activity(self, op_type, desc):

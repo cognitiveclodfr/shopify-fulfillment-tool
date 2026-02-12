@@ -1,6 +1,7 @@
 from PySide6.QtCore import QAbstractTableModel, Qt, QModelIndex
 from PySide6.QtGui import QColor
 import pandas as pd
+from gui.theme_manager import get_theme_manager
 
 
 class PandasModel(QAbstractTableModel):
@@ -31,12 +32,13 @@ class PandasModel(QAbstractTableModel):
         super().__init__(parent)
         self._dataframe = dataframe
         self.enable_checkboxes = enable_checkboxes
-        # Define colors for styling
-        self.colors = {
-            "Fulfillable": QColor("#2E8B57"),  # SeaGreen
-            "NotFulfillable": QColor("#B22222"),  # FireBrick
-            "SystemNoteHighlight": QColor("#DAA520"),  # GoldenRod
-        }
+
+        # Initialize colors based on current theme
+        self._update_colors()
+
+        # Connect to theme changes
+        theme_manager = get_theme_manager()
+        theme_manager.theme_changed.connect(self._update_colors)
 
     def rowCount(self, parent=QModelIndex()) -> int:
         """Returns the number of rows in the model."""
@@ -116,6 +118,28 @@ class PandasModel(QAbstractTableModel):
             except (IndexError, KeyError):
                 return None  # In case columns are missing
 
+        if role == Qt.ItemDataRole.ForegroundRole:
+            # Return text color for rows with background colors
+            # Ensures readability in both light and dark themes
+            try:
+                # Check if this row has a background color
+                if (
+                    "System_note" in self._dataframe.columns
+                    and pd.notna(self._dataframe.iloc[row]["System_note"])
+                ):
+                    system_note = str(self._dataframe.iloc[row]["System_note"])
+                    if "Repeat" in system_note and not system_note.startswith("Cannot fulfill"):
+                        return self.text_colors["SystemNoteHighlight"]
+
+                if "Order_Fulfillment_Status" in self._dataframe.columns:
+                    status = self._dataframe.iloc[row]["Order_Fulfillment_Status"]
+                    if status == "Fulfillable":
+                        return self.text_colors["Fulfillable"]
+                    elif status == "Not Fulfillable":
+                        return self.text_colors["NotFulfillable"]
+            except (IndexError, KeyError):
+                return None
+
         return None
 
     def headerData(self, section: int, orientation: Qt.Orientation, role=Qt.ItemDataRole.DisplayRole):
@@ -177,3 +201,42 @@ class PandasModel(QAbstractTableModel):
         self._dataframe = self._dataframe[existing_columns]
         self.hidden_columns = [col for col in all_columns_in_order if col not in visible_columns]
         self.endResetModel()
+
+    def _update_colors(self):
+        """Update row colors based on current theme.
+
+        Sets background and text colors for table rows based on fulfillment status.
+        Uses different color palettes for light and dark themes to maintain contrast.
+        """
+        theme_manager = get_theme_manager()
+
+        if theme_manager.is_dark_theme():
+            # Dark theme: dark tinted backgrounds with white text
+            self.colors = {
+                "Fulfillable": QColor("#1B3A1B"),          # Dark green tint
+                "NotFulfillable": QColor("#3A1B1B"),       # Dark red tint
+                "SystemNoteHighlight": QColor("#3A3020"),  # Dark orange tint
+            }
+            self.text_colors = {
+                "Fulfillable": QColor("#FFFFFF"),          # White text
+                "NotFulfillable": QColor("#FFFFFF"),       # White text
+                "SystemNoteHighlight": QColor("#FFFFFF"),  # White text
+            }
+        else:
+            # Light theme: brighter tinted backgrounds with dark text (more visible)
+            self.colors = {
+                "Fulfillable": QColor("#C8E6C9"),          # Brighter green tint (was #E8F5E9)
+                "NotFulfillable": QColor("#FFCDD2"),       # Brighter red tint (was #FFEBEE)
+                "SystemNoteHighlight": QColor("#FFE0B2"),  # Brighter orange tint (was #FFF3E0)
+            }
+            self.text_colors = {
+                "Fulfillable": QColor("#1B5E20"),          # Darker green text for contrast
+                "NotFulfillable": QColor("#B71C1C"),       # Darker red text for contrast
+                "SystemNoteHighlight": QColor("#E65100"),  # Darker orange text for contrast
+            }
+
+        # Notify views that data has changed (triggers repaint)
+        if self.rowCount() > 0:
+            top_left = self.index(0, 0)
+            bottom_right = self.index(self.rowCount() - 1, self.columnCount() - 1)
+            self.dataChanged.emit(top_left, bottom_right, [Qt.BackgroundRole, Qt.ForegroundRole])

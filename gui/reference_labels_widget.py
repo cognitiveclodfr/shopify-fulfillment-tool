@@ -25,6 +25,7 @@ from PySide6.QtCore import QUrl
 from gui.worker import Worker
 from shopify_tool.reference_labels_history import ReferenceLabelsHistory
 
+from gui.theme_manager import get_theme_manager
 
 class ReferenceLabelsWidget(QWidget):
     """Widget for processing reference labels PDFs."""
@@ -93,7 +94,8 @@ class ReferenceLabelsWidget(QWidget):
         pdf_row.addWidget(self.select_pdf_btn)
 
         self.pdf_label = QLabel("No PDF selected")
-        self.pdf_label.setStyleSheet("color: gray; font-style: italic;")
+        theme = get_theme_manager().get_current_theme()
+        self.pdf_label.setStyleSheet(f"color: {theme.text_secondary}; font-style: italic;")
         self.pdf_label.setWordWrap(True)
         pdf_row.addWidget(self.pdf_label, 1)
         layout.addLayout(pdf_row)
@@ -106,7 +108,7 @@ class ReferenceLabelsWidget(QWidget):
         csv_row.addWidget(self.select_csv_btn)
 
         self.csv_label = QLabel("No CSV selected")
-        self.csv_label.setStyleSheet("color: gray; font-style: italic;")
+        self.csv_label.setStyleSheet(f"color: {theme.text_secondary}; font-style: italic;")
         self.csv_label.setWordWrap(True)
         csv_row.addWidget(self.csv_label, 1)
         layout.addLayout(csv_row)
@@ -116,7 +118,7 @@ class ReferenceLabelsWidget(QWidget):
             "ℹ️ CSV format: PostOne ID (column 0), Tracking (column 1), "
             "Reference Number (column 2), Name (column 6)"
         )
-        info_label.setStyleSheet("color: #666; font-size: 10px; padding: 5px;")
+        info_label.setStyleSheet(f"color: {theme.text_secondary}; font-size: 10px; padding: 5px;")
         info_label.setWordWrap(True)
         layout.addWidget(info_label)
 
@@ -309,14 +311,16 @@ class ReferenceLabelsWidget(QWidget):
             self.status_label.setStyleSheet("color: orange;")
         else:
             self.status_label.setText("⏳ Waiting for files...")
-            self.status_label.setStyleSheet("color: gray;")
+            theme = get_theme_manager().get_current_theme()
+            self.status_label.setStyleSheet(f"color: {theme.text_secondary};")
 
     def _update_output_dir(self):
         """Update output directory based on current session."""
         if not self.mw.session_path:
             self.output_dir = None
             self.output_dir_label.setText("No session selected")
-            self.output_dir_label.setStyleSheet("color: gray; font-style: italic;")
+            theme = get_theme_manager().get_current_theme()
+            self.output_dir_label.setStyleSheet(f"color: {theme.text_secondary}; font-style: italic;")
             self._update_process_button()
             return
 

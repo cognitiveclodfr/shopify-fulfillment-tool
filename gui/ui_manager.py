@@ -12,6 +12,7 @@ from .wheel_ignore_combobox import WheelIgnoreComboBox
 from .tag_management_panel import TagManagementPanel
 from .bulk_operations_toolbar import BulkOperationsToolbar
 from .selection_helper import SelectionHelper
+from .theme_manager import get_theme_manager
 
 
 class UIManager:
@@ -1136,6 +1137,20 @@ class UIManager:
         self.mw.toggle_bulk_mode_btn.clicked.connect(self.mw.toggle_bulk_mode)
         layout.addWidget(self.mw.toggle_bulk_mode_btn)
 
+        # Add separator
+        layout.addSpacing(20)
+
+        # Theme toggle button
+        theme_manager = get_theme_manager()
+        self.mw.theme_toggle_btn = QPushButton()
+        self._update_theme_button_text()  # Set initial text based on current theme
+        self.mw.theme_toggle_btn.setToolTip("Toggle between light and dark theme")
+        self.mw.theme_toggle_btn.clicked.connect(self._on_theme_toggle_clicked)
+        layout.addWidget(self.mw.theme_toggle_btn)
+
+        # Connect to theme_changed signal to update button text
+        theme_manager.theme_changed.connect(self._update_theme_button_text)
+
         layout.addStretch()
 
         return widget
@@ -1552,3 +1567,18 @@ class UIManager:
 
         self.mw.tools_widget = ToolsWidget(self.mw)
         return self.mw.tools_widget
+
+    def _update_theme_button_text(self):
+        """Update theme toggle button text based on current theme."""
+        theme_manager = get_theme_manager()
+        if theme_manager.is_dark_theme():
+            # Currently dark, button shows "switch to light"
+            self.mw.theme_toggle_btn.setText("☀️ Light Mode")
+        else:
+            # Currently light, button shows "switch to dark"
+            self.mw.theme_toggle_btn.setText("🌙 Dark Mode")
+
+    def _on_theme_toggle_clicked(self):
+        """Handle theme toggle button click."""
+        theme_manager = get_theme_manager()
+        theme_manager.toggle_theme()

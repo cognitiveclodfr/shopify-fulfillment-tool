@@ -3,6 +3,7 @@
 from PySide6.QtWidgets import QStyledItemDelegate
 from PySide6.QtGui import QPainter, QPen, QColor
 from PySide6.QtCore import Qt
+from gui.theme_manager import get_theme_manager
 
 
 class OrderGroupDelegate(QStyledItemDelegate):
@@ -79,8 +80,10 @@ class OrderGroupDelegate(QStyledItemDelegate):
             # Draw bottom border
             painter.save()
 
-            # Use a gray, 2px line
-            pen = QPen(QColor(100, 100, 100), 2)
+            # Use theme border color (white in dark theme, gray in light theme)
+            theme = get_theme_manager().get_current_theme()
+            border_color = QColor(theme.border)
+            pen = QPen(border_color, 2)  # 2px line width
             painter.setPen(pen)
 
             # Draw line at bottom of cell

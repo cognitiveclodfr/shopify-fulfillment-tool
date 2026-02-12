@@ -21,6 +21,7 @@ from shopify_tool.groups_manager import GroupsManager
 from gui.client_card import ClientCard
 from gui.groups_management_dialog import GroupsManagementDialog
 from gui.client_settings_dialog import ClientSettingsDialog, ClientCreationDialog
+from gui.theme_manager import get_theme_manager
 
 logger = logging.getLogger(__name__)
 
@@ -64,16 +65,20 @@ class CollapsedClientIndicator(QWidget):
 class SectionWidget(QWidget):
     """Widget for a collapsible section (Pinned, Group, All Clients)."""
 
-    def __init__(self, title: str, color: str = "#9E9E9E", parent=None):
+    def __init__(self, title: str, color: str = None, parent=None):
         """Initialize section widget.
 
         Args:
             title: Section title
-            color: Header color (hex)
+            color: Header color (hex), or None to use theme default
             parent: Parent widget
         """
         super().__init__(parent)
         self.title = title
+        # Use theme border color as default if no color specified
+        if color is None:
+            theme = get_theme_manager().get_current_theme()
+            color = theme.border
         self.color = color
 
         # Create layout
@@ -177,6 +182,13 @@ class ClientSidebar(QWidget):
         self._setup_ui()
         self.refresh()
 
+        # Connect to theme changes
+        theme_manager = get_theme_manager()
+        theme_manager.theme_changed.connect(self._update_styles)
+
+        # Apply initial styles
+        self._update_styles()
+
         # Apply initial state without animation
         if not self.is_expanded:
             self.setFixedWidth(self.COLLAPSED_WIDTH)
@@ -215,9 +227,9 @@ class ClientSidebar(QWidget):
         Args:
             layout: Parent layout to add header to
         """
-        header_widget = QWidget()
-        header_widget.setStyleSheet("background-color: #f0f0f0;")
-        header_layout = QVBoxLayout(header_widget)
+        self.header_widget = QWidget()
+        # Style will be set in _update_styles()
+        header_layout = QVBoxLayout(self.header_widget)
         header_layout.setContentsMargins(4, 4, 4, 4)
         header_layout.setSpacing(4)
 
@@ -225,7 +237,7 @@ class ClientSidebar(QWidget):
         row1 = QHBoxLayout()
 
         self.title_label = QLabel("Clients")
-        self.title_label.setStyleSheet("font-weight: bold; font-size: 11pt;")
+        # Style will be set in _update_styles()
         row1.addWidget(self.title_label)
 
         row1.addStretch()
@@ -260,7 +272,7 @@ class ClientSidebar(QWidget):
 
         header_layout.addLayout(row2)
 
-        layout.addWidget(header_widget)
+        layout.addWidget(self.header_widget)
 
     def refresh(self):
         """Refresh client list and rebuild sections with performance logging."""
@@ -419,9 +431,13 @@ class ClientSidebar(QWidget):
         Returns:
             SectionWidget with all clients
         """
+        # Use theme border color as default for "All Clients" section
+        theme = get_theme_manager().get_current_theme()
+        default_color = theme.border
+
         section = SectionWidget(
             config.get("name", "All Clients"),
-            config.get("color", "#9E9E9E")
+            config.get("color", default_color)
         )
 
         for client_id in clients:
@@ -749,3 +765,41 @@ class ClientSidebar(QWidget):
             self.client_selected.emit(created_client_id)
 
             logger.info(f"Created and selected new client: CLIENT_{created_client_id}")
+
+    def _update_styles(self):
+        """Update sidebar styles based on current theme."""
+        theme = get_theme_manager().get_current_theme()
+        is_dark = get_theme_manager().is_dark_theme()
+        button_hover = theme.button_hover_dark if is_dark else theme.button_hover_light
+
+        # Update header widget background
+        if hasattr(self, 'header_widget'):
+            self.header_widget.setStyleSheet(f"background-color: {theme.background_elevated};")
+
+        # Update title label
+        if hasattr(self, 'title_label'):
+            self.title_label.setStyleSheet(f"font-weight: bold; font-size: 11pt; color: {theme.text};")
+
+        # Update header buttons with explicit theme-aware styling
+        button_style = f"""
+            QPushButton {{
+                background-color: {theme.accent_blue};
+                color: white;
+                border: 1px solid {theme.border};
+                border-radius: 6px;
+                padding: 4px 8px;
+                font-size: 10pt;
+            }}
+            QPushButton:hover {{
+                background-color: {button_hover};
+            }}
+            QPushButton:pressed {{
+                background-color: #0D47A1;
+            }}
+        """
+
+        if hasattr(self, 'create_btn'):
+            self.create_btn.setStyleSheet(button_style)
+
+        if hasattr(self, 'manage_groups_btn'):
+            self.manage_groups_btn.setStyleSheet(button_style)
