@@ -437,7 +437,11 @@ class FileHandler:
         # Load and store original orders DataFrame for column discovery
         try:
             import pandas as pd
-            orders_df = pd.read_csv(merged_path, delimiter=delimiter, encoding='utf-8-sig')
+            from shopify_tool.csv_utils import detect_csv_delimiter
+
+            # Detect delimiter from merged file
+            detected_delimiter = detect_csv_delimiter(merged_path)
+            orders_df = pd.read_csv(merged_path, delimiter=detected_delimiter, encoding='utf-8-sig')
             self.mw.last_loaded_orders_df = orders_df.copy()
             self.log.info(f"Loaded merged orders DataFrame: {len(orders_df)} rows, {len(orders_df.columns)} columns")
         except Exception as e:

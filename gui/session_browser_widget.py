@@ -253,6 +253,9 @@ class SessionBrowserWidget(QWidget):
         self.refresh_btn.setEnabled(True)
         self.refresh_btn.setText("Refresh")
 
+        # Clear worker reference for complete cleanup
+        self.worker = None
+
     def _on_load_error(self, error_message: str):
         """Handle load error from background thread.
 
@@ -269,6 +272,9 @@ class SessionBrowserWidget(QWidget):
         # Restore button state
         self.refresh_btn.setEnabled(True)
         self.refresh_btn.setText("Refresh")
+
+        # Clear worker reference for complete cleanup
+        self.worker = None
 
     def _populate_table(self):
         """Populate the table with sessions data."""

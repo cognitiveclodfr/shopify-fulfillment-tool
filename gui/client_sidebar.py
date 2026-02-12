@@ -451,6 +451,10 @@ class ClientSidebar(QWidget):
             self.refresh_btn.setEnabled(True)
             self.refresh_btn.setText("⟳")
 
+            # Clear worker reference
+            if hasattr(self, 'worker'):
+                self.worker = None
+
         except Exception as e:
             self.setUpdatesEnabled(True)
             logger.error(f"Failed to rebuild UI: {e}", exc_info=True)
@@ -476,6 +480,10 @@ class ClientSidebar(QWidget):
         # Restore button state
         self.refresh_btn.setEnabled(True)
         self.refresh_btn.setText("⟳")
+
+        # Clear worker reference
+        if hasattr(self, 'worker'):
+            self.worker = None
 
     def _create_pinned_section(self, all_clients: List[str], config: Dict) -> SectionWidget:
         """Create Pinned section.
