@@ -351,9 +351,16 @@ class ClientSidebar(QWidget):
                 self._on_load_error(str(e))
         else:
             # Asynchronous mode for production
+            # Stop previous worker if still running
+            if hasattr(self, 'worker') and self.worker is not None:
+                if self.worker.isRunning():
+                    self.worker.quit()
+                    self.worker.wait(1000)  # Wait max 1 second
+
             self.worker = ClientLoaderWorker(self.profile_manager, self.groups_manager)
             self.worker.clients_loaded.connect(self._on_clients_loaded)
             self.worker.error_occurred.connect(self._on_load_error)
+            self.worker.finished.connect(self.worker.deleteLater)  # Auto-cleanup
             self.worker.start()
 
     def _on_clients_loaded(self, all_clients: list, groups_data: dict, custom_groups: list):
