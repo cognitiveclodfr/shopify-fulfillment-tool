@@ -954,10 +954,19 @@ class ProfileManager:
             f"{config_size:,} bytes, {num_sets} sets"
         )
 
-        max_retries = 10  # Increased from 5 for network filesystem reliability
-        retry_delay = 1.0  # Increased from 0.5s (total timeout: 10s)
+        max_retries = 5  # Reduced from 10 to minimize UI blocking
+        retry_delay = 0.5  # Reduced from 1.0s (total worst case: 2.5s instead of 10s)
+        timeout_seconds = 5  # Maximum time for entire save operation
 
         for attempt in range(max_retries):
+            # Check timeout to avoid blocking UI for too long
+            if time.perf_counter() - start_time > timeout_seconds:
+                logger.error(
+                    f"Save operation timed out after {timeout_seconds}s "
+                    f"(attempt {attempt + 1}/{max_retries})"
+                )
+                break
+
             try:
                 # Use platform-specific file locking
                 if os.name == 'nt':  # Windows
@@ -1357,10 +1366,20 @@ class ProfileManager:
         config["last_updated"] = datetime.now().isoformat()
         config["updated_by"] = os.environ.get('COMPUTERNAME', 'Unknown')
 
-        max_retries = 10
-        retry_delay = 1.0
+        max_retries = 5  # Reduced from 10 to minimize UI blocking
+        retry_delay = 0.5  # Reduced from 1.0s (total worst case: 2.5s instead of 10s)
+        timeout_seconds = 5  # Maximum time for entire save operation
+        start_time = time.perf_counter()
 
         for attempt in range(max_retries):
+            # Check timeout to avoid blocking UI for too long
+            if time.perf_counter() - start_time > timeout_seconds:
+                logger.error(
+                    f"Client config save timed out after {timeout_seconds}s "
+                    f"(attempt {attempt + 1}/{max_retries})"
+                )
+                break
+
             try:
                 # Use platform-specific file locking
                 if os.name == 'nt':  # Windows

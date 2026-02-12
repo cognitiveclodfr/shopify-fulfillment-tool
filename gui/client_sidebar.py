@@ -22,8 +22,46 @@ from gui.client_card import ClientCard
 from gui.groups_management_dialog import GroupsManagementDialog
 from gui.client_settings_dialog import ClientSettingsDialog, ClientCreationDialog
 from gui.theme_manager import get_theme_manager
+from gui.background_worker import BackgroundWorker
 
 logger = logging.getLogger(__name__)
+
+
+class ClientLoaderWorker(BackgroundWorker):
+    """Background worker for loading client list from file server.
+
+    This worker performs the potentially slow I/O operation of listing
+    client directories and loading their configurations.
+    """
+
+    def __init__(self, profile_manager):
+        """Initialize client loader worker.
+
+        Args:
+            profile_manager: ProfileManager instance
+        """
+        super().__init__()
+        self.profile_manager = profile_manager
+
+    def run(self):
+        """Execute in background thread - load clients from file server."""
+        try:
+            if self._is_cancelled:
+                return
+
+            logger.debug("Loading client list from file server")
+
+            # This is the potentially slow I/O operation (500-2000ms on slow UNC)
+            clients = self.profile_manager.list_clients()
+
+            if not self._is_cancelled:
+                self.finished_with_data.emit(clients)
+                logger.debug(f"Loaded {len(clients)} clients")
+
+        except Exception as e:
+            if not self._is_cancelled:
+                logger.error(f"Error loading clients: {e}", exc_info=True)
+                self.error_occurred.emit(str(e))
 
 
 class CollapsedClientIndicator(QWidget):
@@ -151,6 +189,9 @@ class ClientSidebar(QWidget):
     COLLAPSED_WIDTH = 40
     ANIMATION_DURATION = 200  # milliseconds
 
+    # Class variable for testing - set to False to disable async loading in tests
+    USE_ASYNC = True
+
     def __init__(
         self,
         profile_manager: ProfileManager,
@@ -169,6 +210,7 @@ class ClientSidebar(QWidget):
         self.groups_manager = groups_manager
         self.is_expanded = True
         self.active_client_id = None
+        self.worker = None  # Track active background worker
 
         # Track all ClientCard instances (for highlighting across sections)
         self.client_cards: Dict[str, List[ClientCard]] = {}
@@ -277,6 +319,10 @@ class ClientSidebar(QWidget):
     def refresh(self):
         """Refresh client list and rebuild sections with performance logging."""
         import time
+        from PySide6.QtCore import Qt
+
+        # Show wait cursor during potentially slow operation
+        QApplication.setOverrideCursor(Qt.WaitCursor)
 
         try:
             overall_start = time.time()
@@ -368,6 +414,9 @@ class ClientSidebar(QWidget):
             self.setUpdatesEnabled(True)
             logger.error(f"Failed to refresh sidebar: {e}", exc_info=True)
             QMessageBox.warning(self, "Refresh Error", f"Failed to refresh sidebar:\n{str(e)}")
+        finally:
+            # Restore cursor after refresh completes (success or error)
+            QApplication.restoreOverrideCursor()
 
     def _create_pinned_section(self, all_clients: List[str], config: Dict) -> SectionWidget:
         """Create Pinned section.

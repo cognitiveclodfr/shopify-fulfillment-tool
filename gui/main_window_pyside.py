@@ -703,6 +703,10 @@ class MainWindow(QMainWindow):
         """
         logging.info(f"Client changed to: {client_id}")
 
+        # Show loading status in status bar
+        if hasattr(self, 'statusBar'):
+            self.statusBar().showMessage(f"Loading CLIENT_{client_id}...", 5000)
+
         # Update sidebar active state if sidebar exists
         if hasattr(self, 'client_sidebar'):
             self.client_sidebar.set_active_client(client_id)
@@ -749,9 +753,11 @@ class MainWindow(QMainWindow):
             self.update_session_info_label()
 
             # Update session browser to show this client's sessions
-            self.session_browser.set_client(client_id)
+            # Don't auto-refresh here - let the second call handle it
+            self.session_browser.set_client(client_id, auto_refresh=False)
 
             # Update session browser widget in right panel (Tab 1)
+            # This one WILL refresh (eliminates duplicate refresh)
             if hasattr(self, 'session_browser_widget'):
                 self.session_browser_widget.set_client(client_id)
 
@@ -759,6 +765,10 @@ class MainWindow(QMainWindow):
             self.update_ui_state()
 
             logging.info(f"Client {client_id} loaded successfully")
+
+            # Update status bar with success message
+            if hasattr(self, 'statusBar'):
+                self.statusBar().showMessage(f"CLIENT_{client_id} loaded", 2000)
 
         except Exception as e:
             logging.error(f"Error changing client: {e}", exc_info=True)

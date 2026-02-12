@@ -1165,8 +1165,8 @@ def recalculate_statistics(df):
                 "repeated_orders_found": int(group[group["System_note"] == "Repeat"]["Order_Number"].nunique()),
             }
             courier_stats.append(courier_data)
-    # Per instructions, use null (None) if no stats are available
-    stats["couriers_stats"] = courier_stats if courier_stats else None
+    # Keep empty list as is - UI will handle display appropriately
+    stats["couriers_stats"] = courier_stats
 
     # === NEW: Tags Breakdown ===
     tags_breakdown = None
