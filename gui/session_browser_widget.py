@@ -208,7 +208,7 @@ class SessionBrowserWidget(QWidget):
                 status_combo.setStyleSheet("QComboBox { color: red; }")
             elif status == "archived":
                 theme = get_theme_manager().get_current_theme()
-                status_combo.setStyleSheet(f"QComboBox { color: {theme.text_secondary}; }")
+                status_combo.setStyleSheet(f"QComboBox {{ color: {theme.text_secondary}; }}")
             status_combo.currentTextChanged.connect(
                 lambda new_status, path=session_path: self._on_status_changed(path, new_status)
             )

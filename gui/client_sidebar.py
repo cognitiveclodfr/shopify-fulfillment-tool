@@ -769,6 +769,8 @@ class ClientSidebar(QWidget):
     def _update_styles(self):
         """Update sidebar styles based on current theme."""
         theme = get_theme_manager().get_current_theme()
+        is_dark = get_theme_manager().is_dark_theme()
+        button_hover = theme.button_hover_dark if is_dark else theme.button_hover_light
 
         # Update header widget background
         if hasattr(self, 'header_widget'):
@@ -777,3 +779,27 @@ class ClientSidebar(QWidget):
         # Update title label
         if hasattr(self, 'title_label'):
             self.title_label.setStyleSheet(f"font-weight: bold; font-size: 11pt; color: {theme.text};")
+
+        # Update header buttons with explicit theme-aware styling
+        button_style = f"""
+            QPushButton {{
+                background-color: {theme.accent_blue};
+                color: white;
+                border: 1px solid {theme.border};
+                border-radius: 6px;
+                padding: 4px 8px;
+                font-size: 10pt;
+            }}
+            QPushButton:hover {{
+                background-color: {button_hover};
+            }}
+            QPushButton:pressed {{
+                background-color: #0D47A1;
+            }}
+        """
+
+        if hasattr(self, 'create_btn'):
+            self.create_btn.setStyleSheet(button_style)
+
+        if hasattr(self, 'manage_groups_btn'):
+            self.manage_groups_btn.setStyleSheet(button_style)

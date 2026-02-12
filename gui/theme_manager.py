@@ -67,7 +67,7 @@ LightTheme = ThemeColors(
 # Dark Theme (High Contrast - user requirement)
 DarkTheme = ThemeColors(
     background="#000000",         # Pure black background (user requirement)
-    background_elevated="#1A1A1A",  # Slightly lighter for elevation
+    background_elevated="#000000",  # Pure black for maximum contrast
     text="#FFFFFF",
     text_secondary="#B0B0B0",
     border="#FFFFFF",           # Crisp white borders (user requirement)
@@ -229,8 +229,9 @@ class ThemeManager(QObject):
                 background-color: #0D47A1;
             }}
             QPushButton:disabled {{
-                background-color: {theme.border_subtle};
-                color: {theme.text_secondary};
+                background-color: {theme.background};
+                color: {theme.text};
+                border: 1px solid {theme.border};
             }}
 
             /* Input Fields */
