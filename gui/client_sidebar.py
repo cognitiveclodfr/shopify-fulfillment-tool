@@ -353,23 +353,44 @@ class ClientSidebar(QWidget):
             # Asynchronous mode for production
             # Stop previous worker if still running
             if hasattr(self, 'worker') and self.worker is not None:
+                logger.debug("Stopping previous client sidebar worker")
+                # Disconnect all signals first to prevent race conditions
+                try:
+                    self.worker.clients_loaded.disconnect()
+                    self.worker.error_occurred.disconnect()
+                except Exception:
+                    pass  # Signals may not be connected
+
                 if self.worker.isRunning():
                     self.worker.quit()
-                    self.worker.wait(1000)  # Wait max 1 second
+                    self.worker.wait(2000)  # Wait up to 2 seconds
+
+                # Explicitly delete the worker
+                self.worker.deleteLater()
+                self.worker = None
 
             self.worker = ClientLoaderWorker(self.profile_manager, self.groups_manager)
             self.worker.clients_loaded.connect(self._on_clients_loaded)
             self.worker.error_occurred.connect(self._on_load_error)
-            self.worker.finished.connect(self.worker.deleteLater)  # Auto-cleanup
             self.worker.start()
 
     def closeEvent(self, event):
         """Clean up worker thread when widget is closed."""
         if hasattr(self, 'worker') and self.worker is not None:
+            logger.debug("Stopping client sidebar worker on close")
+            # Disconnect all signals
+            try:
+                self.worker.clients_loaded.disconnect()
+                self.worker.error_occurred.disconnect()
+            except Exception:
+                pass
+
             if self.worker.isRunning():
-                logger.debug("Stopping client sidebar worker on close")
                 self.worker.quit()
                 self.worker.wait(2000)  # Wait up to 2 seconds
+
+            self.worker.deleteLater()
+            self.worker = None
         super().closeEvent(event)
 
     def _on_clients_loaded(self, all_clients: list, groups_data: dict, custom_groups: list):
@@ -381,6 +402,7 @@ class ClientSidebar(QWidget):
             custom_groups: List of custom group definitions
         """
         import time
+        logger.debug(f"_on_clients_loaded called with {len(all_clients)} clients")
 
         try:
             overall_start = time.time()
@@ -462,6 +484,7 @@ class ClientSidebar(QWidget):
 
             # Clear worker reference
             if hasattr(self, 'worker'):
+                logger.debug("Clearing worker reference after successful sidebar load")
                 self.worker = None
 
         except Exception as e:
@@ -496,6 +519,7 @@ class ClientSidebar(QWidget):
 
         # Clear worker reference
         if hasattr(self, 'worker'):
+            logger.debug("Clearing worker reference after load error")
             self.worker = None
 
     def _create_pinned_section(self, all_clients: List[str], config: Dict) -> SectionWidget:

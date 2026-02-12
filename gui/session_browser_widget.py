@@ -224,9 +224,21 @@ class SessionBrowserWidget(QWidget):
             # Asynchronous mode for production
             # Stop previous worker if still running
             if hasattr(self, 'worker') and self.worker is not None:
+                logger.debug("Stopping previous session browser worker")
+                # Disconnect all signals first to prevent race conditions
+                try:
+                    self.worker.sessions_loaded.disconnect()
+                    self.worker.error_occurred.disconnect()
+                except Exception:
+                    pass  # Signals may not be connected
+
                 if self.worker.isRunning():
                     self.worker.quit()
-                    self.worker.wait(1000)  # Wait max 1 second
+                    self.worker.wait(2000)  # Wait up to 2 seconds
+
+                # Explicitly delete the worker
+                self.worker.deleteLater()
+                self.worker = None
 
             self.worker = SessionLoaderWorker(
                 self.session_manager,
@@ -235,16 +247,25 @@ class SessionBrowserWidget(QWidget):
             )
             self.worker.sessions_loaded.connect(self._on_sessions_loaded)
             self.worker.error_occurred.connect(self._on_load_error)
-            self.worker.finished.connect(self.worker.deleteLater)  # Auto-cleanup
             self.worker.start()
 
     def closeEvent(self, event):
         """Clean up worker thread when widget is closed."""
         if hasattr(self, 'worker') and self.worker is not None:
+            logger.debug("Stopping session browser worker on close")
+            # Disconnect all signals
+            try:
+                self.worker.sessions_loaded.disconnect()
+                self.worker.error_occurred.disconnect()
+            except Exception:
+                pass
+
             if self.worker.isRunning():
-                logger.debug("Stopping session browser worker on close")
                 self.worker.quit()
                 self.worker.wait(2000)  # Wait up to 2 seconds
+
+            self.worker.deleteLater()
+            self.worker = None
         super().closeEvent(event)
 
     def _on_sessions_loaded(self, sessions_data: list):
@@ -253,6 +274,7 @@ class SessionBrowserWidget(QWidget):
         Args:
             sessions_data: List of session info dictionaries
         """
+        logger.debug(f"_on_sessions_loaded called with {len(sessions_data)} sessions")
         self.sessions_data = sessions_data
         self._populate_table()
 
@@ -263,6 +285,7 @@ class SessionBrowserWidget(QWidget):
         self.refresh_btn.setText("Refresh")
 
         # Clear worker reference for complete cleanup
+        logger.debug("Clearing worker reference after successful session load")
         self.worker = None
 
     def _on_load_error(self, error_message: str):
@@ -283,6 +306,7 @@ class SessionBrowserWidget(QWidget):
         self.refresh_btn.setText("Refresh")
 
         # Clear worker reference for complete cleanup
+        logger.debug("Clearing worker reference after session load error")
         self.worker = None
 
     def _populate_table(self):
