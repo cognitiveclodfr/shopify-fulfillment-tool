@@ -439,8 +439,8 @@ class FileHandler:
             import pandas as pd
             from shopify_tool.csv_utils import detect_csv_delimiter
 
-            # Detect delimiter from merged file
-            detected_delimiter = detect_csv_delimiter(merged_path)
+            # Detect delimiter from merged file (returns tuple: delimiter, method)
+            detected_delimiter, detection_method = detect_csv_delimiter(merged_path)
             orders_df = pd.read_csv(merged_path, delimiter=detected_delimiter, encoding='utf-8-sig')
             self.mw.last_loaded_orders_df = orders_df.copy()
             self.log.info(f"Loaded merged orders DataFrame: {len(orders_df)} rows, {len(orders_df.columns)} columns")

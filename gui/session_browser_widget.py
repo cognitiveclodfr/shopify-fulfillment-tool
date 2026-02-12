@@ -238,6 +238,15 @@ class SessionBrowserWidget(QWidget):
             self.worker.finished.connect(self.worker.deleteLater)  # Auto-cleanup
             self.worker.start()
 
+    def closeEvent(self, event):
+        """Clean up worker thread when widget is closed."""
+        if hasattr(self, 'worker') and self.worker is not None:
+            if self.worker.isRunning():
+                logger.debug("Stopping session browser worker on close")
+                self.worker.quit()
+                self.worker.wait(2000)  # Wait up to 2 seconds
+        super().closeEvent(event)
+
     def _on_sessions_loaded(self, sessions_data: list):
         """Handle loaded sessions from background thread.
 

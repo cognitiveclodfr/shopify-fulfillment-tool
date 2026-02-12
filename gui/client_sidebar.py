@@ -363,6 +363,15 @@ class ClientSidebar(QWidget):
             self.worker.finished.connect(self.worker.deleteLater)  # Auto-cleanup
             self.worker.start()
 
+    def closeEvent(self, event):
+        """Clean up worker thread when widget is closed."""
+        if hasattr(self, 'worker') and self.worker is not None:
+            if self.worker.isRunning():
+                logger.debug("Stopping client sidebar worker on close")
+                self.worker.quit()
+                self.worker.wait(2000)  # Wait up to 2 seconds
+        super().closeEvent(event)
+
     def _on_clients_loaded(self, all_clients: list, groups_data: dict, custom_groups: list):
         """Handle loaded client data from background thread and rebuild UI.
 
@@ -463,6 +472,10 @@ class ClientSidebar(QWidget):
             # Restore button state
             self.refresh_btn.setEnabled(True)
             self.refresh_btn.setText("⟳")
+
+            # Clear worker reference
+            if hasattr(self, 'worker'):
+                self.worker = None
 
     def _on_load_error(self, error_message: str):
         """Handle load error from background thread.
