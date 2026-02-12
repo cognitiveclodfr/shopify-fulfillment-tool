@@ -70,10 +70,6 @@ class SessionManager:
         self.profile_manager = profile_manager
         self.sessions_root = profile_manager.get_sessions_root()
 
-        # Session metadata cache: {session_path: (session_info, cached_time)}
-        self._session_cache: Dict[str, tuple[Dict, datetime]] = {}
-        self.CACHE_TTL_SECONDS = 300  # 5 minutes (matches config cache TTL)
-
         logger.info("SessionManager initialized")
 
     def create_session(self, client_id: str) -> str:
@@ -250,28 +246,15 @@ class SessionManager:
 
         return sessions
 
-    def get_session_info(self, session_path: str, use_cache: bool = True) -> Optional[Dict]:
-        """Load session metadata from session_info.json with caching.
+    def get_session_info(self, session_path: str) -> Optional[Dict]:
+        """Load session metadata from session_info.json.
 
         Args:
             session_path (str): Full path to session directory
-            use_cache (bool): Whether to use cache (default: True)
 
         Returns:
             Optional[Dict]: Session info dictionary or None if not found/invalid
         """
-        cache_key = str(session_path)
-
-        # Check cache if enabled
-        if use_cache and cache_key in self._session_cache:
-            cached_data, cached_time = self._session_cache[cache_key]
-            age = (datetime.now() - cached_time).total_seconds()
-
-            if age < self.CACHE_TTL_SECONDS:
-                logger.debug(f"Session cache HIT: {Path(session_path).name} (age: {age:.1f}s)")
-                return cached_data.copy()  # Return copy to prevent external modification
-
-        # Cache MISS or expired - load from disk
         session_path_obj = Path(session_path)
         session_info_path = session_path_obj / "session_info.json"
 
@@ -294,30 +277,11 @@ class SessionManager:
             if "comments" not in session_info:
                 session_info["comments"] = ""
 
-            # Cache the result
-            self._session_cache[cache_key] = (session_info.copy(), datetime.now())
-            logger.debug(f"Session cache MISS: {session_path_obj.name} - loaded and cached")
-
             return session_info
 
         except Exception as e:
             logger.error(f"Failed to load session info: {e}")
             return None
-
-    def invalidate_session_cache(self, session_path: Optional[str] = None):
-        """Invalidate session cache for specific session or clear all.
-
-        Args:
-            session_path (str, optional): Path to specific session. If None, clears entire cache.
-        """
-        if session_path:
-            cache_key = str(session_path)
-            if cache_key in self._session_cache:
-                del self._session_cache[cache_key]
-                logger.debug(f"Invalidated session cache: {Path(session_path).name}")
-        else:
-            self._session_cache.clear()
-            logger.debug("Cleared entire session cache")
 
     def update_session_status(self, session_path: str, status: str) -> bool:
         """Update session status in session_info.json.
@@ -355,9 +319,6 @@ class SessionManager:
 
             with open(session_info_path, 'w', encoding='utf-8') as f:
                 json.dump(session_info, f, indent=2)
-
-            # Invalidate cache after update
-            self.invalidate_session_cache(session_path)
 
             logger.info(f"Session status updated to '{status}': {session_path}")
             return True
@@ -397,9 +358,6 @@ class SessionManager:
 
             with open(session_info_path, 'w', encoding='utf-8') as f:
                 json.dump(session_info, f, indent=2)
-
-            # Invalidate cache after update
-            self.invalidate_session_cache(session_path)
 
             logger.info(f"Session info updated: {session_path}")
             return True

@@ -18,60 +18,6 @@ SYSTEM_TAGS = ["Repeat", "Priority", "Error"]
 logger = logging.getLogger("ShopifyToolLogger")
 
 
-# Global CSV file cache: {file_path: (dataframe, mtime)}
-_csv_cache: Dict[str, Tuple[pd.DataFrame, float]] = {}
-
-
-def _get_cached_csv(file_path: str, delimiter: str, dtype_dict: dict) -> pd.DataFrame:
-    """Load CSV file with mtime-based caching for performance on slow file servers.
-
-    Args:
-        file_path: Path to CSV file
-        delimiter: CSV delimiter
-        dtype_dict: dtype specification for pd.read_csv()
-
-    Returns:
-        pd.DataFrame: Loaded dataframe
-
-    Notes:
-        - Cache is invalidated automatically when file modification time changes
-        - Returns a copy of cached dataframe to prevent external modification
-        - Significantly improves performance when re-analyzing same files
-    """
-    try:
-        # Get current file modification time
-        current_mtime = os.path.getmtime(file_path)
-    except OSError as e:
-        # File doesn't exist or can't access - fall through to normal read
-        logger.warning(f"Cannot get mtime for {file_path}: {e}")
-        current_mtime = None
-
-    # Check cache
-    cache_key = file_path
-    if cache_key in _csv_cache:
-        cached_df, cached_mtime = _csv_cache[cache_key]
-
-        if current_mtime and cached_mtime == current_mtime:
-            logger.info(f"CSV cache HIT: {Path(file_path).name} ({len(cached_df)} rows)")
-            return cached_df.copy()  # Return copy to prevent external modification
-
-    # Cache MISS or file modified - read from disk
-    logger.info(f"CSV cache MISS: {Path(file_path).name} - reading from disk")
-    df = pd.read_csv(
-        file_path,
-        delimiter=delimiter,
-        encoding='utf-8-sig',
-        dtype=dtype_dict
-    )
-
-    # Cache the result with mtime
-    if current_mtime:
-        _csv_cache[cache_key] = (df.copy(), current_mtime)
-        logger.debug(f"Cached CSV: {Path(file_path).name} ({len(df)} rows, mtime: {current_mtime})")
-
-    return df
-
-
 def _normalize_unc_path(path):
     """Normalizes a path, which is especially useful for UNC paths on Windows."""
     if not path:
@@ -471,13 +417,14 @@ def _load_and_validate_files(
         stock_dtype = _get_sku_dtype_dict(column_mappings, "stock")
         orders_dtype = _get_sku_dtype_dict(column_mappings, "orders")
 
-        # Load stock file with error handling and caching
+        # Load stock file with error handling
         try:
             logger.info(f"Reading stock file from normalized path: {stock_file_path}")
-            stock_df = _get_cached_csv(
+            stock_df = pd.read_csv(
                 stock_file_path,
-                stock_delimiter,
-                stock_dtype
+                delimiter=stock_delimiter,
+                encoding='utf-8-sig',
+                dtype=stock_dtype
             )
             logger.info(f"Stock data loaded: {len(stock_df)} rows, {len(stock_df.columns)} columns")
         except pd.errors.ParserError as e:
@@ -512,13 +459,14 @@ def _load_and_validate_files(
             logger.error(f"Unexpected error loading stock file {stock_file_path}: {e}", exc_info=True)
             raise
 
-        # Load orders file with error handling and caching
+        # Load orders file with error handling
         try:
             logger.info(f"Reading orders file from normalized path: {orders_file_path}")
-            orders_df = _get_cached_csv(
+            orders_df = pd.read_csv(
                 orders_file_path,
-                orders_delimiter,
-                orders_dtype
+                delimiter=orders_delimiter,
+                encoding='utf-8-sig',
+                dtype=orders_dtype
             )
             logger.info(f"Orders data loaded: {len(orders_df)} rows, {len(orders_df.columns)} columns")
         except pd.errors.ParserError as e:
