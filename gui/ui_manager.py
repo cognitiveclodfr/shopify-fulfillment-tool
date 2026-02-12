@@ -779,6 +779,11 @@ class UIManager:
         self.mw.tableView = QTableView()
         self.mw.tableView.setSortingEnabled(True)
         self.mw.tableView.setContextMenuPolicy(Qt.CustomContextMenu)
+
+        # Performance optimizations for smooth scrolling
+        self.mw.tableView.setVerticalScrollMode(QTableView.ScrollPerPixel)  # Smooth pixel scrolling
+        self.mw.tableView.setHorizontalScrollMode(QTableView.ScrollPerPixel)  # Smooth horizontal scroll
+
         layout.addWidget(self.mw.tableView)
         return tab
 
@@ -1221,6 +1226,16 @@ class UIManager:
         self.mw.tableView.setAlternatingRowColors(True)
         self.mw.tableView.setSortingEnabled(True)
         self.mw.tableView.setContextMenuPolicy(Qt.CustomContextMenu)
+
+        # Performance optimizations for smooth scrolling
+        self.mw.tableView.setVerticalScrollMode(QTableView.ScrollPerPixel)  # Smooth pixel scrolling
+        self.mw.tableView.setHorizontalScrollMode(QTableView.ScrollPerPixel)  # Smooth horizontal scroll
+        self.mw.tableView.setShowGrid(False)  # Disable grid lines for better performance
+
+        # Optimize viewport updates for large datasets
+        from PySide6.QtWidgets import QAbstractItemView
+        self.mw.tableView.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.mw.tableView.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
         # Add table to layout
         layout.addWidget(self.mw.tableView, 1)  # Stretch factor: 1

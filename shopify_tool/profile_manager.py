@@ -63,7 +63,7 @@ class ProfileManager:
 
     # Class-level caches (shared across instances)
     _config_cache: Dict[str, Tuple[Dict, datetime]] = {}
-    CACHE_TIMEOUT_SECONDS = 60  # Cache valid for 1 minute
+    CACHE_TIMEOUT_SECONDS = 300  # Cache valid for 5 minutes (increased from 60s for slow file servers)
 
     # Class-level constants for metadata cache
     METADATA_CACHE_TIMEOUT_SECONDS = 300  # 5 minutes
@@ -954,8 +954,8 @@ class ProfileManager:
             f"{config_size:,} bytes, {num_sets} sets"
         )
 
-        max_retries = 10  # Increased from 5 for network filesystem reliability
-        retry_delay = 1.0  # Increased from 0.5s (total timeout: 10s)
+        max_retries = 5   # Reduced from 10 (still sufficient for network reliability)
+        retry_delay = 0.2 # Reduced from 1.0s (total timeout: 1s instead of 10s)
 
         for attempt in range(max_retries):
             try:
@@ -1048,6 +1048,46 @@ class ProfileManager:
         success = self.save_shopify_config(client_id, config)
         if success:
             logger.info(f"Set decoders saved for CLIENT_{client_id}: {len(set_decoders)} sets")
+
+        return success
+
+    def batch_update_config(self, client_id: str, updates: Dict[str, Any]) -> bool:
+        """Update multiple config sections in a single save operation.
+
+        This method is optimized for slow file servers - instead of multiple
+        save operations (one per section), it loads config once, applies all
+        updates, and saves once. Significantly reduces network I/O.
+
+        Args:
+            client_id: Client ID
+            updates: Dictionary of config updates (e.g., {"rules": [...], "set_decoders": {...}})
+
+        Returns:
+            bool: True if saved successfully
+
+        Raises:
+            ProfileManagerError: If config cannot be loaded or saved
+
+        Example:
+            >>> profile_manager.batch_update_config("M", {
+            ...     "rules": [...],
+            ...     "set_decoders": {...},
+            ...     "tag_categories": [...]
+            ... })
+        """
+        config = self.load_shopify_config(client_id)
+        if not config:
+            raise ProfileManagerError(f"Cannot load config for CLIENT_{client_id}")
+
+        # Apply all updates
+        for key, value in updates.items():
+            config[key] = value
+            logger.debug(f"Batched update: {key} for CLIENT_{client_id}")
+
+        # Single save operation
+        success = self.save_shopify_config(client_id, config)
+        if success:
+            logger.info(f"Batch config update successful for CLIENT_{client_id}: {len(updates)} sections")
 
         return success
 
