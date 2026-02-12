@@ -751,6 +751,10 @@ class MainWindow(QMainWindow):
             # Update session browser to show this client's sessions
             self.session_browser.set_client(client_id)
 
+            # Update session browser widget in right panel (Tab 1)
+            if hasattr(self, 'session_browser_widget'):
+                self.session_browser_widget.set_client(client_id)
+
             # Update UI state
             self.update_ui_state()
 
@@ -1143,32 +1147,64 @@ class MainWindow(QMainWindow):
             self.tags_stats_layout.addWidget(QLabel("No tags data available."), 0, 0)
 
         # === NEW: Clear previous SKU stats ===
+        # === FIX: SKU Summary with minimum column widths ===
         if hasattr(self, 'sku_stats_layout'):
+            # Clear existing widgets
             while self.sku_stats_layout.count():
                 child = self.sku_stats_layout.takeAt(0)
                 if child.widget():
                     child.widget().deleteLater()
 
-        # === NEW: Display SKU Summary (Top 20) ===
         sku_summary = self.analysis_stats.get("sku_summary")
         if sku_summary and len(sku_summary) > 0:
-            # Header
-            headers = ["SKU", "Warehouse Name", "Total Qty", "Fulfillable", "Not Fulfillable"]
-            for col_idx, header_text in enumerate(headers):
+            # Headers with minimum widths
+            headers = [
+                ("SKU", 120),
+                ("Warehouse Name", 200),
+                ("Total Qty", 80),
+                ("Fulfillable", 90),
+                ("Not Fulfillable", 110)
+            ]
+
+            for col_idx, (header_text, min_width) in enumerate(headers):
                 header_label = QLabel(header_text)
                 header_label.setStyleSheet("font-weight: bold;")
+                header_label.setMinimumWidth(min_width)
+                header_label.setWordWrap(True)
                 self.sku_stats_layout.addWidget(header_label, 0, col_idx)
 
-            # Data rows (limit to top 20 for performance)
+            # Set column stretch (Warehouse Name stretches most)
+            self.sku_stats_layout.setColumnStretch(0, 1)  # SKU
+            self.sku_stats_layout.setColumnStretch(1, 3)  # Warehouse Name (widest)
+            self.sku_stats_layout.setColumnStretch(2, 1)  # Total Qty
+            self.sku_stats_layout.setColumnStretch(3, 1)  # Fulfillable
+            self.sku_stats_layout.setColumnStretch(4, 1)  # Not Fulfillable
+
+            # Data rows with minimum widths
+            column_widths = [120, 200, 80, 90, 110]
+
             for row_idx, sku_data in enumerate(sku_summary[:20], start=1):
-                self.sku_stats_layout.addWidget(QLabel(str(sku_data.get("SKU", "N/A"))), row_idx, 0)
+                # SKU column
+                sku_label = QLabel(str(sku_data.get("SKU", "N/A")))
+                sku_label.setMinimumWidth(column_widths[0])
+                sku_label.setWordWrap(True)
+                self.sku_stats_layout.addWidget(sku_label, row_idx, 0)
+
+                # Warehouse Name column (with fallback to Product_Name)
                 warehouse_name = sku_data.get("Warehouse_Name", "N/A")
                 if warehouse_name == "N/A" or warehouse_name == "" or pd.isna(warehouse_name):
                     warehouse_name = sku_data.get("Product_Name", "N/A")
-                self.sku_stats_layout.addWidget(QLabel(str(warehouse_name)), row_idx, 1)
-                self.sku_stats_layout.addWidget(QLabel(str(sku_data.get("Total_Quantity", 0))), row_idx, 2)
-                self.sku_stats_layout.addWidget(QLabel(str(sku_data.get("Fulfillable_Items", 0))), row_idx, 3)
-                self.sku_stats_layout.addWidget(QLabel(str(sku_data.get("Not_Fulfillable_Items", 0))), row_idx, 4)
+                warehouse_label = QLabel(str(warehouse_name))
+                warehouse_label.setMinimumWidth(column_widths[1])
+                warehouse_label.setWordWrap(True)
+                self.sku_stats_layout.addWidget(warehouse_label, row_idx, 1)
+
+                # Numeric columns (centered alignment)
+                for col_idx, key in enumerate(["Total_Quantity", "Fulfillable_Items", "Not_Fulfillable_Items"], start=2):
+                    value_label = QLabel(str(sku_data.get(key, 0)))
+                    value_label.setMinimumWidth(column_widths[col_idx])
+                    value_label.setAlignment(Qt.AlignCenter)
+                    self.sku_stats_layout.addWidget(value_label, row_idx, col_idx)
 
             # Add note if more than 20 SKUs
             if len(sku_summary) > 20:
@@ -1176,9 +1212,11 @@ class MainWindow(QMainWindow):
                 theme = get_theme_manager().get_current_theme()
                 note = QLabel(f"Showing top 20 of {len(sku_summary)} SKUs")
                 note.setStyleSheet(f"font-style: italic; color: {theme.text_secondary};")
+                note.setWordWrap(True)
                 self.sku_stats_layout.addWidget(note, 21, 0, 1, 5)
         else:
-            self.sku_stats_layout.addWidget(QLabel("No SKU data available."), 0, 0)
+            no_data = QLabel("No SKU data available.")
+            self.sku_stats_layout.addWidget(no_data, 0, 0)
 
     def _clear_statistics_view(self):
         """Clear statistics display when no analysis results."""

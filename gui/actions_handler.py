@@ -79,6 +79,10 @@ class ActionsHandler(QObject):
             if hasattr(self.mw, 'session_browser'):
                 self.mw.session_browser.refresh_sessions()
 
+            # Refresh session browser widget in right panel (Tab 1)
+            if hasattr(self.mw, 'session_browser_widget'):
+                self.mw.session_browser_widget.refresh_sessions()
+
             # Update UI state
             if hasattr(self.mw, 'update_ui_state'):
                 self.mw.update_ui_state()

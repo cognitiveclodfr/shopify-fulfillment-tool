@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, QLabel,
     QTabWidget, QGroupBox, QTableView, QPlainTextEdit, QTableWidget, QLineEdit,
     QComboBox, QCheckBox, QRadioButton, QListWidget, QListWidgetItem, QFrame, QStyle,
-    QScrollArea
+    QScrollArea, QSplitter
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QKeySequence, QShortcut
@@ -196,40 +196,78 @@ class UIManager:
         self.mw.main_tabs.setTabToolTip(4, "PDF processing and utilities (Ctrl+5)")
 
     def _create_tab1_session_setup(self):
-        """Create Tab 1: Session Setup
+        """Create Tab 1: Session Setup with split layout.
 
         Contains:
-        - Session management
-        - File loading (orders + stock)
-        - Run analysis button
-        - Settings button
-        - Report buttons
+        - Left panel (60%): Session management, File loading, Actions, Reports
+        - Right panel (40%): Session Browser for quick session switching
         """
         tab = QWidget()
-        layout = QVBoxLayout(tab)
+        main_layout = QHBoxLayout(tab)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Create horizontal splitter
+        splitter = QSplitter(Qt.Horizontal)
+
+        # Left panel (60%) - Session Setup content
+        left_panel = self._create_session_setup_panel()
+        splitter.addWidget(left_panel)
+
+        # Right panel (40%) - Session Browser
+        right_panel = self._create_session_browser_panel()
+        splitter.addWidget(right_panel)
+
+        # Set initial sizes (60:40 proportion)
+        splitter.setSizes([600, 400])
+        splitter.setStretchFactor(0, 6)
+        splitter.setStretchFactor(1, 4)
+
+        main_layout.addWidget(splitter)
+        return tab
+
+    def _create_session_setup_panel(self):
+        """Create left panel with Session Setup content."""
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
         layout.setSpacing(10)
         layout.setContentsMargins(10, 10, 10, 10)
 
-        # Section 1: Session Management
-        session_group = self._create_session_management_section()
-        layout.addWidget(session_group)
-
-        # Section 2: File Loading (2 columns: Orders | Stock)
-        files_group = self._create_files_group()
-        layout.addWidget(files_group)
-
-        # Section 3: Actions (Run Analysis, Settings)
-        actions_group = self._create_main_actions_group()
-        layout.addWidget(actions_group)
-
-        # Section 4: Reports
-        reports_group = self._create_reports_group()
-        layout.addWidget(reports_group)
-
-        # Stretch at bottom
+        # Existing sections (no changes to logic)
+        layout.addWidget(self._create_session_management_section())
+        layout.addWidget(self._create_files_group())
+        layout.addWidget(self._create_main_actions_group())
+        layout.addWidget(self._create_reports_group())
         layout.addStretch()
 
-        return tab
+        return panel
+
+    def _create_session_browser_panel(self):
+        """Create right panel with Session Browser."""
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        layout.setSpacing(5)
+        layout.setContentsMargins(10, 10, 10, 10)
+
+        # Title
+        title = QLabel("📁 Session Browser")
+        title.setStyleSheet("font-size: 11pt; font-weight: bold;")
+        layout.addWidget(title)
+
+        # Integrate existing SessionBrowserWidget
+        from gui.session_browser_widget import SessionBrowserWidget
+        self.mw.session_browser_widget = SessionBrowserWidget(
+            self.mw.session_manager,
+            parent=panel
+        )
+
+        # Connect signal to main window's method
+        self.mw.session_browser_widget.session_selected.connect(
+            self.mw.on_session_selected
+        )
+
+        layout.addWidget(self.mw.session_browser_widget, 1)
+
+        return panel
 
     def _create_tab2_analysis_results(self):
         """Create Tab 2: Analysis Results
@@ -631,45 +669,58 @@ class UIManager:
             )
 
     def _create_main_actions_group(self):
-        """Creates the 'Actions' QGroupBox containing the main 'Run' button."""
+        """Create Actions section with logical button grouping."""
         group = QGroupBox("Actions")
         main_layout = QVBoxLayout(group)
 
-        # Main action buttons
-        actions_layout = QHBoxLayout()
-        self.mw.run_analysis_button = QPushButton("Run Analysis")
-        self.mw.run_analysis_button.setMinimumHeight(60)
+        # === Row 1: Primary Actions ===
+        primary_layout = QHBoxLayout()
+
+        # Run Analysis - largest button
+        self.mw.run_analysis_button = QPushButton("▶ Run Analysis")
+        self.mw.run_analysis_button.setMinimumHeight(70)
+        self.mw.run_analysis_button.setMinimumWidth(180)
         self.mw.run_analysis_button.setEnabled(False)
-        self.mw.run_analysis_button.setToolTip("Start the fulfillment analysis based on the loaded files.")
+        self.mw.run_analysis_button.setToolTip("Start the fulfillment analysis")
+        self.mw.run_analysis_button.setStyleSheet("""
+            QPushButton {
+                font-size: 11pt;
+                font-weight: bold;
+            }
+        """)
+        primary_layout.addWidget(self.mw.run_analysis_button, 2)
 
-        self.mw.settings_button = QPushButton("Open Client Settings")
-        self.mw.settings_button.setToolTip("Open the settings window for the active client.")
-        self.mw.settings_button.setEnabled(False)  # Enabled when client is selected
-
-        self.mw.tag_categories_button = QPushButton("🏷️ Tag Categories")
-        self.mw.tag_categories_button.setToolTip("Manage Internal Tags categories and configuration")
-        self.mw.tag_categories_button.setEnabled(False)  # Enabled when client is selected
-
-        self.mw.configure_columns_button = QPushButton("📊 Configure Columns")
-        self.mw.configure_columns_button.setToolTip("Customize table column visibility and order")
-        self.mw.configure_columns_button.setEnabled(False)  # Enabled after analysis
-
-        actions_layout.addWidget(self.mw.run_analysis_button, 1)
-        actions_layout.addWidget(self.mw.settings_button)
-        actions_layout.addWidget(self.mw.tag_categories_button)
-        actions_layout.addWidget(self.mw.configure_columns_button)
-        main_layout.addLayout(actions_layout)
-
-        # Manual operations
-        manual_layout = QHBoxLayout()
+        # Add Product to Order
         self.mw.add_product_button = QPushButton("➕ Add Product to Order")
-        self.mw.add_product_button.setEnabled(False)  # Disabled until analysis run
-        self.mw.add_product_button.setToolTip(
-            "Manually add a product to an existing order"
-        )
-        manual_layout.addWidget(self.mw.add_product_button)
-        manual_layout.addStretch()
-        main_layout.addLayout(manual_layout)
+        self.mw.add_product_button.setMinimumHeight(70)
+        self.mw.add_product_button.setEnabled(False)
+        self.mw.add_product_button.setToolTip("Manually add a product to an existing order")
+        primary_layout.addWidget(self.mw.add_product_button, 1)
+
+        main_layout.addLayout(primary_layout)
+
+        # === Row 2: Settings ===
+        settings_layout = QHBoxLayout()
+
+        # Client Settings
+        self.mw.settings_button = QPushButton("⚙️ Client Settings")
+        self.mw.settings_button.setToolTip("Open the settings window")
+        self.mw.settings_button.setEnabled(False)
+        settings_layout.addWidget(self.mw.settings_button)
+
+        # Tag Categories
+        self.mw.tag_categories_button = QPushButton("🏷️ Tag Categories")
+        self.mw.tag_categories_button.setToolTip("Manage Internal Tags categories")
+        self.mw.tag_categories_button.setEnabled(False)
+        settings_layout.addWidget(self.mw.tag_categories_button)
+
+        # Configure Columns
+        self.mw.configure_columns_button = QPushButton("📊 Configure Columns")
+        self.mw.configure_columns_button.setToolTip("Customize table columns")
+        self.mw.configure_columns_button.setEnabled(False)
+        settings_layout.addWidget(self.mw.configure_columns_button)
+
+        main_layout.addLayout(settings_layout)
 
         return group
 
@@ -1458,14 +1509,15 @@ class UIManager:
             self.update_hidden_columns_indicator()
 
     def _create_statistics_subtab(self):
-        """Create statistics sub-tab for Tab 4."""
+        """Create statistics sub-tab with responsive SKU Summary."""
         tab = QWidget()
         layout = QVBoxLayout(tab)
         layout.setSpacing(10)
         layout.setContentsMargins(10, 10, 10, 10)
 
-        # Main stats section
+        # Main stats section (compact - don't stretch)
         stats_group = QGroupBox("📊 Analysis Summary")
+        stats_group.setMaximumHeight(150)
         stats_layout = QGridLayout(stats_group)
 
         # Create stats labels
@@ -1489,21 +1541,25 @@ class UIManager:
 
         layout.addWidget(stats_group)
 
-        # Courier stats section
+        # Courier stats section (compact)
         courier_group = QGroupBox("🚚 Courier Statistics")
+        courier_group.setMaximumHeight(200)
         self.mw.courier_stats_layout = QGridLayout(courier_group)
         layout.addWidget(courier_group)
 
-        # === NEW: Tags Breakdown Section ===
+        # Tags Breakdown section (compact)
         tags_group = QGroupBox("🏷️ Internal Tags Breakdown")
+        tags_group.setMaximumHeight(200)
         self.mw.tags_stats_layout = QGridLayout(tags_group)
         layout.addWidget(tags_group)
 
-        # === NEW: SKU Summary Section ===
+        # === FIX: SKU Summary Section (responsive - can stretch) ===
         sku_group = QGroupBox("📦 SKU Summary (Top 20)")
+
+        # Scroll area WITHOUT fixed maximum height
         sku_scroll = QScrollArea()
         sku_scroll.setWidgetResizable(True)
-        sku_scroll.setMaximumHeight(400)
+        sku_scroll.setMinimumHeight(300)  # Minimum height instead of maximum
 
         sku_container = QWidget()
         self.mw.sku_stats_layout = QGridLayout(sku_container)
@@ -1511,9 +1567,9 @@ class UIManager:
 
         sku_main_layout = QVBoxLayout(sku_group)
         sku_main_layout.addWidget(sku_scroll)
-        layout.addWidget(sku_group)
 
-        layout.addStretch()
+        # Add with stretch factor so it can expand
+        layout.addWidget(sku_group, 1)  # Stretch factor: 1
 
         return tab
 
