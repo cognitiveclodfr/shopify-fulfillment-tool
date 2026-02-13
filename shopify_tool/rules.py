@@ -1230,14 +1230,10 @@ class RuleEngine:
                 calc_method_name = self.ORDER_LEVEL_FIELDS[field]
                 calc_method = getattr(self, calc_method_name)
 
-                # For has_sku/has_product/order_min_box: method applies operator internally
-                if field in ("has_sku", "has_product"):
+                # Methods that apply operator internally and return bool directly
+                if field in ("has_sku", "has_product", "all_no_packaging", "order_min_box"):
                     field_value = calc_method(order_df, value, operator)
                     result = field_value
-                elif field in ("all_no_packaging",):
-                    result = calc_method(order_df, None)
-                elif field == "order_min_box":
-                    result = calc_method(order_df, value, operator)
                 else:
                     # For numeric fields: wrap in Series, use global operator
                     field_value = calc_method(order_df, None)
@@ -1300,18 +1296,28 @@ class RuleEngine:
             return float(order_df["Order_Volumetric_Weight"].iloc[0])
         return 0.0
 
-    def _calculate_all_no_packaging(self, order_df, sku_value=None):
-        """Return True if all SKUs in the order have no_packaging flag set.
+    def _calculate_all_no_packaging(self, order_df, rule_value, operator="equals"):
+        """Evaluate all_no_packaging against rule value + operator.
+
+        Reads the pre-computed All_No_Packaging column and applies the operator
+        so rules can test both True and False explicitly.
+        E.g. {"field": "all_no_packaging", "operator": "equals", "value": "true"}
+             {"field": "all_no_packaging", "operator": "equals", "value": "false"}
 
         Requires enrich_dataframe_with_weights() to have been called before apply().
         Returns False if the column is not present.
         """
-        if "All_No_Packaging" in order_df.columns:
-            val = order_df["All_No_Packaging"].iloc[0]
-            if isinstance(val, bool):
-                return val
-            return str(val).lower() in ("true", "1", "yes")
-        return False
+        if "All_No_Packaging" not in order_df.columns:
+            return False
+        raw = order_df["All_No_Packaging"].iloc[0]
+        bool_val = raw if isinstance(raw, bool) else str(raw).lower() in ("true", "1", "yes")
+        # Represent as string for operator comparison ("true"/"false")
+        col_str = "true" if bool_val else "false"
+        if operator not in OPERATOR_MAP:
+            return False
+        op_func = globals()[OPERATOR_MAP[operator]]
+        result_series = op_func(pd.Series([col_str]), str(rule_value).lower().strip())
+        return bool(result_series.iloc[0])
 
     def _get_order_min_box(self, order_df, rule_value, operator="equals"):
         """Return bool: True if Order_Min_Box matches the condition.

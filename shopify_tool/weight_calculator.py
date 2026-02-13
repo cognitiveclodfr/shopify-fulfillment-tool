@@ -81,9 +81,13 @@ def calc_order_volumetric_weight(order_df: pd.DataFrame, weight_config: Dict) ->
 
 def is_all_no_packaging(order_df: pd.DataFrame, weight_config: Dict) -> bool:
     """
-    Returns True if ALL SKUs in the order have no_packaging=True.
-    Also returns True if the order has no recognized SKUs (all NO_SKU).
-    Returns False if any SKU requires packaging.
+    Returns True ONLY if at least one real SKU was found AND all such SKUs
+    have no_packaging=True.
+
+    Returns False when:
+    - No SKU column exists
+    - All rows are NO_SKU / empty (unknown packaging need → treat as required)
+    - Any SKU requires packaging or is not configured
     """
     products = weight_config.get("products", {})
 
