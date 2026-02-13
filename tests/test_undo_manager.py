@@ -104,7 +104,10 @@ class TestRecordOperation:
         with patch.object(um, '_save_history'):
             for i in range(5):
                 um.record_operation("toggle_status", f"op{i}", {}, pd.DataFrame())
-        assert len(um.operations) <= 3
+        assert len(um.operations) == 3
+        # Oldest operations must be dropped first (FIFO trim)
+        descriptions = [op["description"] for op in um.operations]
+        assert descriptions == ["op2", "op3", "op4"]
 
 
 class TestGetUndoDescription:

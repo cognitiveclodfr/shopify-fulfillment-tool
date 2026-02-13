@@ -171,6 +171,11 @@ class PandasModel(QAbstractTableModel):
 
         Called once at init and after theme changes. Avoids per-cell column
         lookups in data() which were causing scroll lag on large DataFrames.
+
+        Assumption: the underlying DataFrame is treated as immutable after
+        the model is created. If row data changes in-place (status or note
+        updated without recreating the model), call _build_row_color_cache()
+        manually afterwards so the cache stays in sync.
         """
         n = len(self._dataframe)
         bg = [None] * n
