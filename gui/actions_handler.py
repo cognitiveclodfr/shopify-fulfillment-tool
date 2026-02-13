@@ -66,8 +66,19 @@ class ActionsHandler(QObject):
             return
 
         try:
-            # Use SessionManager to create session
-            session_path = self.mw.session_manager.create_session(self.mw.current_client_id)
+            # Show progress dialog during session creation (can be slow on UNC paths)
+            from PySide6.QtWidgets import QProgressDialog
+            from PySide6.QtCore import Qt
+            progress = QProgressDialog("Creating new session...", None, 0, 0, self.mw)
+            progress.setWindowModality(Qt.WindowModal)
+            progress.setWindowTitle("New Session")
+            progress.show()
+
+            try:
+                # Use SessionManager to create session
+                session_path = self.mw.session_manager.create_session(self.mw.current_client_id)
+            finally:
+                progress.close()
 
             self.mw.session_path = session_path
 

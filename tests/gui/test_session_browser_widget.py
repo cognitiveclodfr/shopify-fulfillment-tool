@@ -30,6 +30,8 @@ def mock_session_manager():
 @pytest.fixture
 def session_browser(qtbot, mock_session_manager):
     """Create a SessionBrowserWidget for testing."""
+    # Disable async mode for tests (use synchronous loading)
+    SessionBrowserWidget.USE_ASYNC = False
     widget = SessionBrowserWidget(mock_session_manager)
     qtbot.addWidget(widget)
     return widget

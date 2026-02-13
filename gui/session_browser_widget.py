@@ -15,9 +15,54 @@ from PySide6.QtCore import Signal, Qt
 from shopify_tool.session_manager import SessionManager
 from gui.wheel_ignore_combobox import WheelIgnoreComboBox
 from gui.theme_manager import get_theme_manager
+from gui.background_worker import BackgroundWorker
 
 
 logger = logging.getLogger(__name__)
+
+
+class SessionLoaderWorker(BackgroundWorker):
+    """Background worker for loading session list from file server.
+
+    This worker performs the potentially slow I/O operation of listing
+    and parsing session metadata files from the network file server.
+    """
+
+    def __init__(self, session_manager, client_id, status_filter=None):
+        """Initialize session loader worker.
+
+        Args:
+            session_manager: SessionManager instance
+            client_id: Client ID to load sessions for
+            status_filter: Optional status filter (e.g., "active", "completed")
+        """
+        super().__init__()
+        self.session_manager = session_manager
+        self.client_id = client_id
+        self.status_filter = status_filter
+
+    def run(self):
+        """Execute in background thread - load sessions from file server."""
+        try:
+            if self._is_cancelled:
+                return
+
+            logger.debug(f"Loading sessions for CLIENT_{self.client_id}")
+
+            # This is the potentially slow I/O operation (200-1000ms on slow UNC)
+            sessions = self.session_manager.list_client_sessions(
+                self.client_id,
+                status_filter=self.status_filter
+            )
+
+            if not self._is_cancelled:
+                self.finished_with_data.emit(sessions)
+                logger.debug(f"Loaded {len(sessions)} sessions for CLIENT_{self.client_id}")
+
+        except Exception as e:
+            if not self._is_cancelled:
+                logger.error(f"Error loading sessions: {e}", exc_info=True)
+                self.error_occurred.emit(str(e))
 
 
 class SessionBrowserWidget(QWidget):
@@ -29,17 +74,24 @@ class SessionBrowserWidget(QWidget):
     - "Refresh" button to reload sessions
     - Double-click or "Open Session" to load a session
 
+    Uses async loading via BackgroundWorker to keep UI responsive during
+    slow file server operations.
+
     Signals:
         session_selected: Emitted when user wants to open a session (session_path: str)
     """
 
     session_selected = Signal(str)  # Emits session_path
 
+    # Class variable for testing - set to False to disable async loading in tests
+    USE_ASYNC = True
+
     def __init__(self, session_manager: SessionManager, parent=None):
         super().__init__(parent)
         self.session_manager = session_manager
         self.current_client_id = None
         self.sessions_data = []
+        self.worker = None  # Track active background worker
 
         self._init_ui()
         logger.info("SessionBrowserWidget initialized")
@@ -125,15 +177,17 @@ class SessionBrowserWidget(QWidget):
         # Enable open button when selection changes
         self.sessions_table.itemSelectionChanged.connect(self._on_selection_changed)
 
-    def set_client(self, client_id: str):
+    def set_client(self, client_id: str, auto_refresh: bool = True):
         """Set the client to show sessions for.
 
         Args:
             client_id: Client ID to load sessions for
+            auto_refresh: If False, skip automatic refresh (caller will handle it)
         """
         if client_id != self.current_client_id:
             self.current_client_id = client_id
-            self.refresh_sessions()
+            if auto_refresh:
+                self.refresh_sessions()
 
     def refresh_sessions(self):
         """Reload sessions from the session manager."""
@@ -142,13 +196,57 @@ class SessionBrowserWidget(QWidget):
             logger.debug("No client selected, clearing sessions table")
             return
 
+        # Check if using async mode (can be disabled for tests)
+        if not self.USE_ASYNC:
+            # Synchronous fallback for tests
+            self._do_refresh_sync()
+            return
+
+        # === ASYNC MODE ===
+
+        # 1. Cleanup existing worker FIRST (critical to prevent crashes!)
+        if self.worker is not None:
+            self.worker.cleanup()
+            self.worker = None
+
+        # 2. Show loading state immediately
+        self.sessions_table.setRowCount(0)  # Clear table
+        self.sessions_table.setEnabled(False)
+        self.refresh_btn.setEnabled(False)
+        self.refresh_btn.setText("Loading...")
+
+        # 3. Get status filter
+        status_filter = self.status_filter.currentText().lower()
+        if status_filter == "all":
+            status_filter = None
+
+        # 4. Create and start new worker
+        self.worker = SessionLoaderWorker(
+            self.session_manager,
+            self.current_client_id,
+            status_filter
+        )
+
+        # 5. Connect signals
+        self.worker.finished_with_data.connect(self._on_sessions_loaded)
+        self.worker.error_occurred.connect(self._on_load_error)
+
+        # 6. Start background work
+        self.worker.start()
+        logger.debug("Session loading worker started")
+
+    def _do_refresh_sync(self):
+        """Synchronous refresh fallback (for tests).
+
+        This is the old blocking behavior, kept for test compatibility.
+        """
         try:
             # Get status filter
             status_filter = self.status_filter.currentText().lower()
             if status_filter == "all":
                 status_filter = None
 
-            # Load sessions
+            # Load sessions (blocks UI in sync mode)
             self.sessions_data = self.session_manager.list_client_sessions(
                 self.current_client_id,
                 status_filter=status_filter
@@ -157,15 +255,38 @@ class SessionBrowserWidget(QWidget):
             # Populate table
             self._populate_table()
 
-            logger.info(f"Loaded {len(self.sessions_data)} sessions for CLIENT_{self.current_client_id}")
+            logger.info(f"Loaded {len(self.sessions_data)} sessions (sync mode)")
 
         except Exception as e:
             logger.error(f"Failed to load sessions: {e}", exc_info=True)
-            QMessageBox.warning(
-                self,
-                "Error",
-                f"Failed to load sessions:\n{str(e)}"
-            )
+            QMessageBox.warning(self, "Error", f"Failed to load sessions:\n{str(e)}")
+
+    def _on_sessions_loaded(self, sessions_data):
+        """Handle loaded data in main thread (safe for UI updates)."""
+        logger.debug(f"Received {len(sessions_data)} sessions from worker")
+        self.sessions_data = sessions_data
+        self._populate_table()
+
+        # Restore UI state
+        self.sessions_table.setEnabled(True)
+        self.refresh_btn.setEnabled(True)
+        self.refresh_btn.setText("Refresh")
+
+    def _on_load_error(self, error_msg):
+        """Handle errors in main thread."""
+        logger.error(f"Session load error: {error_msg}")
+
+        # Restore UI
+        self.sessions_table.setEnabled(True)
+        self.refresh_btn.setEnabled(True)
+        self.refresh_btn.setText("Refresh")
+
+        # Show error to user
+        QMessageBox.warning(
+            self,
+            "Error Loading Sessions",
+            f"Failed to load sessions:\n{error_msg}"
+        )
 
     def _populate_table(self):
         """Populate the table with sessions data."""
@@ -365,3 +486,18 @@ Comments: {comments if comments else 'None'}"""
         super().showEvent(event)
         if self.current_client_id:
             self.refresh_sessions()
+
+    def closeEvent(self, event):
+        """Cleanup worker when widget closes.
+
+        CRITICAL: This prevents crashes from worker still running after
+        widget destruction (lesson from commit #216).
+
+        Args:
+            event: Close event
+        """
+        if self.worker is not None:
+            logger.debug("Cleaning up session browser worker on widget close")
+            self.worker.cleanup()
+            self.worker = None
+        super().closeEvent(event)

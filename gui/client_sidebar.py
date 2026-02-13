@@ -151,6 +151,7 @@ class ClientSidebar(QWidget):
     COLLAPSED_WIDTH = 40
     ANIMATION_DURATION = 200  # milliseconds
 
+    # Class variable for testing - set to False to disable async loading in tests
     def __init__(
         self,
         profile_manager: ProfileManager,
@@ -277,6 +278,10 @@ class ClientSidebar(QWidget):
     def refresh(self):
         """Refresh client list and rebuild sections with performance logging."""
         import time
+        from PySide6.QtCore import Qt
+
+        # Show wait cursor during potentially slow operation
+        QApplication.setOverrideCursor(Qt.WaitCursor)
 
         try:
             overall_start = time.time()
@@ -368,6 +373,9 @@ class ClientSidebar(QWidget):
             self.setUpdatesEnabled(True)
             logger.error(f"Failed to refresh sidebar: {e}", exc_info=True)
             QMessageBox.warning(self, "Refresh Error", f"Failed to refresh sidebar:\n{str(e)}")
+        finally:
+            # Restore cursor after refresh completes (success or error)
+            QApplication.restoreOverrideCursor()
 
     def _create_pinned_section(self, all_clients: List[str], config: Dict) -> SectionWidget:
         """Create Pinned section.

@@ -1134,7 +1134,8 @@ def recalculate_statistics(df):
             - 'sku_summary' (list[dict] | None): List of SKU summary data.
     """
     # Validate DataFrame has required columns
-    required_cols = ["Order_Fulfillment_Status", "Order_Number", "Quantity", "Shipping_Provider", "System_note"]
+    # Shipping_Provider is optional - older sessions may not have it
+    required_cols = ["Order_Fulfillment_Status", "Order_Number", "Quantity", "System_note"]
     missing = [col for col in required_cols if col not in df.columns]
 
     if missing:
@@ -1143,6 +1144,14 @@ def recalculate_statistics(df):
         logger.error(f"Missing required columns in DataFrame: {missing}")
         logger.error(f"Available columns: {list(df.columns)}")
         raise ValueError(f"DataFrame missing required columns: {missing}")
+
+    # Add Shipping_Provider if missing (older sessions may not have it)
+    if "Shipping_Provider" not in df.columns:
+        import logging
+        logger = logging.getLogger("ShopifyToolLogger")
+        logger.warning("Shipping_Provider column missing - defaulting to 'Unknown'")
+        df = df.copy()
+        df["Shipping_Provider"] = "Unknown"
 
     stats = {}
     completed_orders_df = df[df["Order_Fulfillment_Status"] == "Fulfillable"].copy()
@@ -1165,8 +1174,8 @@ def recalculate_statistics(df):
                 "repeated_orders_found": int(group[group["System_note"] == "Repeat"]["Order_Number"].nunique()),
             }
             courier_stats.append(courier_data)
-    # Per instructions, use null (None) if no stats are available
-    stats["couriers_stats"] = courier_stats if courier_stats else None
+    # Keep empty list as is - UI will handle display appropriately
+    stats["couriers_stats"] = courier_stats
 
     # === NEW: Tags Breakdown ===
     tags_breakdown = None
