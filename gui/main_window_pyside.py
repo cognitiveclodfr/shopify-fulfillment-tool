@@ -76,6 +76,7 @@ class MainWindow(QMainWindow):
         self.analysis_results_df = None
         self.analysis_stats = None
         self.threadpool = QThreadPool()
+        self._analysis_running = False  # Guard against duplicate analysis runs
 
         # Table display attributes
         self.all_columns = []

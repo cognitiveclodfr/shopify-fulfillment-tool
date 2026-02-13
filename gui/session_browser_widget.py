@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget, QTableWidgetItem,
     QPushButton, QComboBox, QGroupBox, QHeaderView, QMessageBox, QLineEdit
 )
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Signal, Qt, QEvent
 
 from shopify_tool.session_manager import SessionManager
 from gui.wheel_ignore_combobox import WheelIgnoreComboBox
@@ -174,8 +174,15 @@ class SessionBrowserWidget(QWidget):
 
         main_layout.addWidget(group)
 
-        # Enable open button when selection changes
-        self.sessions_table.itemSelectionChanged.connect(self._on_selection_changed)
+        # Block mouse-move-only events on the viewport so Qt does not change the
+        # current/selected row while the user is just hovering (no button pressed).
+        # Without this, cell widgets (ComboBox, LineEdit) forward hover events that
+        # cause the table to visually jump selection to whichever row the cursor is over.
+        self.sessions_table.viewport().installEventFilter(self)
+
+        # Enable open button on actual click or keyboard navigation.
+        self.sessions_table.clicked.connect(lambda _: self._on_selection_changed())
+        self.sessions_table.currentItemChanged.connect(self._on_selection_changed)
 
     def set_client(self, client_id: str, auto_refresh: bool = True):
         """Set the client to show sessions for.
@@ -263,6 +270,11 @@ class SessionBrowserWidget(QWidget):
 
     def _on_sessions_loaded(self, sessions_data):
         """Handle loaded data in main thread (safe for UI updates)."""
+        # Guard: widget may have been closed while worker was still running
+        if not self.isVisible() or self.sessions_table is None:
+            logger.debug("Widget closed before sessions loaded — ignoring result")
+            return
+
         logger.debug(f"Received {len(sessions_data)} sessions from worker")
         self.sessions_data = sessions_data
         self._populate_table()
@@ -386,9 +398,9 @@ Comments: {comments if comments else 'None'}"""
         """Apply the status filter."""
         self.refresh_sessions()
 
-    def _on_selection_changed(self):
-        """Handle table selection change."""
-        has_selection = len(self.sessions_table.selectedItems()) > 0
+    def _on_selection_changed(self, current=None, previous=None):
+        """Handle table selection change (fires on click/keyboard, not hover)."""
+        has_selection = self.sessions_table.currentRow() >= 0
         self.open_btn.setEnabled(has_selection)
 
     def _on_session_double_clicked(self, index):
@@ -476,6 +488,18 @@ Comments: {comments if comments else 'None'}"""
             logger.error(f"Failed to update comments: {e}")
             # Don't show error dialog for comments (less critical)
             # Just log the error
+
+    def eventFilter(self, watched, event):
+        """Block hover-only mouse moves on the table viewport.
+
+        Prevents Qt from changing the selected row when the user moves the mouse
+        over sessions without clicking. Only mouseMoveEvent with no button pressed
+        is blocked — drag-selection (button held) still works normally.
+        """
+        if watched is self.sessions_table.viewport():
+            if event.type() == QEvent.Type.MouseMove and not event.buttons():
+                return True  # consume event — no selection change on hover
+        return super().eventFilter(watched, event)
 
     def showEvent(self, event):
         """Refresh sessions when widget becomes visible.

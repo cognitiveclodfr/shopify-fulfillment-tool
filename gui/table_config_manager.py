@@ -426,6 +426,13 @@ class TableConfigManager:
 
         logger.debug("Applied column order")
 
+    def has_saved_column_widths(self) -> bool:
+        """Return True if there are saved column widths in the current config."""
+        return (
+            self._current_config is not None
+            and bool(self._current_config.column_widths)
+        )
+
     def apply_column_widths(self, table_view: QTableView, df: pd.DataFrame):
         """Apply column width configuration to table.
 
