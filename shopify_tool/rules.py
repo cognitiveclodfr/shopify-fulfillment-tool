@@ -584,6 +584,9 @@ class RuleEngine:
         "max_quantity": "_calculate_max_quantity",
         "has_sku": "_check_has_sku",
         "has_product": "_check_has_product",
+        "order_volumetric_weight": "_calculate_order_volumetric_weight",
+        "all_no_packaging": "_calculate_all_no_packaging",
+        "order_min_box": "_get_order_min_box",
     }
 
     def _normalize_priorities(self, rules):
@@ -1227,10 +1230,14 @@ class RuleEngine:
                 calc_method_name = self.ORDER_LEVEL_FIELDS[field]
                 calc_method = getattr(self, calc_method_name)
 
-                # For has_sku/has_product: method applies operator internally
+                # For has_sku/has_product/order_min_box: method applies operator internally
                 if field in ("has_sku", "has_product"):
                     field_value = calc_method(order_df, value, operator)
                     result = field_value
+                elif field in ("all_no_packaging",):
+                    result = calc_method(order_df, None)
+                elif field == "order_min_box":
+                    result = calc_method(order_df, value, operator)
                 else:
                     # For numeric fields: wrap in Series, use global operator
                     field_value = calc_method(order_df, None)
@@ -1282,6 +1289,45 @@ class RuleEngine:
         if "Quantity" in order_df.columns:
             return order_df["Quantity"].max()
         return 0
+
+    def _calculate_order_volumetric_weight(self, order_df, sku_value=None):
+        """Return pre-computed order volumetric weight from enriched DataFrame column.
+
+        Requires enrich_dataframe_with_weights() to have been called before apply().
+        Returns 0.0 if the column is not present.
+        """
+        if "Order_Volumetric_Weight" in order_df.columns:
+            return float(order_df["Order_Volumetric_Weight"].iloc[0])
+        return 0.0
+
+    def _calculate_all_no_packaging(self, order_df, sku_value=None):
+        """Return True if all SKUs in the order have no_packaging flag set.
+
+        Requires enrich_dataframe_with_weights() to have been called before apply().
+        Returns False if the column is not present.
+        """
+        if "All_No_Packaging" in order_df.columns:
+            val = order_df["All_No_Packaging"].iloc[0]
+            if isinstance(val, bool):
+                return val
+            return str(val).lower() in ("true", "1", "yes")
+        return False
+
+    def _get_order_min_box(self, order_df, rule_value, operator="equals"):
+        """Return bool: True if Order_Min_Box matches the condition.
+
+        Reads the pre-computed Order_Min_Box column (populated by
+        enrich_dataframe_with_weights). Applies operator internally
+        like has_sku/has_product since it returns a bool directly.
+        """
+        if "Order_Min_Box" not in order_df.columns:
+            return False
+        box_value = str(order_df["Order_Min_Box"].iloc[0])
+        if operator not in OPERATOR_MAP:
+            return False
+        op_func = globals()[OPERATOR_MAP[operator]]
+        result_series = op_func(pd.Series([box_value]), rule_value)
+        return bool(result_series.iloc[0])
 
     def _check_has_sku(self, order_df, sku_value, operator="equals"):
         """Check if order contains SKU matching the condition.

@@ -24,7 +24,9 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QFileDialog,
     QSpinBox,
+    QDoubleSpinBox,
     QDateEdit,
+    QCheckBox,
 )
 from PySide6.QtCore import Qt, QTimer, QDate
 
@@ -184,6 +186,7 @@ class SettingsWindow(QDialog):
         self.create_stock_exports_tab()
         self.create_mappings_tab()
         self.create_sets_tab()  # Sets/Bundles tab
+        self.create_weight_tab()  # Volumetric Weight tab
 
         button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         button_box.accepted.connect(self.save_settings)
@@ -295,6 +298,9 @@ class SettingsWindow(QDialog):
             "max_quantity",
             "has_sku",
             "has_product",
+            "order_volumetric_weight",
+            "all_no_packaging",
+            "order_min_box",
         ]
 
         # Common article-level fields
@@ -2055,6 +2061,388 @@ class SettingsWindow(QDialog):
                 f"Failed to export sets to CSV:\n\n{str(e)}"
             )
 
+    # ========================================
+    def create_weight_tab(self):
+        """Create the Volumetric Weight management tab."""
+        tab = QWidget()
+        main_layout = QVBoxLayout(tab)
+        main_layout.setSpacing(10)
+
+        from gui.theme_manager import get_theme_manager
+        theme = get_theme_manager().get_current_theme()
+
+        weight_cfg = self.config_data.get("weight_config", {
+            "volumetric_divisor": 6000,
+            "products": {},
+            "boxes": []
+        })
+
+        # ---- Global Settings ----
+        global_group = QGroupBox("Global Settings")
+        global_layout = QFormLayout(global_group)
+
+        self.weight_divisor_spin = QDoubleSpinBox()
+        self.weight_divisor_spin.setRange(1, 100000)
+        self.weight_divisor_spin.setDecimals(0)
+        self.weight_divisor_spin.setValue(float(weight_cfg.get("volumetric_divisor", 6000)))
+        self.weight_divisor_spin.setToolTip(
+            "Volumetric weight formula: L × W × H / divisor\n"
+            "6000 = DPD/Speedy standard (cm³ → kg)\n"
+            "5000 = DHL/FedEx standard"
+        )
+        global_layout.addRow("Volumetric Divisor (cm³ → kg):", self.weight_divisor_spin)
+        main_layout.addWidget(global_group)
+
+        # ---- Products Section ----
+        products_group = QGroupBox("Products (SKU Dimensions)")
+        products_layout = QVBoxLayout(products_group)
+
+        # Toolbar
+        prod_toolbar = QHBoxLayout()
+        import_sku_btn = QPushButton("Import from Stock CSV")
+        import_sku_btn.setToolTip("Load SKUs from the current stock CSV file")
+        import_sku_btn.clicked.connect(self._weight_import_skus_from_stock_csv)
+        prod_toolbar.addWidget(import_sku_btn)
+        add_prod_btn = QPushButton("Add Row")
+        add_prod_btn.clicked.connect(self._weight_add_product_row)
+        prod_toolbar.addWidget(add_prod_btn)
+        del_prod_btn = QPushButton("Delete Selected")
+        del_prod_btn.clicked.connect(lambda: self._weight_delete_selected(self.weight_products_table))
+        prod_toolbar.addWidget(del_prod_btn)
+        prod_toolbar.addStretch()
+        products_layout.addLayout(prod_toolbar)
+
+        # Table: SKU | Name | L(cm) | W(cm) | H(cm) | Vol.Weight | No Packaging
+        self.weight_products_table = QTableWidget(0, 7)
+        self.weight_products_table.setHorizontalHeaderLabels([
+            "SKU", "Name", "L (cm)", "W (cm)", "H (cm)", "Vol. Weight (kg)", "No Packaging"
+        ])
+        self.weight_products_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.weight_products_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.weight_products_table.setColumnWidth(2, 70)
+        self.weight_products_table.setColumnWidth(3, 70)
+        self.weight_products_table.setColumnWidth(4, 70)
+        self.weight_products_table.setColumnWidth(5, 110)
+        self.weight_products_table.setColumnWidth(6, 100)
+        self.weight_products_table.setAlternatingRowColors(True)
+        self.weight_products_table.setMinimumHeight(200)
+        # Recalculate vol weight when dimensions change
+        self.weight_products_table.cellChanged.connect(
+            lambda row, col: self._weight_recalc_vol_weight(self.weight_products_table, row, col, [2, 3, 4])
+        )
+        products_layout.addWidget(self.weight_products_table)
+        main_layout.addWidget(products_group)
+
+        # ---- Boxes Section ----
+        boxes_group = QGroupBox("Boxes (Packaging Reference)")
+        boxes_layout = QVBoxLayout(boxes_group)
+
+        box_toolbar = QHBoxLayout()
+        add_box_btn = QPushButton("Add Box")
+        add_box_btn.clicked.connect(self._weight_add_box_row)
+        box_toolbar.addWidget(add_box_btn)
+        del_box_btn = QPushButton("Delete Selected")
+        del_box_btn.clicked.connect(lambda: self._weight_delete_selected(self.weight_boxes_table))
+        box_toolbar.addWidget(del_box_btn)
+        box_toolbar.addStretch()
+        boxes_layout.addLayout(box_toolbar)
+
+        # Table: Name | L(cm) | W(cm) | H(cm) | Vol.Weight
+        self.weight_boxes_table = QTableWidget(0, 5)
+        self.weight_boxes_table.setHorizontalHeaderLabels([
+            "Box Name", "L (cm)", "W (cm)", "H (cm)", "Vol. Weight (kg)"
+        ])
+        self.weight_boxes_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.weight_boxes_table.setColumnWidth(1, 70)
+        self.weight_boxes_table.setColumnWidth(2, 70)
+        self.weight_boxes_table.setColumnWidth(3, 70)
+        self.weight_boxes_table.setColumnWidth(4, 110)
+        self.weight_boxes_table.setAlternatingRowColors(True)
+        self.weight_boxes_table.setMinimumHeight(150)
+        self.weight_boxes_table.cellChanged.connect(
+            lambda row, col: self._weight_recalc_vol_weight(self.weight_boxes_table, row, col, [1, 2, 3])
+        )
+        boxes_layout.addWidget(self.weight_boxes_table)
+        main_layout.addWidget(boxes_group)
+
+        tips = QLabel(
+            "Volumetric weight = L × W × H / Divisor\n"
+            "No Packaging: orders where ALL items have this flag will skip box selection\n"
+            "order_min_box — smallest box that physically fits all items (e.g. 'S', 'M', 'L')\n"
+            "Possible values: box name / NO_BOX_NEEDED / NO_BOX_FITS / UNKNOWN_DIMS"
+        )
+        tips.setStyleSheet(f"color: {theme.text_secondary}; font-size: 9pt; margin-top: 5px;")
+        tips.setWordWrap(True)
+        main_layout.addWidget(tips)
+        main_layout.addStretch()
+
+        self.tab_widget.addTab(tab, "Weight")
+
+        # Populate with existing data
+        self._weight_populate_products(weight_cfg.get("products", {}))
+        self._weight_populate_boxes(weight_cfg.get("boxes", []))
+
+    def _weight_recalc_vol_weight(self, table, row, col, dim_cols):
+        """Recalculate volumetric weight cell when L/W/H changes."""
+        if col not in dim_cols:
+            return
+        vol_col = max(dim_cols) + 1
+        try:
+            l = float(table.item(row, dim_cols[0]).text() or 0) if table.item(row, dim_cols[0]) else 0
+            w = float(table.item(row, dim_cols[1]).text() or 0) if table.item(row, dim_cols[1]) else 0
+            h = float(table.item(row, dim_cols[2]).text() or 0) if table.item(row, dim_cols[2]) else 0
+            divisor = float(self.weight_divisor_spin.value() or 6000)
+            vol_w = round((l * w * h) / divisor, 4) if divisor > 0 else 0.0
+            item = QTableWidgetItem(str(vol_w))
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            table.blockSignals(True)
+            table.setItem(row, vol_col, item)
+            table.blockSignals(False)
+        except (ValueError, AttributeError):
+            pass
+
+    def _weight_populate_products(self, products: dict):
+        """Fill products table from config dict."""
+        self.weight_products_table.blockSignals(True)
+        self.weight_products_table.setRowCount(0)
+        divisor = float(self.weight_divisor_spin.value() or 6000)
+        for sku, data in products.items():
+            row = self.weight_products_table.rowCount()
+            self.weight_products_table.insertRow(row)
+            l = float(data.get("length_cm") or 0)
+            w = float(data.get("width_cm") or 0)
+            h = float(data.get("height_cm") or 0)
+            vol_w = round((l * w * h) / divisor, 4) if divisor > 0 else 0.0
+            no_pkg = data.get("no_packaging", False)
+
+            self.weight_products_table.setItem(row, 0, QTableWidgetItem(sku))
+            self.weight_products_table.setItem(row, 1, QTableWidgetItem(data.get("name", "")))
+            self.weight_products_table.setItem(row, 2, QTableWidgetItem(str(l) if l else ""))
+            self.weight_products_table.setItem(row, 3, QTableWidgetItem(str(w) if w else ""))
+            self.weight_products_table.setItem(row, 4, QTableWidgetItem(str(h) if h else ""))
+            vol_item = QTableWidgetItem(str(vol_w))
+            vol_item.setFlags(vol_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.weight_products_table.setItem(row, 5, vol_item)
+
+            # Checkbox for no_packaging
+            chk_widget = QWidget()
+            chk_layout = QHBoxLayout(chk_widget)
+            chk_layout.setContentsMargins(8, 2, 8, 2)
+            chk = QCheckBox()
+            chk.setChecked(bool(no_pkg))
+            chk_layout.addWidget(chk)
+            chk_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.weight_products_table.setCellWidget(row, 6, chk_widget)
+        self.weight_products_table.blockSignals(False)
+
+    def _weight_populate_boxes(self, boxes: list):
+        """Fill boxes table from config list."""
+        self.weight_boxes_table.blockSignals(True)
+        self.weight_boxes_table.setRowCount(0)
+        divisor = float(self.weight_divisor_spin.value() or 6000)
+        for box in boxes:
+            row = self.weight_boxes_table.rowCount()
+            self.weight_boxes_table.insertRow(row)
+            l = float(box.get("length_cm") or 0)
+            w = float(box.get("width_cm") or 0)
+            h = float(box.get("height_cm") or 0)
+            vol_w = round((l * w * h) / divisor, 4) if divisor > 0 else 0.0
+
+            self.weight_boxes_table.setItem(row, 0, QTableWidgetItem(box.get("name", "")))
+            self.weight_boxes_table.setItem(row, 1, QTableWidgetItem(str(l) if l else ""))
+            self.weight_boxes_table.setItem(row, 2, QTableWidgetItem(str(w) if w else ""))
+            self.weight_boxes_table.setItem(row, 3, QTableWidgetItem(str(h) if h else ""))
+            vol_item = QTableWidgetItem(str(vol_w))
+            vol_item.setFlags(vol_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.weight_boxes_table.setItem(row, 4, vol_item)
+        self.weight_boxes_table.blockSignals(False)
+
+    def _weight_add_product_row(self):
+        """Add a blank product row to the products table."""
+        row = self.weight_products_table.rowCount()
+        self.weight_products_table.insertRow(row)
+        for col in range(6):
+            self.weight_products_table.setItem(row, col, QTableWidgetItem(""))
+        vol_item = QTableWidgetItem("0.0")
+        vol_item.setFlags(vol_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        self.weight_products_table.setItem(row, 5, vol_item)
+        chk_widget = QWidget()
+        chk_layout = QHBoxLayout(chk_widget)
+        chk_layout.setContentsMargins(8, 2, 8, 2)
+        chk = QCheckBox()
+        chk_layout.addWidget(chk)
+        chk_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.weight_products_table.setCellWidget(row, 6, chk_widget)
+
+    def _weight_add_box_row(self):
+        """Add a blank box row to the boxes table."""
+        row = self.weight_boxes_table.rowCount()
+        self.weight_boxes_table.insertRow(row)
+        for col in range(4):
+            self.weight_boxes_table.setItem(row, col, QTableWidgetItem(""))
+        vol_item = QTableWidgetItem("0.0")
+        vol_item.setFlags(vol_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        self.weight_boxes_table.setItem(row, 4, vol_item)
+
+    def _weight_delete_selected(self, table):
+        """Delete selected rows from the given table."""
+        selected = sorted(set(idx.row() for idx in table.selectedIndexes()), reverse=True)
+        for row in selected:
+            table.removeRow(row)
+
+    def _weight_import_skus_from_stock_csv(self):
+        """Import SKUs from a stock CSV file into the products table."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import SKUs from Stock CSV",
+            "",
+            "CSV Files (*.csv);;All Files (*)"
+        )
+        if not file_path:
+            return
+
+        try:
+            delimiter = self.config_data.get("settings", {}).get("stock_csv_delimiter", ";")
+            df = pd.read_csv(file_path, sep=delimiter, dtype=str)
+
+            # Find SKU and Name columns via column_mappings
+            mappings = self.config_data.get("column_mappings", {})
+            stock_mappings = mappings.get("stock", {}) if isinstance(mappings.get("stock"), dict) else {}
+            sku_col = next((csv_col for csv_col, internal in stock_mappings.items() if internal == "SKU"), None)
+            name_col = next((csv_col for csv_col, internal in stock_mappings.items() if internal == "Product_Name"), None)
+
+            if not sku_col or sku_col not in df.columns:
+                # Fallback: try common names
+                for candidate in ["SKU", "Артикул", "sku", "Article"]:
+                    if candidate in df.columns:
+                        sku_col = candidate
+                        break
+
+            if not sku_col:
+                QMessageBox.warning(self, "Warning", "Could not find SKU column in CSV.\nCheck column mappings in Settings → Mappings tab.")
+                return
+
+            skus_in_csv = df[sku_col].dropna().astype(str).str.strip().unique().tolist()
+            skus_in_csv = [s for s in skus_in_csv if s and s != "nan"]
+
+            # Get existing SKUs in table
+            existing_skus = set()
+            for r in range(self.weight_products_table.rowCount()):
+                item = self.weight_products_table.item(r, 0)
+                if item:
+                    existing_skus.add(item.text().strip())
+
+            # Determine names if available
+            sku_to_name = {}
+            if name_col and name_col in df.columns:
+                for _, row in df[[sku_col, name_col]].dropna(subset=[sku_col]).iterrows():
+                    sku = str(row[sku_col]).strip()
+                    name = str(row[name_col]).strip() if pd.notna(row[name_col]) else ""
+                    if sku not in sku_to_name:
+                        sku_to_name[sku] = name
+
+            added = 0
+            self.weight_products_table.blockSignals(True)
+            for sku in skus_in_csv:
+                if sku in existing_skus:
+                    continue
+                row = self.weight_products_table.rowCount()
+                self.weight_products_table.insertRow(row)
+                self.weight_products_table.setItem(row, 0, QTableWidgetItem(sku))
+                self.weight_products_table.setItem(row, 1, QTableWidgetItem(sku_to_name.get(sku, "")))
+                for col in range(2, 6):
+                    self.weight_products_table.setItem(row, col, QTableWidgetItem(""))
+                vol_item = QTableWidgetItem("0.0")
+                vol_item.setFlags(vol_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self.weight_products_table.setItem(row, 5, vol_item)
+                chk_widget = QWidget()
+                chk_layout = QHBoxLayout(chk_widget)
+                chk_layout.setContentsMargins(8, 2, 8, 2)
+                chk = QCheckBox()
+                chk_layout.addWidget(chk)
+                chk_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.weight_products_table.setCellWidget(row, 6, chk_widget)
+                added += 1
+            self.weight_products_table.blockSignals(False)
+
+            QMessageBox.information(
+                self, "Import Complete",
+                f"Added {added} new SKUs. Skipped {len(skus_in_csv) - added} already existing."
+            )
+
+        except Exception as e:
+            QMessageBox.critical(self, "Import Error", f"Failed to import SKUs:\n\n{str(e)}")
+
+    def _weight_collect_config(self) -> dict:
+        """Collect weight configuration from UI tables."""
+        divisor = int(self.weight_divisor_spin.value())
+
+        products = {}
+        for row in range(self.weight_products_table.rowCount()):
+            sku_item = self.weight_products_table.item(row, 0)
+            if not sku_item or not sku_item.text().strip():
+                continue
+            sku = sku_item.text().strip()
+            name = (self.weight_products_table.item(row, 1) or QTableWidgetItem("")).text().strip()
+
+            def _safe_float(table, r, c):
+                item = table.item(r, c)
+                if item and item.text().strip():
+                    try:
+                        return float(item.text().strip())
+                    except ValueError:
+                        pass
+                return 0.0
+
+            l = _safe_float(self.weight_products_table, row, 2)
+            w = _safe_float(self.weight_products_table, row, 3)
+            h = _safe_float(self.weight_products_table, row, 4)
+
+            # Read checkbox
+            no_pkg = False
+            chk_widget = self.weight_products_table.cellWidget(row, 6)
+            if chk_widget:
+                chk = chk_widget.findChild(QCheckBox)
+                if chk:
+                    no_pkg = chk.isChecked()
+
+            products[sku] = {
+                "name": name,
+                "length_cm": l,
+                "width_cm": w,
+                "height_cm": h,
+                "no_packaging": no_pkg,
+            }
+
+        boxes = []
+        for row in range(self.weight_boxes_table.rowCount()):
+            name_item = self.weight_boxes_table.item(row, 0)
+            if not name_item or not name_item.text().strip():
+                continue
+            name = name_item.text().strip()
+
+            def _safe_float_b(r, c):
+                item = self.weight_boxes_table.item(r, c)
+                if item and item.text().strip():
+                    try:
+                        return float(item.text().strip())
+                    except ValueError:
+                        pass
+                return 0.0
+
+            boxes.append({
+                "name": name,
+                "length_cm": _safe_float_b(row, 1),
+                "width_cm": _safe_float_b(row, 2),
+                "height_cm": _safe_float_b(row, 3),
+            })
+
+        return {
+            "volumetric_divisor": divisor,
+            "products": products,
+            "boxes": boxes,
+        }
+
     def save_settings(self):
         """Saves all settings from the UI back into the config dictionary."""
         try:
@@ -2255,6 +2643,11 @@ class SettingsWindow(QDialog):
                         "patterns": patterns,
                         "case_sensitive": False
                     }
+
+            # ========================================
+            # Weight Tab
+            # ========================================
+            self.config_data["weight_config"] = self._weight_collect_config()
 
             # ========================================
             # Save to server via ProfileManager

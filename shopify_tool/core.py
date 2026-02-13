@@ -672,6 +672,12 @@ def _run_analysis_and_rules(
             ""
         )
 
+    # Enrich DataFrame with volumetric weights before Rule Engine
+    weight_config = config.get("weight_config", {})
+    if weight_config and weight_config.get("products"):
+        from .weight_calculator import enrich_dataframe_with_weights
+        final_df = enrich_dataframe_with_weights(final_df, weight_config)
+
     # Apply the rule engine
     rules = config.get("rules", [])
     if rules:
