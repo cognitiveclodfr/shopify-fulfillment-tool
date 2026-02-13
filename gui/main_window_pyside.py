@@ -1117,7 +1117,7 @@ class MainWindow(QMainWindow):
 
         # === Display Courier Stats ===
         courier_stats = self.analysis_stats.get("couriers_stats")
-        if courier_stats:
+        if courier_stats:  # Non-empty list
             # Re-create headers and data
             headers = ["Courier ID", "Orders Assigned", "Repeated Orders"]
             for i, header_text in enumerate(headers):
@@ -1128,7 +1128,9 @@ class MainWindow(QMainWindow):
                 self.courier_stats_layout.addWidget(QLabel(stats.get("courier_id", "N/A")), i, 0)
                 self.courier_stats_layout.addWidget(QLabel(str(stats.get("orders_assigned", "N/A"))), i, 1)
                 self.courier_stats_layout.addWidget(QLabel(str(stats.get("repeated_orders_found", "N/A"))), i, 2)
-        else:
+        elif courier_stats is not None:  # Empty list - no completed orders
+            self.courier_stats_layout.addWidget(QLabel("No completed orders to show courier stats."), 0, 0)
+        else:  # None - stats not available or error
             self.courier_stats_layout.addWidget(QLabel("No courier stats available."), 0, 0)
 
         # === NEW: Clear previous tags stats ===

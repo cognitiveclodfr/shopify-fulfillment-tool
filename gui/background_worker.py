@@ -19,6 +19,7 @@ Critical Pattern (prevents crashes from commit #216):
 
 from PySide6.QtCore import QThread, Signal
 import logging
+import warnings
 
 logger = logging.getLogger(__name__)
 
@@ -116,42 +117,48 @@ class BackgroundWorker(QThread):
                 self.worker.start()
             ```
         """
-        if not self.isRunning():
-            logger.debug(f"Worker not running, no cleanup needed: {self.__class__.__name__}")
-            return
-
         logger.debug(f"Cleaning up worker: {self.__class__.__name__}")
 
         # 1. Disconnect ALL signals to prevent race conditions
-        # This is CRITICAL - signals can emit after thread marked for deletion
-        try:
-            self.finished_with_data.disconnect()
-        except:
-            pass  # OK if not connected
-        try:
-            self.error_occurred.disconnect()
-        except:
-            pass
-        try:
-            self.progress_updated.disconnect()
-        except:
-            pass
+        # Always disconnect regardless of running state - finished workers still
+        # have active signal connections that can cause leaks (QObjects without parent)
+        # PySide6 may emit RuntimeWarning when disconnecting unconnected signals - suppress it
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            try:
+                self.finished_with_data.disconnect()
+            except Exception:
+                pass
+            try:
+                self.error_occurred.disconnect()
+            except Exception:
+                pass
+            try:
+                self.progress_updated.disconnect()
+            except Exception:
+                pass
 
-        # 2. Request thread to stop gracefully
-        self.quit()
+        # 2. Only shut down the thread if it's actually running
+        if self.isRunning():
+            logger.debug(f"Worker running, initiating shutdown: {self.__class__.__name__}")
 
-        # 3. Wait with timeout (don't block UI forever)
-        if not self.wait(2000):  # 2 second timeout
-            logger.warning(
-                f"Worker didn't finish in time, forcing termination: "
-                f"{self.__class__.__name__}"
-            )
-            # 4. Force terminate if still running
-            self.terminate()
-            self.wait(1000)  # Wait after terminate
+            # Request thread to stop gracefully
+            self.quit()
 
-        # 5. Schedule for deletion
-        # This is safe now because signals are disconnected
+            # Wait with timeout (don't block UI forever)
+            if not self.wait(2000):  # 2 second timeout
+                logger.warning(
+                    f"Worker didn't finish in time, forcing termination: "
+                    f"{self.__class__.__name__}"
+                )
+                # Force terminate if still running
+                self.terminate()
+                self.wait(1000)  # Wait after terminate
+        else:
+            logger.debug(f"Worker not running, skipping shutdown sequence: {self.__class__.__name__}")
+
+        # 3. Schedule for deletion (always, regardless of running state)
+        # Safe because signals are already disconnected above
         self.deleteLater()
 
         logger.debug(f"Worker cleanup complete: {self.__class__.__name__}")
