@@ -912,10 +912,16 @@ class UIManager:
             # Populate tag filter combo box
             self._populate_tag_filter()
 
-        # Auto-fit columns to content FIRST, then apply saved config on top
-        # (config may override widths; doing it in this order prevents
-        # resizeColumnsToContents from triggering sectionResized on hidden columns)
-        self.mw.tableView.resizeColumnsToContents()
+        # Auto-fit columns to content only when no saved config exists.
+        # resizeColumnsToContents() is O(n*m) — expensive on large DataFrames.
+        # If the config manager has saved widths it will apply them right after,
+        # so we skip the full scan when saved widths are available.
+        has_saved_config = (
+            hasattr(self.mw, 'table_config_manager')
+            and self.mw.table_config_manager.has_saved_column_widths()
+        )
+        if not has_saved_config:
+            self.mw.tableView.resizeColumnsToContents()
 
         # Apply table configuration (column visibility, order, widths)
         if hasattr(self.mw, 'table_config_manager'):
@@ -1221,6 +1227,10 @@ class UIManager:
         self.mw.tableView.setAlternatingRowColors(True)
         self.mw.tableView.setSortingEnabled(True)
         self.mw.tableView.setContextMenuPolicy(Qt.CustomContextMenu)
+
+        # Scroll performance optimizations
+        self.mw.tableView.setVerticalScrollMode(QTableView.ScrollPerPixel)
+        self.mw.tableView.setHorizontalScrollMode(QTableView.ScrollPerPixel)
 
         # Add table to layout
         layout.addWidget(self.mw.tableView, 1)  # Stretch factor: 1

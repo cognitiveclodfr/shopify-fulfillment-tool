@@ -36,6 +36,9 @@ class PandasModel(QAbstractTableModel):
         # Initialize colors based on current theme
         self._update_colors()
 
+        # Pre-compute per-row color caches to avoid repeated column lookups in data()
+        self._build_row_color_cache()
+
         # Connect to theme changes
         theme_manager = get_theme_manager()
         theme_manager.theme_changed.connect(self._update_colors)
@@ -96,49 +99,10 @@ class PandasModel(QAbstractTableModel):
                 return None
 
         if role == Qt.ItemDataRole.BackgroundRole:
-            try:
-                # Check for "Repeat" in system note first (yellow highlight)
-                # Only highlight for "Repeat", not for other messages like "Cannot fulfill"
-                if (
-                    "System_note" in self._dataframe.columns
-                    and pd.notna(self._dataframe.iloc[row]["System_note"])
-                ):
-                    system_note = str(self._dataframe.iloc[row]["System_note"])
-                    # Check if it's specifically a Repeat order (not just any system note)
-                    if "Repeat" in system_note and not system_note.startswith("Cannot fulfill"):
-                        return self.colors["SystemNoteHighlight"]
-
-                # Otherwise, color based on fulfillment status
-                if "Order_Fulfillment_Status" in self._dataframe.columns:
-                    status = self._dataframe.iloc[row]["Order_Fulfillment_Status"]
-                    if status == "Fulfillable":
-                        return self.colors["Fulfillable"]
-                    elif status == "Not Fulfillable":
-                        return self.colors["NotFulfillable"]
-            except (IndexError, KeyError):
-                return None  # In case columns are missing
+            return self._row_bg_cache[row]
 
         if role == Qt.ItemDataRole.ForegroundRole:
-            # Return text color for rows with background colors
-            # Ensures readability in both light and dark themes
-            try:
-                # Check if this row has a background color
-                if (
-                    "System_note" in self._dataframe.columns
-                    and pd.notna(self._dataframe.iloc[row]["System_note"])
-                ):
-                    system_note = str(self._dataframe.iloc[row]["System_note"])
-                    if "Repeat" in system_note and not system_note.startswith("Cannot fulfill"):
-                        return self.text_colors["SystemNoteHighlight"]
-
-                if "Order_Fulfillment_Status" in self._dataframe.columns:
-                    status = self._dataframe.iloc[row]["Order_Fulfillment_Status"]
-                    if status == "Fulfillable":
-                        return self.text_colors["Fulfillable"]
-                    elif status == "Not Fulfillable":
-                        return self.text_colors["NotFulfillable"]
-            except (IndexError, KeyError):
-                return None
+            return self._row_fg_cache[row]
 
         return None
 
@@ -202,6 +166,44 @@ class PandasModel(QAbstractTableModel):
         self.hidden_columns = [col for col in all_columns_in_order if col not in visible_columns]
         self.endResetModel()
 
+    def _build_row_color_cache(self):
+        """Pre-compute background/foreground color for each row.
+
+        Called once at init and after theme changes. Avoids per-cell column
+        lookups in data() which were causing scroll lag on large DataFrames.
+        """
+        n = len(self._dataframe)
+        bg = [None] * n
+        fg = [None] * n
+
+        has_system_note = "System_note" in self._dataframe.columns
+        has_status = "Order_Fulfillment_Status" in self._dataframe.columns
+
+        for i in range(n):
+            try:
+                if has_system_note:
+                    sn_val = self._dataframe.iloc[i]["System_note"]
+                    if pd.notna(sn_val):
+                        sn = str(sn_val)
+                        if "Repeat" in sn and not sn.startswith("Cannot fulfill"):
+                            bg[i] = self.colors["SystemNoteHighlight"]
+                            fg[i] = self.text_colors["SystemNoteHighlight"]
+                            continue
+
+                if has_status:
+                    status = self._dataframe.iloc[i]["Order_Fulfillment_Status"]
+                    if status == "Fulfillable":
+                        bg[i] = self.colors["Fulfillable"]
+                        fg[i] = self.text_colors["Fulfillable"]
+                    elif status == "Not Fulfillable":
+                        bg[i] = self.colors["NotFulfillable"]
+                        fg[i] = self.text_colors["NotFulfillable"]
+            except (IndexError, KeyError):
+                pass
+
+        self._row_bg_cache = bg
+        self._row_fg_cache = fg
+
     def _update_colors(self):
         """Update row colors based on current theme.
 
@@ -234,6 +236,10 @@ class PandasModel(QAbstractTableModel):
                 "NotFulfillable": QColor("#B71C1C"),       # Darker red text for contrast
                 "SystemNoteHighlight": QColor("#E65100"),  # Darker orange text for contrast
             }
+
+        # Rebuild per-row cache with new colors (if data already loaded)
+        if hasattr(self, '_row_bg_cache'):
+            self._build_row_color_cache()
 
         # Notify views that data has changed (triggers repaint)
         if self.rowCount() > 0:

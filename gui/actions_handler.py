@@ -146,6 +146,12 @@ class ActionsHandler(QObject):
             QMessageBox.critical(self.mw, "Client Error", "No client selected.")
             return
 
+        # Prevent double-run: if UI is already busy, analysis is still running
+        if hasattr(self.mw, '_analysis_running') and self.mw._analysis_running:
+            self.log.warning("Analysis already in progress — ignoring duplicate run request")
+            return
+
+        self.mw._analysis_running = True
         self.mw.ui_manager.set_ui_busy(True)
         self.log.info("Starting analysis thread.")
         stock_delimiter = self.mw.active_profile_config.get("settings", {}).get("stock_csv_delimiter", ";")
@@ -166,8 +172,13 @@ class ActionsHandler(QObject):
         )
         worker.signals.result.connect(self.on_analysis_complete)
         worker.signals.error.connect(self.on_task_error)
-        worker.signals.finished.connect(lambda: self.mw.ui_manager.set_ui_busy(False))
+        worker.signals.finished.connect(self._on_analysis_finished)
         self.mw.threadpool.start(worker)
+
+    def _on_analysis_finished(self):
+        """Reset analysis-running guard and update UI after analysis finishes."""
+        self.mw._analysis_running = False
+        self.mw.ui_manager.set_ui_busy(False)
 
     def on_analysis_complete(self, result):
         """Handles the 'result' signal from the analysis worker thread.
