@@ -2103,9 +2103,17 @@ class SettingsWindow(QDialog):
         import_sku_btn.setToolTip("Load SKUs from the current stock CSV file")
         import_sku_btn.clicked.connect(self._weight_import_skus_from_stock_csv)
         prod_toolbar.addWidget(import_sku_btn)
+        import_dims_btn = QPushButton("Import Dimensions CSV")
+        import_dims_btn.setToolTip("Import SKU dimensions from a CSV (columns: SKU, Name, L, W, H, No Packaging)")
+        import_dims_btn.clicked.connect(self._weight_import_products_from_csv)
+        prod_toolbar.addWidget(import_dims_btn)
         add_prod_btn = QPushButton("Add Row")
         add_prod_btn.clicked.connect(self._weight_add_product_row)
         prod_toolbar.addWidget(add_prod_btn)
+        export_prod_btn = QPushButton("Export CSV")
+        export_prod_btn.setToolTip("Export all products with dimensions to a CSV file")
+        export_prod_btn.clicked.connect(self._weight_export_products_to_csv)
+        prod_toolbar.addWidget(export_prod_btn)
         del_prod_btn = QPushButton("Delete Selected")
         del_prod_btn.clicked.connect(lambda: self._weight_delete_selected(self.weight_products_table))
         prod_toolbar.addWidget(del_prod_btn)
@@ -2138,9 +2146,17 @@ class SettingsWindow(QDialog):
         boxes_layout = QVBoxLayout(boxes_group)
 
         box_toolbar = QHBoxLayout()
+        import_box_btn = QPushButton("Import CSV")
+        import_box_btn.setToolTip("Import boxes from a CSV (columns: Name, L, W, H)")
+        import_box_btn.clicked.connect(self._weight_import_boxes_from_csv)
+        box_toolbar.addWidget(import_box_btn)
         add_box_btn = QPushButton("Add Box")
         add_box_btn.clicked.connect(self._weight_add_box_row)
         box_toolbar.addWidget(add_box_btn)
+        export_box_btn = QPushButton("Export CSV")
+        export_box_btn.setToolTip("Export all boxes to a CSV file")
+        export_box_btn.clicked.connect(self._weight_export_boxes_to_csv)
+        box_toolbar.addWidget(export_box_btn)
         del_box_btn = QPushButton("Delete Selected")
         del_box_btn.clicked.connect(lambda: self._weight_delete_selected(self.weight_boxes_table))
         box_toolbar.addWidget(del_box_btn)
@@ -2372,6 +2388,354 @@ class SettingsWindow(QDialog):
 
         except Exception as e:
             QMessageBox.critical(self, "Import Error", f"Failed to import SKUs:\n\n{str(e)}")
+
+    def _weight_import_products_from_csv(self):
+        """Import SKU dimensions from an arbitrary CSV into the products table."""
+        from shopify_tool.csv_utils import detect_csv_delimiter
+
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import Product Dimensions from CSV",
+            "",
+            "CSV Files (*.csv);;All Files (*)"
+        )
+        if not file_path:
+            return
+
+        try:
+            delimiter, _ = detect_csv_delimiter(file_path)
+            df = pd.read_csv(file_path, sep=delimiter, dtype=str)
+
+            cols_lower = {c.lower().strip(): c for c in df.columns}
+
+            def find_col(candidates):
+                for c in candidates:
+                    if c in cols_lower:
+                        return cols_lower[c]
+                return None
+
+            sku_col = find_col(["sku", "артикул", "article", "код", "article_no"])
+            name_col = find_col(["name", "назва", "product_name", "наименование", "title"])
+            l_col = find_col(["l (cm)", "l(cm)", "length_cm", "length", "l", "довжина", "длина"])
+            w_col = find_col(["w (cm)", "w(cm)", "width_cm", "width", "w", "ширина"])
+            h_col = find_col(["h (cm)", "h(cm)", "height_cm", "height", "h", "висота", "высота"])
+            np_col = find_col(["no_packaging", "no packaging", "без упаковки", "nopackaging"])
+
+            if not sku_col:
+                cols_str = ", ".join(df.columns.tolist())
+                QMessageBox.warning(
+                    self, "Column Not Found",
+                    f"Could not find SKU column in CSV.\n\nAvailable columns: {cols_str}\n\n"
+                    "Expected one of: SKU, Артикул, Article, Код"
+                )
+                return
+
+            # Ask about duplicates
+            existing_skus = {}
+            for r in range(self.weight_products_table.rowCount()):
+                item = self.weight_products_table.item(r, 0)
+                if item:
+                    existing_skus[item.text().strip()] = r
+
+            rows_in_csv = df[sku_col].dropna().astype(str).str.strip().tolist()
+            new_skus = [s for s in rows_in_csv if s and s != "nan" and s not in existing_skus]
+            dup_skus = [s for s in rows_in_csv if s and s != "nan" and s in existing_skus]
+
+            update_existing = False
+            if dup_skus:
+                msg = QMessageBox(self)
+                msg.setWindowTitle("Duplicates Found")
+                msg.setText(f"Found {len(dup_skus)} SKU(s) already in the table.\nWhat would you like to do?")
+                skip_btn = msg.addButton("Skip Duplicates", QMessageBox.ButtonRole.AcceptRole)
+                update_btn = msg.addButton("Update Existing", QMessageBox.ButtonRole.ActionRole)
+                msg.setDefaultButton(skip_btn)
+                msg.exec()
+                update_existing = msg.clickedButton() == update_btn
+
+            divisor = float(self.weight_divisor_spin.value() or 6000)
+            added = 0
+            updated = 0
+            skipped = 0
+
+            self.weight_products_table.blockSignals(True)
+            for _, csv_row in df.iterrows():
+                sku = str(csv_row[sku_col]).strip() if pd.notna(csv_row[sku_col]) else ""
+                if not sku or sku == "nan":
+                    continue
+
+                name = str(csv_row[name_col]).strip() if name_col and pd.notna(csv_row.get(name_col)) else ""
+
+                def _val(col):
+                    if col and pd.notna(csv_row.get(col)):
+                        try:
+                            return float(str(csv_row[col]).replace(",", ".").strip())
+                        except ValueError:
+                            pass
+                    return None
+
+                l = _val(l_col)
+                w = _val(w_col)
+                h = _val(h_col)
+                vol_w = round((l * w * h) / divisor, 4) if (l and w and h and divisor > 0) else 0.0
+
+                no_pkg = False
+                if np_col and pd.notna(csv_row.get(np_col)):
+                    val = str(csv_row[np_col]).strip().lower()
+                    no_pkg = val in ("true", "1", "yes", "так", "да")
+
+                if sku in existing_skus:
+                    if not update_existing:
+                        skipped += 1
+                        continue
+                    row = existing_skus[sku]
+                    if name_col:
+                        self.weight_products_table.setItem(row, 1, QTableWidgetItem(name))
+                    if l_col:
+                        self.weight_products_table.setItem(row, 2, QTableWidgetItem(str(l) if l is not None else ""))
+                    if w_col:
+                        self.weight_products_table.setItem(row, 3, QTableWidgetItem(str(w) if w is not None else ""))
+                    if h_col:
+                        self.weight_products_table.setItem(row, 4, QTableWidgetItem(str(h) if h is not None else ""))
+                    vol_item = QTableWidgetItem(str(vol_w))
+                    vol_item.setFlags(vol_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                    self.weight_products_table.setItem(row, 5, vol_item)
+                    chk_widget = self.weight_products_table.cellWidget(row, 6)
+                    if chk_widget:
+                        chk = chk_widget.findChild(QCheckBox)
+                        if chk:
+                            chk.setChecked(no_pkg)
+                    updated += 1
+                else:
+                    row = self.weight_products_table.rowCount()
+                    self.weight_products_table.insertRow(row)
+                    self.weight_products_table.setItem(row, 0, QTableWidgetItem(sku))
+                    self.weight_products_table.setItem(row, 1, QTableWidgetItem(name))
+                    self.weight_products_table.setItem(row, 2, QTableWidgetItem(str(l) if l is not None else ""))
+                    self.weight_products_table.setItem(row, 3, QTableWidgetItem(str(w) if w is not None else ""))
+                    self.weight_products_table.setItem(row, 4, QTableWidgetItem(str(h) if h is not None else ""))
+                    vol_item = QTableWidgetItem(str(vol_w))
+                    vol_item.setFlags(vol_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                    self.weight_products_table.setItem(row, 5, vol_item)
+                    chk_widget = QWidget()
+                    chk_layout = QHBoxLayout(chk_widget)
+                    chk_layout.setContentsMargins(8, 2, 8, 2)
+                    chk = QCheckBox()
+                    chk.setChecked(no_pkg)
+                    chk_layout.addWidget(chk)
+                    chk_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                    self.weight_products_table.setCellWidget(row, 6, chk_widget)
+                    added += 1
+            self.weight_products_table.blockSignals(False)
+
+            parts = [f"Added {added} new product(s)."]
+            if updated:
+                parts.append(f"Updated {updated} existing.")
+            if skipped:
+                parts.append(f"Skipped {skipped} duplicate(s).")
+            QMessageBox.information(self, "Import Complete", " ".join(parts))
+
+        except Exception as e:
+            QMessageBox.critical(self, "Import Error", f"Failed to import dimensions:\n\n{str(e)}")
+
+    def _weight_import_boxes_from_csv(self):
+        """Import boxes from an arbitrary CSV into the boxes table."""
+        from shopify_tool.csv_utils import detect_csv_delimiter
+
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import Boxes from CSV",
+            "",
+            "CSV Files (*.csv);;All Files (*)"
+        )
+        if not file_path:
+            return
+
+        try:
+            delimiter, _ = detect_csv_delimiter(file_path)
+            df = pd.read_csv(file_path, sep=delimiter, dtype=str)
+
+            cols_lower = {c.lower().strip(): c for c in df.columns}
+
+            def find_col(candidates):
+                for c in candidates:
+                    if c in cols_lower:
+                        return cols_lower[c]
+                return None
+
+            name_col = find_col(["box name", "box_name", "name", "назва", "size", "box", "коробка"])
+            l_col = find_col(["l (cm)", "l(cm)", "length_cm", "length", "l", "довжина", "длина"])
+            w_col = find_col(["w (cm)", "w(cm)", "width_cm", "width", "w", "ширина"])
+            h_col = find_col(["h (cm)", "h(cm)", "height_cm", "height", "h", "висота", "высота"])
+
+            if not name_col:
+                cols_str = ", ".join(df.columns.tolist())
+                QMessageBox.warning(
+                    self, "Column Not Found",
+                    f"Could not find box name column in CSV.\n\nAvailable columns: {cols_str}\n\n"
+                    "Expected one of: Name, Box Name, Size, Box"
+                )
+                return
+
+            existing_boxes = {}
+            for r in range(self.weight_boxes_table.rowCount()):
+                item = self.weight_boxes_table.item(r, 0)
+                if item:
+                    existing_boxes[item.text().strip()] = r
+
+            dup_boxes = [
+                str(r[name_col]).strip() for _, r in df.iterrows()
+                if pd.notna(r.get(name_col)) and str(r[name_col]).strip() in existing_boxes
+            ]
+
+            update_existing = False
+            if dup_boxes:
+                msg = QMessageBox(self)
+                msg.setWindowTitle("Duplicates Found")
+                msg.setText(f"Found {len(dup_boxes)} box name(s) already in the table.\nWhat would you like to do?")
+                skip_btn = msg.addButton("Skip Duplicates", QMessageBox.ButtonRole.AcceptRole)
+                update_btn = msg.addButton("Update Existing", QMessageBox.ButtonRole.ActionRole)
+                msg.setDefaultButton(skip_btn)
+                msg.exec()
+                update_existing = msg.clickedButton() == update_btn
+
+            divisor = float(self.weight_divisor_spin.value() or 6000)
+            added = 0
+            updated = 0
+            skipped = 0
+
+            self.weight_boxes_table.blockSignals(True)
+            for _, csv_row in df.iterrows():
+                name = str(csv_row[name_col]).strip() if pd.notna(csv_row[name_col]) else ""
+                if not name or name == "nan":
+                    continue
+
+                def _val(col):
+                    if col and pd.notna(csv_row.get(col)):
+                        try:
+                            return float(str(csv_row[col]).replace(",", ".").strip())
+                        except ValueError:
+                            pass
+                    return None
+
+                l = _val(l_col)
+                w = _val(w_col)
+                h = _val(h_col)
+                vol_w = round((l * w * h) / divisor, 4) if (l and w and h and divisor > 0) else 0.0
+
+                if name in existing_boxes:
+                    if not update_existing:
+                        skipped += 1
+                        continue
+                    row = existing_boxes[name]
+                    if l_col:
+                        self.weight_boxes_table.setItem(row, 1, QTableWidgetItem(str(l) if l is not None else ""))
+                    if w_col:
+                        self.weight_boxes_table.setItem(row, 2, QTableWidgetItem(str(w) if w is not None else ""))
+                    if h_col:
+                        self.weight_boxes_table.setItem(row, 3, QTableWidgetItem(str(h) if h is not None else ""))
+                    vol_item = QTableWidgetItem(str(vol_w))
+                    vol_item.setFlags(vol_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                    self.weight_boxes_table.setItem(row, 4, vol_item)
+                    updated += 1
+                else:
+                    row = self.weight_boxes_table.rowCount()
+                    self.weight_boxes_table.insertRow(row)
+                    self.weight_boxes_table.setItem(row, 0, QTableWidgetItem(name))
+                    self.weight_boxes_table.setItem(row, 1, QTableWidgetItem(str(l) if l is not None else ""))
+                    self.weight_boxes_table.setItem(row, 2, QTableWidgetItem(str(w) if w is not None else ""))
+                    self.weight_boxes_table.setItem(row, 3, QTableWidgetItem(str(h) if h is not None else ""))
+                    vol_item = QTableWidgetItem(str(vol_w))
+                    vol_item.setFlags(vol_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                    self.weight_boxes_table.setItem(row, 4, vol_item)
+                    added += 1
+            self.weight_boxes_table.blockSignals(False)
+
+            parts = [f"Added {added} new box(es)."]
+            if updated:
+                parts.append(f"Updated {updated} existing.")
+            if skipped:
+                parts.append(f"Skipped {skipped} duplicate(s).")
+            QMessageBox.information(self, "Import Complete", " ".join(parts))
+
+        except Exception as e:
+            QMessageBox.critical(self, "Import Error", f"Failed to import boxes:\n\n{str(e)}")
+
+    def _weight_export_products_to_csv(self):
+        """Export products table to a CSV file."""
+        if self.weight_products_table.rowCount() == 0:
+            QMessageBox.information(self, "Export", "No products to export.")
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Product Dimensions to CSV",
+            "weight_products.csv",
+            "CSV Files (*.csv);;All Files (*)"
+        )
+        if not file_path:
+            return
+
+        try:
+            rows = []
+            for r in range(self.weight_products_table.rowCount()):
+                sku = self.weight_products_table.item(r, 0)
+                name = self.weight_products_table.item(r, 1)
+                l = self.weight_products_table.item(r, 2)
+                w = self.weight_products_table.item(r, 3)
+                h = self.weight_products_table.item(r, 4)
+                chk_widget = self.weight_products_table.cellWidget(r, 6)
+                no_pkg = False
+                if chk_widget:
+                    chk = chk_widget.findChild(QCheckBox)
+                    if chk:
+                        no_pkg = chk.isChecked()
+                rows.append({
+                    "SKU": sku.text().strip() if sku else "",
+                    "Name": name.text().strip() if name else "",
+                    "L (cm)": l.text().strip() if l else "",
+                    "W (cm)": w.text().strip() if w else "",
+                    "H (cm)": h.text().strip() if h else "",
+                    "No Packaging": str(no_pkg),
+                })
+            df = pd.DataFrame(rows)
+            df.to_csv(file_path, sep=";", index=False, encoding="utf-8-sig")
+            QMessageBox.information(self, "Export Complete", f"Exported {len(rows)} product(s) to:\n{file_path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"Failed to export products:\n\n{str(e)}")
+
+    def _weight_export_boxes_to_csv(self):
+        """Export boxes table to a CSV file."""
+        if self.weight_boxes_table.rowCount() == 0:
+            QMessageBox.information(self, "Export", "No boxes to export.")
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Boxes to CSV",
+            "weight_boxes.csv",
+            "CSV Files (*.csv);;All Files (*)"
+        )
+        if not file_path:
+            return
+
+        try:
+            rows = []
+            for r in range(self.weight_boxes_table.rowCount()):
+                name = self.weight_boxes_table.item(r, 0)
+                l = self.weight_boxes_table.item(r, 1)
+                w = self.weight_boxes_table.item(r, 2)
+                h = self.weight_boxes_table.item(r, 3)
+                rows.append({
+                    "Name": name.text().strip() if name else "",
+                    "L (cm)": l.text().strip() if l else "",
+                    "W (cm)": w.text().strip() if w else "",
+                    "H (cm)": h.text().strip() if h else "",
+                })
+            df = pd.DataFrame(rows)
+            df.to_csv(file_path, sep=";", index=False, encoding="utf-8-sig")
+            QMessageBox.information(self, "Export Complete", f"Exported {len(rows)} box(es) to:\n{file_path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"Failed to export boxes:\n\n{str(e)}")
 
     def _weight_collect_config(self) -> dict:
         """Collect weight configuration from UI tables."""
