@@ -1110,10 +1110,7 @@ class MainWindow(QMainWindow):
 
         # === 2. Courier cards ===
         if hasattr(self, 'courier_cards_layout'):
-            while self.courier_cards_layout.count() > 1:
-                item = self.courier_cards_layout.takeAt(0)
-                if item.widget():
-                    item.widget().deleteLater()
+            self._clear_card_layout(self.courier_cards_layout)
             courier_stats = self.analysis_stats.get("couriers_stats") or []
             for stats in courier_stats:
                 card = self.ui_manager._make_courier_card(
@@ -1127,10 +1124,7 @@ class MainWindow(QMainWindow):
 
         # === 3. Tag cards ===
         if hasattr(self, 'tags_cards_layout'):
-            while self.tags_cards_layout.count() > 1:
-                item = self.tags_cards_layout.takeAt(0)
-                if item.widget():
-                    item.widget().deleteLater()
+            self._clear_card_layout(self.tags_cards_layout)
             tags_breakdown = self.analysis_stats.get("tags_breakdown") or {}
             for tag, count in tags_breakdown.items():
                 card = self.ui_manager._make_tag_card(tag, str(count))
@@ -1142,29 +1136,53 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'sku_table'):
             self.sku_table.setRowCount(0)
             sku_summary = self.analysis_stats.get("sku_summary") or []
-            for row_idx, sku_data in enumerate(sku_summary):
-                self.sku_table.insertRow(row_idx)
+            if not sku_summary:
+                self._show_sku_empty_state()
+            else:
+                for row_idx, sku_data in enumerate(sku_summary):
+                    self.sku_table.insertRow(row_idx)
 
-                num_item = QTableWidgetItem(str(row_idx + 1))
-                num_item.setTextAlignment(Qt.AlignCenter)
-                self.sku_table.setItem(row_idx, 0, num_item)
+                    num_item = QTableWidgetItem(str(row_idx + 1))
+                    num_item.setTextAlignment(Qt.AlignCenter)
+                    self.sku_table.setItem(row_idx, 0, num_item)
 
-                self.sku_table.setItem(row_idx, 1, QTableWidgetItem(str(sku_data.get("SKU", "N/A"))))
+                    self.sku_table.setItem(row_idx, 1, QTableWidgetItem(str(sku_data.get("SKU", "N/A"))))
 
-                product = sku_data.get("Warehouse_Name", "")
-                if not product or (hasattr(pd, 'isna') and pd.isna(product)):
-                    product = sku_data.get("Product_Name", "N/A")
-                self.sku_table.setItem(row_idx, 2, QTableWidgetItem(str(product)))
+                    product = sku_data.get("Warehouse_Name", "")
+                    if not product or (hasattr(pd, 'isna') and pd.isna(product)):
+                        product = sku_data.get("Product_Name", "N/A")
+                    self.sku_table.setItem(row_idx, 2, QTableWidgetItem(str(product)))
 
-                for col_idx, key in enumerate(
-                    ["Total_Quantity", "Fulfillable_Items", "Not_Fulfillable_Items"], start=3
-                ):
-                    val_item = QTableWidgetItem(str(sku_data.get(key, 0)))
-                    val_item.setTextAlignment(Qt.AlignCenter)
-                    self.sku_table.setItem(row_idx, col_idx, val_item)
+                    for col_idx, key in enumerate(
+                        ["Total_Quantity", "Fulfillable_Items", "Not_Fulfillable_Items"], start=3
+                    ):
+                        val_item = QTableWidgetItem(str(sku_data.get(key, 0)))
+                        val_item.setTextAlignment(Qt.AlignCenter)
+                        self.sku_table.setItem(row_idx, col_idx, val_item)
 
-            self.sku_table.resizeColumnToContents(0)
-            self.sku_table.resizeColumnToContents(1)
+                self.sku_table.resizeColumnToContents(0)
+                self.sku_table.resizeColumnToContents(1)
+
+    def _show_sku_empty_state(self):
+        """Show a non-selectable placeholder row in the SKU table when there is no data."""
+        self.sku_table.setRowCount(1)
+        placeholder = QTableWidgetItem("No SKU data available.")
+        placeholder.setFlags(Qt.ItemIsEnabled)
+        placeholder.setTextAlignment(Qt.AlignCenter)
+        self.sku_table.setItem(0, 0, placeholder)
+        col_count = self.sku_table.columnCount()
+        if col_count > 1:
+            self.sku_table.setSpan(0, 0, 1, col_count)
+
+    def _clear_card_layout(self, layout):
+        """Remove all widget items from a card HBoxLayout, preserving the trailing spacer."""
+        i = 0
+        while i < layout.count():
+            item = layout.itemAt(i)
+            if item.spacerItem():
+                i += 1
+                continue
+            layout.takeAt(i).widget().deleteLater()
 
     def _clear_statistics_view(self):
         """Clear statistics display when no analysis results."""
@@ -1173,19 +1191,14 @@ class MainWindow(QMainWindow):
                 lbl.setText("-")
 
         if hasattr(self, 'courier_cards_layout'):
-            while self.courier_cards_layout.count() > 1:
-                item = self.courier_cards_layout.takeAt(0)
-                if item.widget():
-                    item.widget().deleteLater()
+            self._clear_card_layout(self.courier_cards_layout)
 
         if hasattr(self, 'tags_cards_layout'):
-            while self.tags_cards_layout.count() > 1:
-                item = self.tags_cards_layout.takeAt(0)
-                if item.widget():
-                    item.widget().deleteLater()
+            self._clear_card_layout(self.tags_cards_layout)
 
         if hasattr(self, 'sku_table'):
             self.sku_table.setRowCount(0)
+            self._show_sku_empty_state()
 
     def log_activity(self, op_type, desc):
         """Adds a new entry to the 'Activity Log' table in the UI.

@@ -1518,8 +1518,14 @@ class UIManager:
             )
             self.update_hidden_columns_indicator()
 
+    # Font-size constants shared by all stat-card helpers
+    _CARD_VALUE_FONT_SIZE = "20px"
+    _CARD_LABEL_FONT_SIZE = "10px"
+    _CARD_SUBLABEL_FONT_SIZE = "11px"
+
     def _make_stat_card(self, value: str, label: str) -> tuple:
         """Stat card: large value on top, small label below. Returns (widget, value_label)."""
+        theme = get_theme_manager().get_current_theme()
         card = QFrame()
         card.setFrameShape(QFrame.StyledPanel)
         card.setFrameShadow(QFrame.Raised)
@@ -1529,12 +1535,14 @@ class UIManager:
 
         value_lbl = QLabel(value)
         value_lbl.setAlignment(Qt.AlignCenter)
-        value_lbl.setStyleSheet("font-size: 20px; font-weight: bold;")
+        value_lbl.setStyleSheet(f"font-size: {self._CARD_VALUE_FONT_SIZE}; font-weight: bold;")
 
         text_lbl = QLabel(label)
         text_lbl.setAlignment(Qt.AlignCenter)
         text_lbl.setWordWrap(True)
-        text_lbl.setStyleSheet("font-size: 10px;")
+        text_lbl.setStyleSheet(
+            f"font-size: {self._CARD_LABEL_FONT_SIZE}; color: {theme.text_secondary};"
+        )
 
         card_layout.addWidget(value_lbl)
         card_layout.addWidget(text_lbl)
@@ -1542,6 +1550,7 @@ class UIManager:
 
     def _make_courier_card(self, courier_id: str, orders: str, repeated: str) -> QFrame:
         """Courier card: orders count on top, courier name in middle, repeated below."""
+        theme = get_theme_manager().get_current_theme()
         card = QFrame()
         card.setFrameShape(QFrame.StyledPanel)
         card.setFrameShadow(QFrame.Raised)
@@ -1552,15 +1561,17 @@ class UIManager:
 
         orders_lbl = QLabel(orders)
         orders_lbl.setAlignment(Qt.AlignCenter)
-        orders_lbl.setStyleSheet("font-size: 20px; font-weight: bold;")
+        orders_lbl.setStyleSheet(f"font-size: {self._CARD_VALUE_FONT_SIZE}; font-weight: bold;")
 
         name_lbl = QLabel(courier_id)
         name_lbl.setAlignment(Qt.AlignCenter)
-        name_lbl.setStyleSheet("font-size: 11px;")
+        name_lbl.setStyleSheet(f"font-size: {self._CARD_SUBLABEL_FONT_SIZE};")
 
         repeated_lbl = QLabel(f"{repeated} repeated")
         repeated_lbl.setAlignment(Qt.AlignCenter)
-        repeated_lbl.setStyleSheet("font-size: 10px;")
+        repeated_lbl.setStyleSheet(
+            f"font-size: {self._CARD_LABEL_FONT_SIZE}; color: {theme.text_secondary};"
+        )
 
         card_layout.addWidget(orders_lbl)
         card_layout.addWidget(name_lbl)
@@ -1569,6 +1580,7 @@ class UIManager:
 
     def _make_tag_card(self, tag: str, count: str) -> QFrame:
         """Tag card: count on top, tag name below."""
+        theme = get_theme_manager().get_current_theme()
         card = QFrame()
         card.setFrameShape(QFrame.StyledPanel)
         card.setFrameShadow(QFrame.Raised)
@@ -1579,12 +1591,14 @@ class UIManager:
 
         count_lbl = QLabel(count)
         count_lbl.setAlignment(Qt.AlignCenter)
-        count_lbl.setStyleSheet("font-size: 20px; font-weight: bold;")
+        count_lbl.setStyleSheet(f"font-size: {self._CARD_VALUE_FONT_SIZE}; font-weight: bold;")
 
         tag_lbl = QLabel(tag)
         tag_lbl.setAlignment(Qt.AlignCenter)
         tag_lbl.setWordWrap(True)
-        tag_lbl.setStyleSheet("font-size: 10px;")
+        tag_lbl.setStyleSheet(
+            f"font-size: {self._CARD_LABEL_FONT_SIZE}; color: {theme.text_secondary};"
+        )
 
         card_layout.addWidget(count_lbl)
         card_layout.addWidget(tag_lbl)
