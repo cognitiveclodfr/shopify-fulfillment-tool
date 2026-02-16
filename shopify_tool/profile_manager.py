@@ -670,6 +670,23 @@ class ProfileManager:
 
         return migrated
 
+    def _migrate_add_weight_config(self, client_id: str, config: Dict) -> bool:
+        """Add weight_config section if missing (new feature migration).
+
+        Returns:
+            bool: True if migration was performed, False if already present
+        """
+        if "weight_config" in config:
+            return False
+
+        config["weight_config"] = {
+            "volumetric_divisor": 6000,
+            "products": {},
+            "boxes": []
+        }
+        logger.info(f"Added default 'weight_config' for CLIENT_{client_id}")
+        return True
+
     @staticmethod
     def _create_default_shopify_config(client_id: str, client_name: str) -> Dict:
         """Create default Shopify configuration.
@@ -737,6 +754,11 @@ class ProfileManager:
             "stock_export_configs": [],
             "set_decoders": {},
             "packaging_rules": [],
+            "weight_config": {
+                "volumetric_divisor": 6000,
+                "products": {},
+                "boxes": []
+            },
 
             "tag_categories": {
                 "version": 2,
@@ -897,8 +919,9 @@ class ProfileManager:
             migrated_delimiters = self._migrate_delimiter_config_v1_to_v2(client_id, config)
             migrated_tag_categories = self._migrate_add_tag_categories(client_id, config)
             migrated_tag_categories_v2 = self._migrate_tag_categories_v1_to_v2(client_id, config)
+            migrated_weight = self._migrate_add_weight_config(client_id, config)
 
-            if migrated_mappings or migrated_delimiters or migrated_tag_categories or migrated_tag_categories_v2:
+            if migrated_mappings or migrated_delimiters or migrated_tag_categories or migrated_tag_categories_v2 or migrated_weight:
                 # If config was migrated, save it immediately
                 self.save_shopify_config(client_id, config)
                 logger.info(f"Config migrations completed for CLIENT_{client_id}")

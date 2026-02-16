@@ -584,6 +584,9 @@ class RuleEngine:
         "max_quantity": "_calculate_max_quantity",
         "has_sku": "_check_has_sku",
         "has_product": "_check_has_product",
+        "order_volumetric_weight": "_calculate_order_volumetric_weight",
+        "all_no_packaging": "_calculate_all_no_packaging",
+        "order_min_box": "_get_order_min_box",
     }
 
     def _normalize_priorities(self, rules):
@@ -1227,8 +1230,8 @@ class RuleEngine:
                 calc_method_name = self.ORDER_LEVEL_FIELDS[field]
                 calc_method = getattr(self, calc_method_name)
 
-                # For has_sku/has_product: method applies operator internally
-                if field in ("has_sku", "has_product"):
+                # Methods that apply operator internally and return bool directly
+                if field in ("has_sku", "has_product", "all_no_packaging", "order_min_box"):
                     field_value = calc_method(order_df, value, operator)
                     result = field_value
                 else:
@@ -1282,6 +1285,55 @@ class RuleEngine:
         if "Quantity" in order_df.columns:
             return order_df["Quantity"].max()
         return 0
+
+    def _calculate_order_volumetric_weight(self, order_df, sku_value=None):
+        """Return pre-computed order volumetric weight from enriched DataFrame column.
+
+        Requires enrich_dataframe_with_weights() to have been called before apply().
+        Returns 0.0 if the column is not present.
+        """
+        if "Order_Volumetric_Weight" in order_df.columns:
+            return float(order_df["Order_Volumetric_Weight"].iloc[0])
+        return 0.0
+
+    def _calculate_all_no_packaging(self, order_df, rule_value, operator="equals"):
+        """Evaluate all_no_packaging against rule value + operator.
+
+        Reads the pre-computed All_No_Packaging column and applies the operator
+        so rules can test both True and False explicitly.
+        E.g. {"field": "all_no_packaging", "operator": "equals", "value": "true"}
+             {"field": "all_no_packaging", "operator": "equals", "value": "false"}
+
+        Requires enrich_dataframe_with_weights() to have been called before apply().
+        Returns False if the column is not present.
+        """
+        if "All_No_Packaging" not in order_df.columns:
+            return False
+        raw = order_df["All_No_Packaging"].iloc[0]
+        bool_val = raw if isinstance(raw, bool) else str(raw).lower() in ("true", "1", "yes")
+        # Represent as string for operator comparison ("true"/"false")
+        col_str = "true" if bool_val else "false"
+        if operator not in OPERATOR_MAP:
+            return False
+        op_func = globals()[OPERATOR_MAP[operator]]
+        result_series = op_func(pd.Series([col_str]), str(rule_value).lower().strip())
+        return bool(result_series.iloc[0])
+
+    def _get_order_min_box(self, order_df, rule_value, operator="equals"):
+        """Return bool: True if Order_Min_Box matches the condition.
+
+        Reads the pre-computed Order_Min_Box column (populated by
+        enrich_dataframe_with_weights). Applies operator internally
+        like has_sku/has_product since it returns a bool directly.
+        """
+        if "Order_Min_Box" not in order_df.columns:
+            return False
+        box_value = str(order_df["Order_Min_Box"].iloc[0])
+        if operator not in OPERATOR_MAP:
+            return False
+        op_func = globals()[OPERATOR_MAP[operator]]
+        result_series = op_func(pd.Series([box_value]), rule_value)
+        return bool(result_series.iloc[0])
 
     def _check_has_sku(self, order_df, sku_value, operator="equals"):
         """Check if order contains SKU matching the condition.
