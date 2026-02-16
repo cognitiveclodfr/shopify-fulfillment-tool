@@ -1,9 +1,9 @@
 import logging
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, QLabel,
-    QTabWidget, QGroupBox, QTableView, QPlainTextEdit, QTableWidget, QLineEdit,
-    QComboBox, QCheckBox, QRadioButton, QListWidget, QListWidgetItem, QFrame, QStyle,
-    QScrollArea, QSplitter
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout, QPushButton, QLabel,
+    QTabWidget, QGroupBox, QTableView, QPlainTextEdit, QTableWidget, QTableWidgetItem,
+    QLineEdit, QComboBox, QCheckBox, QRadioButton, QListWidget, QListWidgetItem,
+    QFrame, QStyle, QScrollArea, QSplitter, QHeaderView
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QKeySequence, QShortcut
@@ -1518,69 +1518,180 @@ class UIManager:
             )
             self.update_hidden_columns_indicator()
 
+    def _make_stat_card(self, value: str, label: str) -> tuple:
+        """Stat card: large value on top, small label below. Returns (widget, value_label)."""
+        card = QFrame()
+        card.setFrameShape(QFrame.StyledPanel)
+        card.setFrameShadow(QFrame.Raised)
+        card_layout = QVBoxLayout(card)
+        card_layout.setSpacing(2)
+        card_layout.setContentsMargins(12, 8, 12, 8)
+
+        value_lbl = QLabel(value)
+        value_lbl.setAlignment(Qt.AlignCenter)
+        value_lbl.setStyleSheet("font-size: 20px; font-weight: bold;")
+
+        text_lbl = QLabel(label)
+        text_lbl.setAlignment(Qt.AlignCenter)
+        text_lbl.setWordWrap(True)
+        text_lbl.setStyleSheet("font-size: 10px;")
+
+        card_layout.addWidget(value_lbl)
+        card_layout.addWidget(text_lbl)
+        return card, value_lbl
+
+    def _make_courier_card(self, courier_id: str, orders: str, repeated: str) -> QFrame:
+        """Courier card: orders count on top, courier name in middle, repeated below."""
+        card = QFrame()
+        card.setFrameShape(QFrame.StyledPanel)
+        card.setFrameShadow(QFrame.Raised)
+        card.setMinimumWidth(100)
+        card_layout = QVBoxLayout(card)
+        card_layout.setSpacing(1)
+        card_layout.setContentsMargins(12, 8, 12, 8)
+
+        orders_lbl = QLabel(orders)
+        orders_lbl.setAlignment(Qt.AlignCenter)
+        orders_lbl.setStyleSheet("font-size: 20px; font-weight: bold;")
+
+        name_lbl = QLabel(courier_id)
+        name_lbl.setAlignment(Qt.AlignCenter)
+        name_lbl.setStyleSheet("font-size: 11px;")
+
+        repeated_lbl = QLabel(f"{repeated} repeated")
+        repeated_lbl.setAlignment(Qt.AlignCenter)
+        repeated_lbl.setStyleSheet("font-size: 10px;")
+
+        card_layout.addWidget(orders_lbl)
+        card_layout.addWidget(name_lbl)
+        card_layout.addWidget(repeated_lbl)
+        return card
+
+    def _make_tag_card(self, tag: str, count: str) -> QFrame:
+        """Tag card: count on top, tag name below."""
+        card = QFrame()
+        card.setFrameShape(QFrame.StyledPanel)
+        card.setFrameShadow(QFrame.Raised)
+        card.setMinimumWidth(80)
+        card_layout = QVBoxLayout(card)
+        card_layout.setSpacing(2)
+        card_layout.setContentsMargins(12, 8, 12, 8)
+
+        count_lbl = QLabel(count)
+        count_lbl.setAlignment(Qt.AlignCenter)
+        count_lbl.setStyleSheet("font-size: 20px; font-weight: bold;")
+
+        tag_lbl = QLabel(tag)
+        tag_lbl.setAlignment(Qt.AlignCenter)
+        tag_lbl.setWordWrap(True)
+        tag_lbl.setStyleSheet("font-size: 10px;")
+
+        card_layout.addWidget(count_lbl)
+        card_layout.addWidget(tag_lbl)
+        return card
+
     def _create_statistics_subtab(self):
-        """Create statistics sub-tab with responsive SKU Summary."""
+        """Create statistics sub-tab with stat cards."""
         tab = QWidget()
-        layout = QVBoxLayout(tab)
+        outer_layout = QVBoxLayout(tab)
+        outer_layout.setSpacing(0)
+        outer_layout.setContentsMargins(8, 8, 8, 8)
+
+        # Outer vertical scroll wraps all sections
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll_widget = QWidget()
+        layout = QVBoxLayout(scroll_widget)
         layout.setSpacing(10)
-        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setContentsMargins(0, 0, 0, 0)
+        scroll.setWidget(scroll_widget)
+        outer_layout.addWidget(scroll)
 
-        # Main stats section (compact - don't stretch)
-        stats_group = QGroupBox("📊 Analysis Summary")
-        stats_group.setMaximumHeight(150)
-        stats_layout = QGridLayout(stats_group)
+        # ── 1. Session Totals ───────────────────────────────────────────────
+        totals_group = QGroupBox("📊 Session Totals")
+        totals_row = QHBoxLayout(totals_group)
+        totals_row.setSpacing(8)
+        totals_row.setContentsMargins(8, 8, 8, 8)
 
-        # Create stats labels
-        self.mw.stats_labels = {}
-        stat_keys = {
-            "total_orders_completed": "Total Orders Completed:",
-            "total_orders_not_completed": "Total Orders Not Completed:",
-            "total_items_to_write_off": "Total Items to Write Off:",
-            "total_items_not_to_write_off": "Total Items Not to Write Off:",
-        }
+        self.mw.stat_card_labels = {}
+        for key, label_text in [
+            ("total_orders_completed",       "Orders\nCompleted"),
+            ("total_orders_not_completed",   "Orders Not\nCompleted"),
+            ("total_items_to_write_off",     "Items to\nWrite Off"),
+            ("total_items_not_to_write_off", "Items Not\nWrite Off"),
+        ]:
+            card, val_lbl = self._make_stat_card("-", label_text)
+            self.mw.stat_card_labels[key] = val_lbl
+            totals_row.addWidget(card)
+        totals_row.addStretch()
+        layout.addWidget(totals_group)
 
-        row_counter = 0
-        for key, text in stat_keys.items():
-            label = QLabel(text)
-            value_label = QLabel("-")
-            value_label.setStyleSheet("font-weight: bold;")
-            self.mw.stats_labels[key] = value_label
-            stats_layout.addWidget(label, row_counter, 0)
-            stats_layout.addWidget(value_label, row_counter, 1)
-            row_counter += 1
+        # ── 2. By Courier ──────────────────────────────────────────────────
+        courier_group = QGroupBox("🚚 By Courier")
+        courier_group_layout = QVBoxLayout(courier_group)
+        courier_group_layout.setContentsMargins(8, 8, 8, 8)
+        courier_group_layout.setSpacing(0)
 
-        layout.addWidget(stats_group)
+        courier_hscroll = QScrollArea()
+        courier_hscroll.setWidgetResizable(True)
+        courier_hscroll.setFrameShape(QFrame.NoFrame)
+        courier_hscroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        courier_hscroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        courier_hscroll.setSizeAdjustPolicy(QScrollArea.AdjustToContents)
 
-        # Courier stats section (compact)
-        courier_group = QGroupBox("🚚 Courier Statistics")
-        courier_group.setMaximumHeight(200)
-        self.mw.courier_stats_layout = QGridLayout(courier_group)
+        courier_container = QWidget()
+        self.mw.courier_cards_layout = QHBoxLayout(courier_container)
+        self.mw.courier_cards_layout.setSpacing(8)
+        self.mw.courier_cards_layout.setContentsMargins(0, 0, 0, 0)
+        self.mw.courier_cards_layout.addStretch()
+        courier_hscroll.setWidget(courier_container)
+        courier_group_layout.addWidget(courier_hscroll)
         layout.addWidget(courier_group)
 
-        # Tags Breakdown section (compact)
-        tags_group = QGroupBox("🏷️ Internal Tags Breakdown")
-        tags_group.setMaximumHeight(200)
-        self.mw.tags_stats_layout = QGridLayout(tags_group)
+        # ── 3. Tags Breakdown ──────────────────────────────────────────────
+        tags_group = QGroupBox("🏷️ Tags Breakdown")
+        tags_group_layout = QVBoxLayout(tags_group)
+        tags_group_layout.setContentsMargins(8, 8, 8, 8)
+        tags_group_layout.setSpacing(0)
+
+        tags_hscroll = QScrollArea()
+        tags_hscroll.setWidgetResizable(True)
+        tags_hscroll.setFrameShape(QFrame.NoFrame)
+        tags_hscroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        tags_hscroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        tags_hscroll.setSizeAdjustPolicy(QScrollArea.AdjustToContents)
+
+        tags_container = QWidget()
+        self.mw.tags_cards_layout = QHBoxLayout(tags_container)
+        self.mw.tags_cards_layout.setSpacing(8)
+        self.mw.tags_cards_layout.setContentsMargins(0, 0, 0, 0)
+        self.mw.tags_cards_layout.addStretch()
+        tags_hscroll.setWidget(tags_container)
+        tags_group_layout.addWidget(tags_hscroll)
         layout.addWidget(tags_group)
 
-        # === FIX: SKU Summary Section (responsive - can stretch) ===
-        sku_group = QGroupBox("📦 SKU Summary (Top 20)")
+        # ── 4. SKU Summary ─────────────────────────────────────────────────
+        sku_group = QGroupBox("📦 SKU Summary")
+        sku_layout = QVBoxLayout(sku_group)
+        sku_layout.setContentsMargins(8, 8, 8, 8)
 
-        # Scroll area WITHOUT fixed maximum height
-        sku_scroll = QScrollArea()
-        sku_scroll.setWidgetResizable(True)
-        sku_scroll.setMinimumHeight(300)  # Minimum height instead of maximum
+        self.mw.sku_table = QTableWidget()
+        self.mw.sku_table.setColumnCount(6)
+        self.mw.sku_table.setHorizontalHeaderLabels(
+            ["#", "SKU", "Product", "Total Qty", "Fulfillable", "Not Fulfillable"]
+        )
+        self.mw.sku_table.horizontalHeader().setStretchLastSection(False)
+        self.mw.sku_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.mw.sku_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.mw.sku_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.mw.sku_table.setAlternatingRowColors(True)
+        self.mw.sku_table.verticalHeader().setVisible(False)
+        self.mw.sku_table.setMinimumHeight(200)
+        sku_layout.addWidget(self.mw.sku_table)
+        layout.addWidget(sku_group, 1)
 
-        sku_container = QWidget()
-        self.mw.sku_stats_layout = QGridLayout(sku_container)
-        sku_scroll.setWidget(sku_container)
-
-        sku_main_layout = QVBoxLayout(sku_group)
-        sku_main_layout.addWidget(sku_scroll)
-
-        # Add with stretch factor so it can expand
-        layout.addWidget(sku_group, 1)  # Stretch factor: 1
-
+        layout.addStretch()
         return tab
 
     def _create_activity_log_subtab(self):

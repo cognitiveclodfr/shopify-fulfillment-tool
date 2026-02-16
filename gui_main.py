@@ -40,6 +40,8 @@ def main():
 
     if QApplication.platformName() != "offscreen":
         window.show()
+        window.raise_()
+        window.activateWindow()
         sys.exit(app.exec())
     else:
         # In offscreen mode, the window is created but not shown.
