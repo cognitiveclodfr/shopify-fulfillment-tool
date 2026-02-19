@@ -60,6 +60,91 @@ def _get_sku_dtype_dict(column_mappings: dict, file_type: str) -> dict:
     return dtype_dict
 
 
+def build_packing_order_data(order_number: str, group: pd.DataFrame) -> Dict[str, Any]:
+    """Build canonical order metadata dict for Packer-tool JSON integration.
+
+    Used by both analysis_data.json and packing list JSON generators
+    to ensure consistent metadata across both communication files.
+    Backwards-compat aliases (courier, status, shipping_country) are
+    always included so both JSON files are structurally identical.
+
+    Args:
+        order_number: The order number string
+        group: DataFrame group containing all rows for this order
+
+    Returns:
+        Dict[str, Any]: Canonical order metadata including all required fields for Packer-tool
+    """
+    first_row = group.iloc[0]
+
+    # Parse Internal_Tags: "[]" JSON string → Python list
+    tags_raw = first_row.get("Internal_Tags", "[]") or "[]"
+    try:
+        internal_tags: List[str] = json.loads(tags_raw) if isinstance(tags_raw, str) else []
+    except (json.JSONDecodeError, TypeError):
+        internal_tags = []
+
+    # Parse Tags: "tag1, tag2" CSV string → list
+    tags_value = first_row.get("Tags", "") or ""
+    tags_list: List[str] = [t.strip() for t in str(tags_value).split(',') if t.strip()] if str(tags_value).strip() else []
+
+    # Optional Order_Min_Box (only present if weight config is active)
+    # pd.isna() handles None, float('nan'), pd.NaT from pandas mixed-type columns
+    min_box_raw = first_row.get("Order_Min_Box", None)
+    order_min_box: Optional[str] = (
+        str(min_box_raw)
+        if min_box_raw is not None and not pd.isna(min_box_raw) and str(min_box_raw) != ""
+        else None
+    )
+
+    shipping_provider: str = str(first_row.get("Shipping_Provider", "") or "")
+    fulfillment_status: str = str(first_row.get("Order_Fulfillment_Status", "Unknown") or "Unknown")
+    destination_country: str = str(first_row.get("Destination_Country", "") or "")
+
+    # Build items list with safe Quantity conversion (guards against NaN / non-numeric)
+    items: List[Dict[str, Any]] = []
+    for _, row in group.iterrows():
+        warehouse_name = row.get("Warehouse_Name", "")
+        if not warehouse_name or warehouse_name == "N/A":
+            warehouse_name = row.get("Product_Name", "")
+
+        qty_raw = row.get("Quantity", 0)
+        try:
+            quantity: int = int(qty_raw) if qty_raw is not None and not pd.isna(qty_raw) else 0
+        except (ValueError, TypeError):
+            quantity = 0
+
+        items.append({
+            "sku": str(row.get("SKU", "")),
+            "product_name": str(warehouse_name),
+            "quantity": quantity,
+            "order_fulfillment_status": str(row.get("Order_Fulfillment_Status", "") or ""),
+            "status_note": str(row.get("Status_Note", "") or ""),
+            "system_note": str(row.get("System_note", "") or ""),
+        })
+
+    return {
+        "order_number": str(order_number),
+        "order_type": str(first_row.get("Order_Type", "") or ""),
+        # Canonical fields
+        "shipping_provider": shipping_provider,
+        "order_fulfillment_status": fulfillment_status,
+        "destination_country": destination_country,
+        # Backwards-compat aliases — always present so both JSON files are
+        # structurally identical regardless of which generator produced them
+        "courier": shipping_provider,
+        "status": fulfillment_status,
+        "shipping_country": destination_country,
+        # Metadata fields
+        "tags": tags_list,
+        "notes": str(first_row.get("Notes", "") or ""),
+        "system_note": str(first_row.get("System_note", "") or ""),
+        "internal_tags": internal_tags,
+        "order_min_box": order_min_box,
+        "items": items,
+    }
+
+
 def _create_analysis_data_for_packing(final_df: pd.DataFrame) -> Dict[str, Any]:
     """Create analysis_data.json structure for Packing Tool integration.
 
@@ -78,37 +163,11 @@ def _create_analysis_data_for_packing(final_df: pd.DataFrame) -> Dict[str, Any]:
         grouped = final_df.groupby("Order_Number")
 
         for order_number, group in grouped:
-            # Get first row for order-level fields (they should be same for all items in order)
-            first_row = group.iloc[0]
-
-            order_data = {
-                "order_number": str(order_number),
-                "courier": first_row.get("Courier", ""),
-                "status": first_row.get("Order_Fulfillment_Status", "Unknown"),
-                "shipping_country": first_row.get("Shipping_Country", ""),
-                "tags": first_row.get("Tags", ""),
-                "items": []
-            }
-
-            # Add all items in the order
-            for _, row in group.iterrows():
-                # Use Warehouse_Name (from stock file) with fallback to Product_Name
-                warehouse_name = row.get("Warehouse_Name", "")
-                if not warehouse_name or warehouse_name == "N/A":
-                    warehouse_name = row.get("Product_Name", "")
-
-                item_data = {
-                    "sku": str(row.get("SKU", "")),
-                    "product_name": str(warehouse_name),
-                    "quantity": int(row.get("Quantity", 0))
-                }
-                order_data["items"].append(item_data)
-
-            orders_data.append(order_data)
+            orders_data.append(build_packing_order_data(str(order_number), group))
 
         # Calculate statistics
         total_orders = len(orders_data)
-        fulfillable_orders = len([o for o in orders_data if o["status"] == "Fulfillable"])
+        fulfillable_orders = len([o for o in orders_data if o["order_fulfillment_status"] == "Fulfillable"])
         not_fulfillable_orders = total_orders - fulfillable_orders
 
         analysis_data = {

@@ -291,16 +291,21 @@ def test_create_stock_export_with_session(
 
 def test_analysis_data_json_structure(test_data_files):
     """Test _create_analysis_data_for_packing function."""
-    # Create a sample DataFrame
+    # Create a sample DataFrame using canonical column names
     final_df = pd.DataFrame({
         "Order_Number": ["ORD-001", "ORD-001", "ORD-002"],
         "SKU": ["SKU-A", "SKU-B", "SKU-C"],
         "Product_Name": ["Product A", "Product B", "Product C"],
         "Quantity": [2, 1, 3],
-        "Courier": ["DHL", "DHL", "DPD"],
+        "Shipping_Provider": ["DHL", "DHL", "DPD"],
         "Order_Fulfillment_Status": ["Fulfillable", "Fulfillable", "Not Fulfillable"],
-        "Shipping_Country": ["BG", "BG", "BG"],
-        "Tags": ["Priority", "Priority", ""]
+        "Destination_Country": ["BG", "BG", "BG"],
+        "Tags": ["Priority", "Priority", ""],
+        "Notes": ["", "", ""],
+        "System_note": ["", "", ""],
+        "Status_Note": ["", "", ""],
+        "Internal_Tags": ["[]", "[]", "[]"],
+        "Order_Type": ["Multi", "Multi", "Single"],
     })
 
     analysis_data = core._create_analysis_data_for_packing(final_df)
@@ -319,10 +324,16 @@ def test_analysis_data_json_structure(test_data_files):
     assert "orders" in analysis_data
     assert len(analysis_data["orders"]) == 2
 
-    # Find ORD-001 and verify its structure
+    # Find ORD-001 and verify canonical + backwards-compat fields
     ord_001 = next(o for o in analysis_data["orders"] if o["order_number"] == "ORD-001")
+    # Canonical fields
+    assert ord_001["shipping_provider"] == "DHL"
+    assert ord_001["order_fulfillment_status"] == "Fulfillable"
+    assert ord_001["destination_country"] == "BG"
+    # Backwards-compat aliases (must remain present in analysis_data.json)
     assert ord_001["courier"] == "DHL"
     assert ord_001["status"] == "Fulfillable"
+    assert ord_001["shipping_country"] == "BG"
     assert len(ord_001["items"]) == 2
 
     # Verify items in ORD-001

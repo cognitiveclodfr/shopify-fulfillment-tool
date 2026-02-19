@@ -13,6 +13,7 @@ from gui.actions_handler import ActionsHandler
 def test_create_analysis_json(tmp_path):
     """
     Tests that _create_analysis_json creates proper JSON structure for Packing Tool.
+    Uses build_packing_order_data() from core for canonical field names.
     """
     # Create mock main window
     mw = Mock()
@@ -21,7 +22,7 @@ def test_create_analysis_json(tmp_path):
     # Create actions handler
     handler = ActionsHandler(mw)
 
-    # Create test DataFrame with Warehouse_Name
+    # Create test DataFrame with all metadata fields
     df = pd.DataFrame(
         {
             "Order_Number": ["A1", "A1", "A2"],
@@ -33,14 +34,19 @@ def test_create_analysis_json(tmp_path):
             "Order_Type": ["Regular", "Regular", "Priority"],
             "Shipping_Provider": ["DHL", "DHL", "PostOne"],
             "Destination_Country": ["BG", "BG", "US"],
-            "Tags": ["tag1,tag2", "", "tag3"],
+            "Tags": ["tag1,tag2", "tag1,tag2", "tag3"],
+            "Notes": ["Pack carefully", "Pack carefully", ""],
+            "System_note": ["Repeat", "Repeat", ""],
+            "Status_Note": ["confirmed", "", "pending"],
+            "Internal_Tags": ['["URGENT"]', '["URGENT"]', "[]"],
+            "Order_Min_Box": ["M", "M", None],
         }
     )
 
     # Create JSON
     result = handler._create_analysis_json(df)
 
-    # Verify structure
+    # Verify top-level structure
     assert "session_id" in result
     assert result["session_id"] == "session_123"
     assert "created_at" in result
@@ -51,19 +57,26 @@ def test_create_analysis_json(tmp_path):
     assert "orders" in result
     assert len(result["orders"]) == 2
 
-    # Check first order
+    # Check first order - canonical field names
     order_a1 = next(o for o in result["orders"] if o["order_number"] == "A1")
     assert order_a1["order_type"] == "Regular"
-    assert order_a1["courier"] == "DHL"
-    assert order_a1["destination"] == "BG"
+    assert order_a1["shipping_provider"] == "DHL"
+    assert order_a1["destination_country"] == "BG"
+    assert order_a1["order_fulfillment_status"] == "Fulfillable"
     assert order_a1["tags"] == ["tag1", "tag2"]
+    assert order_a1["notes"] == "Pack carefully"
+    assert order_a1["system_note"] == "Repeat"
+    assert order_a1["internal_tags"] == ["URGENT"]
+    assert order_a1["order_min_box"] == "M"
     assert len(order_a1["items"]) == 2
 
-    # Check items in first order - should use Warehouse_Name
+    # Check items in first order - should use Warehouse_Name + new item fields
     item_1 = next(i for i in order_a1["items"] if i["sku"] == "SKU-001")
     assert item_1["product_name"] == "Склад Продукт 1"  # ✅ Warehouse_Name used
     assert item_1["quantity"] == 2
-    assert item_1["stock_status"] == "Fulfillable"
+    assert item_1["order_fulfillment_status"] == "Fulfillable"
+    assert item_1["status_note"] == "confirmed"
+    assert item_1["system_note"] == "Repeat"
 
     item_2 = next(i for i in order_a1["items"] if i["sku"] == "SKU-002")
     assert item_2["product_name"] == "Склад Продукт 2"  # ✅ Warehouse_Name used
@@ -71,13 +84,18 @@ def test_create_analysis_json(tmp_path):
     # Check second order - Warehouse_Name is "N/A", should fallback to Product_Name
     order_a2 = next(o for o in result["orders"] if o["order_number"] == "A2")
     assert order_a2["order_type"] == "Priority"
-    assert order_a2["courier"] == "PostOne"
-    assert order_a2["destination"] == "US"
+    assert order_a2["shipping_provider"] == "PostOne"
+    assert order_a2["destination_country"] == "US"
     assert order_a2["tags"] == ["tag3"]
+    assert order_a2["notes"] == ""
+    assert order_a2["system_note"] == ""
+    assert order_a2["internal_tags"] == []
+    assert order_a2["order_min_box"] is None
     assert len(order_a2["items"]) == 1
 
     item_3 = order_a2["items"][0]
     assert item_3["product_name"] == "Product 3"  # ✅ Fallback to Product_Name
+    assert item_3["status_note"] == "pending"
 
 
 @patch('gui.actions_handler.packing_lists')
@@ -98,6 +116,10 @@ def test_generate_single_report_packing_with_json(mock_packing_lists, tmp_path):
             "Shipping_Provider": ["DHL", "DHL"],
             "Destination_Country": ["BG", "US"],
             "Tags": ["", ""],
+            "Notes": ["", ""],
+            "System_note": ["", ""],
+            "Status_Note": ["", ""],
+            "Internal_Tags": ["[]", "[]"],
         }
     )
     mw.session_path = tmp_path / "session_456"
@@ -217,6 +239,10 @@ def test_generate_packing_list_with_exclude_skus(mock_packing_lists, tmp_path):
             "Shipping_Provider": ["DHL", "DHL"],
             "Destination_Country": ["BG", "BG"],
             "Tags": ["", ""],
+            "Notes": ["", ""],
+            "System_note": ["", ""],
+            "Status_Note": ["", ""],
+            "Internal_Tags": ["[]", "[]"],
         }
     )
     mw.session_path = tmp_path / "session_exclude"

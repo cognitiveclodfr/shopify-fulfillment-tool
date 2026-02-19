@@ -536,7 +536,11 @@ class ActionsHandler(QObject):
         return filtered_df
 
     def _create_analysis_json(self, df):
-        """Convert DataFrame to analysis_data.json format for Packing Tool.
+        """Convert DataFrame to packing list JSON format for Packing Tool.
+
+        Uses build_packing_order_data() from core to ensure canonical field
+        names match analysis_data.json — both files always have identical
+        order metadata structure.
 
         Args:
             df: Filtered DataFrame with orders data
@@ -545,49 +549,13 @@ class ActionsHandler(QObject):
             dict: JSON structure for Packing Tool
         """
         from datetime import datetime
+        from shopify_tool.core import build_packing_order_data
 
         orders_data = []
-
-        # Group by Order_Number
         for order_num, group in df.groupby('Order_Number'):
-            items = []
-            for _, row in group.iterrows():
-                # Use Warehouse_Name (from stock file) with fallback to Product_Name
-                warehouse_name = row.get("Warehouse_Name", "")
-                if not warehouse_name or warehouse_name == "N/A":
-                    warehouse_name = row.get("Product_Name", "")
+            orders_data.append(build_packing_order_data(str(order_num), group))
 
-                items.append({
-                    "sku": str(row.get('SKU', '')),
-                    "product_name": str(warehouse_name),
-                    "quantity": int(row.get('Quantity', 1)),
-                    "stock_status": str(row.get('Order_Fulfillment_Status', ''))
-                })
-
-            # Get order-level info from first row
-            first_row = group.iloc[0]
-
-            # Handle tags - check if it's a string before splitting
-            tags_value = first_row.get('Tags', '')
-            if isinstance(tags_value, str) and tags_value.strip():
-                tags_list = [t.strip() for t in tags_value.split(',') if t.strip()]
-            else:
-                tags_list = []
-
-            orders_data.append({
-                "order_number": str(order_num),
-                "order_type": str(first_row.get('Order_Type', '')),
-                "items": items,
-                "courier": str(first_row.get('Shipping_Provider', '')),
-                "destination": str(first_row.get('Destination_Country', '')),
-                "tags": tags_list
-            })
-
-        # Extract session name from path (session_path could be string or Path)
-        if self.mw.session_path:
-            session_id = os.path.basename(str(self.mw.session_path))
-        else:
-            session_id = "unknown"
+        session_id = os.path.basename(str(self.mw.session_path)) if self.mw.session_path else "unknown"
 
         return {
             "session_id": session_id,
